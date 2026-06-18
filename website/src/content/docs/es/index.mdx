@@ -1,0 +1,94 @@
+---
+title: Iskra
+description: Un framework modular y de alto rendimiento para Bun con arquitectura hexagonal.
+template: splash
+hero:
+  tagline: Todo sistema grande empieza pequeño. Iskra es esa chispa inicial — enfocada en mantener tu código ordenado mientras todo lo demás evoluciona.
+  image:
+    file: ../../../assets/logo.svg
+  actions:
+    - text: Empezar
+      link: /iskra/es/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: Ver en GitHub
+      link: https://github.com/fearful/iskra
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from '@astrojs/starlight/components';
+
+## Instalación
+
+<Code code="bun add @iskra-bun/core @iskra-bun/web-kit" lang="bash" frame="none" />
+
+Una aplicación mínima:
+
+<Code
+  code={`import { App } from '@iskra-bun/core';
+import { WebDriver } from '@iskra-bun/web-kit';
+
+const app = new App({ name: 'MyApp' });
+
+app.register(new WebDriver({
+  port: 3000,
+  routes: [
+    {
+      method: 'GET',
+      path: '/',
+      handler: () => ({ message: 'Hello from Iskra!' }),
+    },
+  ],
+}));
+
+app.start().catch(console.error);`}
+  lang="typescript"
+  title="index.ts"
+/>
+
+## Por qué Iskra
+
+<CardGrid stagger>
+  <Card title="Arquitectura hexagonal" icon="puzzle">
+    Puertos y Adaptadores desacoplan tu lógica de negocio de la infraestructura.
+    Cambiá de driver sin tocar el código de tu dominio.
+  </Card>
+  <Card title="Hecho para Bun" icon="rocket">
+    APIs nativas de Bun (`bun:sqlite`, WebSocket) para máximo rendimiento, con
+    fallback compatible con Node donde hace falta.
+  </Card>
+  <Card title="Kits modulares" icon="open-book">
+    Web, DB, Sockets, KV, Workers, Procesos, Escritorio y Móvil — agregá solo lo
+    que necesites, cada uno como Driver o Plugin.
+  </Card>
+  <Card title="15+ features web" icon="setting">
+    Auth, CORS, CSRF, rate limiting, API keys, validación, sesiones, RBAC,
+    OpenAPI y más, resueltos por un micro-kernel.
+  </Card>
+  <Card title="Tipado de punta a punta" icon="approve-check">
+    TypeScript en todo, con validación Zod en los límites del sistema y una
+    jerarquía de errores consistente.
+  </Card>
+  <Card title="Templates y SDKs" icon="document">
+    Templates listos para correr y SDKs cliente para Java y Python para consumir
+    tus servicios Iskra desde otros lenguajes.
+  </Card>
+</CardGrid>
+
+## Paquetes
+
+| Paquete | Descripción |
+| :--- | :--- |
+| `@iskra-bun/core` | Núcleo del framework: App, DI, eventos, logger, errores |
+| `@iskra-bun/web-kit` | Servidor HTTP con Hono, Kernel y 15+ features integradas |
+| `@iskra-bun/db-kit` | Base de datos SQL con Drizzle ORM (PostgreSQL, MySQL, SQLite) |
+| `@iskra-bun/socket-kit` | WebSocket nativo de Bun con router y broadcast |
+| `@iskra-bun/kv-kit` | Store Key-Value con adapters Redis y memoria |
+| `@iskra-bun/worker-kit` | Cola de jobs en background con BullMQ |
+| `@iskra-bun/process-kit` | Gestión de procesos externos (Python, binarios) |
+| `@iskra-bun/desktop-kit` | Soporte de apps de escritorio con Tauri _(experimental)_ |
+| `@iskra-bun/mobile-kit` | Soporte de plataformas móviles _(experimental)_ |
+| `@iskra-bun/db-oracle` | Soporte de Oracle Database vía bridge/sidecar _(experimental)_ |
+
+Requiere **Bun v1.0+**. Algunas dependencias nativas también esperan **Node.js v18+**.

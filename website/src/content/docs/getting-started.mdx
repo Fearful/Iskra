@@ -1,0 +1,133 @@
+---
+title: Getting Started
+description: Install Iskra and build a small Web + DB API with Bun, then run and test it.
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+This tutorial takes you from zero to a small HTTP API backed by SQLite, running on [Bun](https://bun.sh).
+
+## Prerequisites
+
+- **Bun v1.0+** — install from [bun.sh](https://bun.sh).
+- Optional: **Node.js v18+** for some native dependencies.
+
+## Install
+
+<Steps>
+
+1. Create a project and add the kits you need:
+
+   ```bash
+   mkdir my-iskra-api && cd my-iskra-api
+   bun init -y
+   bun add @iskra-bun/core @iskra-bun/web-kit @iskra-bun/db-kit drizzle-orm
+   ```
+
+2. Define a database schema:
+
+   ```typescript
+   // src/db/schema.ts
+   import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+   export const users = sqliteTable('users', {
+     id: integer('id').primaryKey({ autoIncrement: true }),
+     name: text('name').notNull(),
+     email: text('email').notNull().unique(),
+   });
+   ```
+
+3. Wire up the app with a web server and the database driver:
+
+   ```typescript
+   // src/main.ts
+   import { App } from '@iskra-bun/core';
+   import { WebPlugin, HealthFeature, successResponse } from '@iskra-bun/web-kit';
+   import { DbDriver } from '@iskra-bun/db-kit';
+   import { Hono } from 'hono';
+   import { users } from './db/schema';
+
+   const db = new DbDriver();
+   const router = new Hono();
+
+   router.get('/api/users', (c) => {
+     const all = db.db.select().from(users).all();
+     return c.json(successResponse(all));
+   });
+
+   router.post('/api/users', async (c) => {
+     const body = await c.req.json();
+     db.db.insert(users).values(body).run();
+     return c.json(successResponse(body), 201);
+   });
+
+   const app = new App({
+     name: 'MyIskraApi',
+     db: { driver: 'sqlite', url: 'app.db' },
+   });
+
+   app.register(db);
+   app.register(new WebPlugin({ port: 3000, router, features: [new HealthFeature()] }));
+
+   app.start().catch((err) => app.logger.error({ err }, 'Failed to start'));
+   ```
+
+</Steps>
+
+## Run
+
+```bash
+bun run src/main.ts
+```
+
+Then, in another terminal:
+
+```bash
+# Create a user
+curl -X POST http://localhost:3000/api/users \
+  -H 'content-type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com"}'
+
+# List users
+curl http://localhost:3000/api/users
+
+# Health check
+curl http://localhost:3000/health
+```
+
+<Aside type="tip">
+Before the first run, create the table with the migrations workflow — see the
+[Migrations guide](/iskra/guides/migrations/). For a quick start you can also use
+`bunx drizzle-kit push` to sync the schema directly.
+</Aside>
+
+## Test
+
+Bun ships with a built-in test runner. Create a smoke test:
+
+```typescript
+// src/main.test.ts
+import { describe, it, expect } from 'bun:test';
+import { App } from '@iskra-bun/core';
+
+describe('app', () => {
+  it('starts and stops cleanly', async () => {
+    const app = new App({ name: 'Test' });
+    await app.start();
+    await app.stop();
+    expect(app).toBeDefined();
+  });
+});
+```
+
+Run it:
+
+```bash
+bun test
+```
+
+## Next steps
+
+- Learn the design model in [Architecture](/iskra/concepts/architecture/).
+- Add features (CORS, auth, rate limiting) from the [Web Kit](/iskra/packages/web-kit/).
+- Start from a [template](/iskra/templates/) instead of scaffolding by hand.

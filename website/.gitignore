@@ -1,0 +1,15 @@
+# build output
+dist/
+# generated types
+.astro/
+# dependencies
+node_modules/
+# generated API reference (TypeDoc HTML)
+public/api/
+# logs
+*.log
+# environment
+.env
+.env.production
+# macOS
+.DS_Store

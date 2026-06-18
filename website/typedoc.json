@@ -1,0 +1,26 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPointStrategy": "expand",
+  "entryPoints": [
+    "../packages/core/src/index.ts",
+    "../packages/web-kit/src/index.ts",
+    "../packages/db-kit/src/index.ts",
+    "../packages/socket-kit/src/index.ts",
+    "../packages/kv-kit/src/index.ts",
+    "../packages/worker-kit/src/index.ts",
+    "../packages/process-kit/src/index.ts",
+    "../packages/desktop-kit/src/index.ts",
+    "../packages/mobile-kit/src/index.ts",
+    "../packages/db-oracle/src/index.ts"
+  ],
+  "tsconfig": "./typedoc.tsconfig.json",
+  "out": "./public/api",
+  "name": "Iskra API Reference",
+  "readme": "none",
+  "githubPages": false,
+  "hideGenerator": true,
+  "skipErrorChecking": true,
+  "excludeExternals": true,
+  "exclude": ["**/*.test.ts", "**/node_modules/**"],
+  "logLevel": "Error"
+}
