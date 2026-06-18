@@ -28,32 +28,32 @@
 
 ## Phase 0 — Safety & foundation  (gate: clean tree under git)
 
-- [ ] Run a secret scan over the working tree (`gitleaks detect --no-git` / `trufflehog filesystem`). Remediate any hits.
-- [ ] Audit for internal references to remove/parameterize: any internal Docker/npm registry, internal hostnames, `.env`-style values. (Former internal GitLab registry CI already removed.)
-- [ ] `git init`, craft a `.gitignore` (verify `node_modules`, `.env`, `storage/`, `dist`, `.claude/` excluded), make an initial clean commit on `main`.
+- [x] Run a secret scan over the working tree (`gitleaks detect --no-git` / `trufflehog filesystem`). Remediate any hits. — gitleaks 8.30.1: 7 hits, all reviewed as test fixtures / dummy example keys; allowlisted via `.gitleaks.toml` → 0 leaks.
+- [x] Audit for internal references to remove/parameterize: any internal Docker/npm registry, internal hostnames, `.env`-style values. — Only `registry.access.redhat.com` (public RH base image, keep) and stale GitLab doc examples in `docs/despliegue.md` (deferred to Phase 3 Task 6). No internal hostnames/secrets.
+- [x] `git init`, craft a `.gitignore` (verify `node_modules`, `.env`, `storage/`, `dist`, `.claude/` excluded), make an initial clean commit on `main`. — commit `641ad60` on `main`, 477 files, tree clean.
 - [ ] Decide & document branch strategy (trunk-based on `main`, PRs required).
-- **Acceptance:** `gitleaks` clean; no internal hostnames in tracked files; repo initialized with one clean commit.
+- **Acceptance:** `gitleaks` clean; no internal hostnames in tracked files; repo initialized with one clean commit. ✅
 
 ## Phase 1 — Repo & build correctness  (gate: green local verify)
 
 These are the audit's HIGH/MED build issues; they must be fixed or CI can never be green.
 
-- [ ] Add `"allowImportingTsExtensions": true` (+ `"noEmit": true`) to `tsconfig.base.json`; add a root `tsconfig.json` extending it. Resolves ~75–93 TS5097 errors.
-- [ ] Fix the **better-sqlite3 native-build failure**: prefer migrating `db-kit`'s SQLite path to **`bun:sqlite`** (native, no node-gyp) or `node:sqlite`; otherwise pin a prebuilt-binary version and document the toolchain. Align the `^9.4.3` (db-kit) vs `^12.6.2` (templates) split.
-- [ ] Add root scripts: `typecheck` (`tsc --noEmit`), and make `lint` glob include `test/**` (currently `src/**` only).
-- [ ] Resolve the two known pre-existing tsc error sources: `packages/core/src/otel.ts` (guard optional `@opentelemetry/*`), `packages/web-kit` upload module-resolution.
-- [ ] Decide package **publish strategy**: keep Bun-native `.ts` source (current) **or** add a `tsup`/`tsc` build to `dist/` for non-Bun npm consumers. (Recommended for public npm: build to `dist/` with `exports` map `import`/`types` → dist, so non-Bun users work.)
-- **Acceptance:** `bun install` succeeds clean; `bun test` 0 fail; `bun run lint` 0 error; `bun run typecheck` 0 error.
+- [x] Add `"allowImportingTsExtensions": true` (+ `"noEmit": true`) to `tsconfig.base.json`; add a root `tsconfig.json` extending it. — both present; typecheck 0 errors.
+- [x] Fix the **better-sqlite3 native-build failure**. — SQLite path already uses `@libsql/client`; no package declares or imports `better-sqlite3`. `bun install` completes clean (470 installs, exit 0). No version split remains.
+- [x] Add root scripts: `typecheck` (`tsc --noEmit`), and make `lint` glob include `test/**`. — both present in root `package.json`.
+- [x] Resolve the two known pre-existing tsc error sources (`core/src/otel.ts`, `web-kit` upload). — typecheck is 0 errors across `packages/*/src` + `test`.
+- [ ] Decide package **publish strategy**: keep Bun-native `.ts` source (current) **or** add a `tsup`/`tsc` build to `dist/` for non-Bun npm consumers. (Recommended for public npm: build to `dist/` with `exports` map `import`/`types` → dist, so non-Bun users work.) — deferred (publish-time decision, Phase 5/7).
+- **Acceptance:** `bun install` succeeds clean; `bun test` 0 fail; `bun run lint` 0 error; `bun run typecheck` 0 error. ✅ (394 pass / 33 skip / 0 fail)
 
 ## Phase 2 — Community health & metadata  (gate: project reads as "real OSS")
 
-- [ ] Rewrite root **`README.md` in English** (keep `README.es.md`): what/why, quick start, kit table, install, links to docs site, badges (CI, npm, license).
-- [ ] Add `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant), `SECURITY.md` (disclosure policy + contact).
+- [x] Rewrite root **`README.md` in English** (keep `README.es.md`): what/why, quick start, kit table, install, links to docs site, badges (CI, npm, license).
+- [x] Add `CONTRIBUTING.md`, ~~`CODE_OF_CONDUCT.md` (Contributor Covenant)~~, `SECURITY.md` (disclosure policy + contact). — CoC **intentionally skipped** per maintainer decision (can be added later via GitHub's one-click Contributor Covenant).
 - [ ] Add `CHANGELOG.md` (managed by Changesets — Phase 5).
-- [ ] Add `.github/`: issue templates (bug/feature), PR template, `FUNDING.yml` (optional), `CODEOWNERS`.
-- [ ] Add `.editorconfig`, `.nvmrc`/`.bun-version` (pin Bun), confirm `LICENSE` (AGPL) present at root and referenced in each package.
-- [ ] Per-package `package.json`: add `repository`, `homepage`, `bugs`, `keywords`, `author` fields (currently missing). Mark experimental kits with a clear note + `"experimental"` keyword.
-- **Acceptance:** all community files present; `npm pkg` metadata complete on all 10 packages.
+- [x] Add `.github/`: issue templates (bug/feature), PR template, `FUNDING.yml` (optional), `CODEOWNERS`.
+- [x] Add `.editorconfig`, `.nvmrc`/`.bun-version` (pin Bun), confirm `LICENSE` (AGPL) present at root and referenced in each package.
+- [x] Per-package `package.json`: add `repository`, `homepage`, `bugs`, `keywords`, `author` fields. — all 10 packages complete.
+- **Acceptance:** all community files present (CoC skipped by choice); `npm pkg` metadata complete on all 10 packages. ✅
 
 ## Phase 3 — CI/CD on GitHub Actions  (gate: PRs gated, release automated)
 
