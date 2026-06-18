@@ -1,0 +1,27 @@
+{
+    "name": "iskra-monorepo",
+    "version": "0.1.0",
+    "private": true,
+    "workspaces": [
+        "packages/*",
+        "templates/*",
+        "templates/forms-app/packages/*",
+        "templates/forms-app/services/*"
+    ],
+    "scripts": {
+        "test": "bun test",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
+        "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
+        "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
+        "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
+    },
+    "devDependencies": {
+        "eslint": "^9.0.0",
+        "@eslint/js": "^9.0.0",
+        "typescript-eslint": "^8.0.0",
+        "eslint-config-prettier": "^10.0.0",
+        "prettier": "^3.0.0"
+    },
+    "license": "AGPL-3.0-or-later"
+}

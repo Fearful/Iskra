@@ -1,0 +1,20 @@
+# Gitleaks configuration for Iskra.
+# Extends the default ruleset and allowlists known-safe test fixtures and
+# documentation/example placeholder values (no real secrets in this repo).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and example placeholders — not real secrets"
+paths = [
+    '''packages/.*/test/.*''',
+    '''packages/.*/examples/.*''',
+    '''sdks/.*/README\.md''',
+    '''docs/.*''',
+]
+regexes = [
+    '''sk_(test|prod)_[0-9a-f]+''',
+    '''test-secret-at-least-32-chars-long-xyz''',
+    '''abcdef0123456789''',
+    '''abcdef123456''',
+]

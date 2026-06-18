@@ -1,0 +1,140 @@
+services:
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - forms-api
+      - admin-frontend
+      - admin-api
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: forms_app
+      POSTGRES_USER: forms
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forms -d forms_app"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Admin Zone ──────────────────────────────────────────────────────────────
+  admin-api:
+    build:
+      context: ../../..
+      dockerfile: templates/forms-app/services/admin-api/Dockerfile
+    environment:
+      PORT: "4000"
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
+      AUTH_BASE_URL: http://localhost/admin/api
+      CORS_ORIGINS: http://localhost
+      FORM_MANAGER_URL: http://form-manager:4001
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: services/admin-frontend/Dockerfile
+    depends_on:
+      - admin-api
+
+  # ─── Intranet Services ──────────────────────────────────────────────────────
+  form-manager:
+    build:
+      context: ../../..
+      dockerfile: templates/forms-app/services/form-manager/Dockerfile
+    environment:
+      PORT: "4001"
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      REDIS_URL: redis://redis:6379
+      STATIC_DIR: /app/static
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-your-site-key}
+    volumes:
+      - static-forms:/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  cron:
+    build:
+      context: ../../..
+      dockerfile: templates/forms-app/services/cron/Dockerfile
+    environment:
+      PORT: "4002"
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      REDIS_URL: redis://redis:6379
+      FORM_MANAGER_URL: http://form-manager:4001
+      CHECK_INTERVAL_MS: "30000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      form-manager:
+        condition: service_started
+
+  # ─── Public Zone ─────────────────────────────────────────────────────────────
+  forms-api:
+    build:
+      context: ../../..
+      dockerfile: templates/forms-app/services/forms-api/Dockerfile
+    environment:
+      PORT: "3000"
+      REDIS_URL: redis://redis:6379
+      RECAPTCHA_SECRET: ${RECAPTCHA_SECRET:-your-secret-key}
+      RECAPTCHA_MIN_SCORE: "0.5"
+      CSRF_SECRET: ${CSRF_SECRET:-dev-csrf-secret}
+      STATIC_DIR: /app/static
+    volumes:
+      - static-forms:/app/static:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    # NOTE: No postgres dependency — Redis-only
+
+  # ─── Answer Processing ──────────────────────────────────────────────────────
+  answer-writer:
+    build:
+      context: ../../..
+      dockerfile: templates/forms-app/services/answer-writer/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: "5"
+      BATCH_MAX_SIZE: "50"
+      BATCH_FLUSH_INTERVAL_MS: "2000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+volumes:
+  pgdata:
+  static-forms:

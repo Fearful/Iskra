@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Iskra Desktop App</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Iskra Desktop App</h1>
+        <p class="subtitle" id="app-info">Cargando…</p>
+      </header>
+
+      <section class="panel">
+        <h2>Lectura de archivos</h2>
+        <p>Abrí un archivo de texto usando el diálogo nativo de Tauri.</p>
+        <button id="btn-open">Abrir archivo…</button>
+        <p class="hint" id="file-path">Ningún archivo seleccionado.</p>
+        <pre id="file-content" class="content" aria-live="polite"></pre>
+      </section>
+
+      <section class="panel">
+        <h2>Ventana</h2>
+        <button id="btn-title">Cambiar título de la ventana</button>
+        <button id="btn-minimize">Minimizar</button>
+      </section>
+
+      <footer id="status" class="status">Listo.</footer>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,55 @@
+{
+    "name": "@iskra-bun/db-kit",
+    "version": "0.1.0",
+    "description": "Base de datos SQL de Iskra con Drizzle ORM (PostgreSQL, MySQL, SQLite, LibSQL).",
+    "keywords": [
+        "iskra",
+        "bun",
+        "typescript",
+        "drizzle",
+        "sql",
+        "database",
+        "postgresql",
+        "mysql",
+        "sqlite"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/db-kit"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/db-kit#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "type": "module",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "bun test"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "drizzle-orm": "^0.30.0",
+        "postgres": "^3.4.4",
+        "mysql2": "^3.9.2",
+        "@libsql/client": "^0.6.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2",
+        "drizzle-kit": "^0.30.0"
+    }
+}

@@ -1,0 +1,48 @@
+{
+    "name": "@iskra-bun/process-kit",
+    "version": "0.1.0",
+    "description": "Gestion de procesos externos (Python, binarios) para Iskra.",
+    "keywords": [
+        "iskra",
+        "bun",
+        "typescript",
+        "process",
+        "python",
+        "ipc"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/process-kit"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/process-kit#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "type": "module",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "bun test"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "zod": "^3.24.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2"
+    }
+}

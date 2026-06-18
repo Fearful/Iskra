@@ -1,0 +1,12 @@
+{
+    "name": "@forms-app/vite-plugin-jsonschema",
+    "version": "0.1.0",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "peerDependencies": {
+        "vite": ">=6.0.0"
+    }
+}

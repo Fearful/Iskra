@@ -1,0 +1,15 @@
+{
+    "name": "@forms-app/shared",
+    "version": "0.1.0",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts",
+        "./db": "./src/db/schema.ts",
+        "./validation": "./src/validation/index.ts"
+    },
+    "dependencies": {
+        "drizzle-orm": "^0.45.1",
+        "zod": "^3.24.1"
+    }
+}

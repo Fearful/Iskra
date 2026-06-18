@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest an idea or enhancement for Iskra
+labels: ['enhancement', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please describe the problem you are
+        trying to solve before the proposed solution — it helps us understand the
+        use case even if we land on a different design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve? Is your request related to a frustration or limitation?
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: kit
+    attributes:
+      label: Kit affected
+      description: Which package would this touch?
+      options:
+        - Not sure
+        - '@iskra-bun/core'
+        - '@iskra-bun/web-kit'
+        - '@iskra-bun/db-kit'
+        - '@iskra-bun/db-oracle'
+        - '@iskra-bun/kv-kit'
+        - '@iskra-bun/socket-kit'
+        - '@iskra-bun/worker-kit'
+        - '@iskra-bun/process-kit'
+        - '@iskra-bun/desktop-kit'
+        - '@iskra-bun/mobile-kit'
+        - New kit / core architecture
+        - Other / multiple
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context, references, or screenshots about the feature request here.
+    validations:
+      required: false

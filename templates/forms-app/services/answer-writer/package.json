@@ -1,0 +1,21 @@
+{
+    "name": "@forms-app/answer-writer",
+    "version": "0.1.0",
+    "main": "src/main.ts",
+    "scripts": {
+        "dev": "bun run --watch src/main.ts",
+        "start": "bun run src/main.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/db-kit": "workspace:*",
+        "@iskra-bun/worker-kit": "workspace:*",
+        "@forms-app/shared": "workspace:*",
+        "drizzle-orm": "^0.45.1",
+        "postgres": "^3.4.5",
+        "uuid": "^13.0.0"
+    },
+    "devDependencies": {
+        "@types/uuid": "^11.0.0"
+    }
+}

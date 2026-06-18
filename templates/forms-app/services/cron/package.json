@@ -1,0 +1,19 @@
+{
+    "name": "@forms-app/cron",
+    "version": "0.1.0",
+    "main": "src/main.ts",
+    "scripts": {
+        "dev": "bun run --watch src/main.ts",
+        "start": "bun run src/main.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/web-kit": "workspace:*",
+        "@iskra-bun/db-kit": "workspace:*",
+        "@iskra-bun/kv-kit": "workspace:*",
+        "@forms-app/shared": "workspace:*",
+        "hono": "^4.6.14",
+        "drizzle-orm": "^0.45.1",
+        "postgres": "^3.4.5"
+    }
+}

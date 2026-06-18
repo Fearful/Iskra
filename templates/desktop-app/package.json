@@ -1,0 +1,22 @@
+{
+    "name": "desktop-app",
+    "version": "0.1.0",
+    "main": "src/main.ts",
+    "scripts": {
+        "dev": "bun run --watch src/main.ts",
+        "start": "bun run src/main.ts",
+        "tauri": "tauri",
+        "tauri:dev": "tauri dev",
+        "tauri:build": "tauri build"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/desktop-kit": "workspace:*",
+        "@tauri-apps/api": "^2.0.0",
+        "@tauri-apps/plugin-dialog": "^2.0.0",
+        "zod": "^3.24.1"
+    },
+    "devDependencies": {
+        "@tauri-apps/cli": "^2.0.0"
+    }
+}

@@ -1,0 +1,49 @@
+{
+    "name": "@iskra-bun/worker-kit",
+    "version": "0.1.0",
+    "description": "Cola de jobs en segundo plano para Iskra con BullMQ.",
+    "keywords": [
+        "iskra",
+        "bun",
+        "typescript",
+        "bullmq",
+        "jobs",
+        "queue",
+        "worker"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/worker-kit"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/worker-kit#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "type": "module",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "bun test"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "bullmq": "^5.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2"
+    }
+}

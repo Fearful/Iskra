@@ -1,0 +1,13 @@
+{
+    "name": "forms-app",
+    "version": "0.1.0",
+    "private": true,
+    "workspaces": [
+        "packages/*",
+        "services/*"
+    ],
+    "scripts": {
+        "dev": "docker compose up",
+        "dev:build": "docker compose up --build"
+    }
+}

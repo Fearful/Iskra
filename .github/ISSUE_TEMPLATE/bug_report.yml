@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem in Iskra
+labels: ['bug', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out the
+        sections below so we can reproduce and fix the issue quickly.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is and what you expected to happen instead.
+      placeholder: When I call `app.boot()` the process exits with...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (ideally a small code snippet or repo link) that reproduce the behavior.
+      placeholder: |
+        1. Create an app with `@iskra-bun/core`
+        2. Register the `web-kit` driver
+        3. Run `bun run dev`
+        4. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: kit
+    attributes:
+      label: Kit affected
+      description: Which package is involved? Pick "Not sure" if you can't tell.
+      options:
+        - Not sure
+        - '@iskra-bun/core'
+        - '@iskra-bun/web-kit'
+        - '@iskra-bun/db-kit'
+        - '@iskra-bun/db-oracle'
+        - '@iskra-bun/kv-kit'
+        - '@iskra-bun/socket-kit'
+        - '@iskra-bun/worker-kit'
+        - '@iskra-bun/process-kit'
+        - '@iskra-bun/desktop-kit'
+        - '@iskra-bun/mobile-kit'
+        - Other / multiple
+    validations:
+      required: true
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      description: Output of `bun --version`.
+      placeholder: 1.1.38
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: e.g. macOS 15.4, Ubuntu 24.04, Windows 11 (WSL2)
+      placeholder: macOS 15.4
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error messages or stack traces. This is automatically formatted as code, so no backticks are needed.
+      render: shell
+    validations:
+      required: false

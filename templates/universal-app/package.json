@@ -1,0 +1,16 @@
+{
+    "name": "universal-app",
+    "version": "0.1.0",
+    "main": "src/main.ts",
+    "scripts": {
+        "dev": "bun run --watch src/main.ts",
+        "start": "bun run src/main.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/desktop-kit": "workspace:*",
+        "@iskra-bun/mobile-kit": "workspace:*",
+        "@tauri-apps/api": "^2.0.0",
+        "zod": "^3.24.1"
+    }
+}

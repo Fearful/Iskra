@@ -1,0 +1,52 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDEs
+.vscode/
+.idea/
+
+# Testing
+coverage/
+**/coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bun
+.bun-build/
+
+# Local storage (if used for development)
+storage/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Claude Code local state (agent memory, checklists, session config)
+.claude/
+
+# Secret-scan reports
+gitleaks-report.json

@@ -1,0 +1,4 @@
+# Build de Rust/Tauri
+/target
+# Esquemas y bindings generados por Tauri
+/gen
