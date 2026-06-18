@@ -57,24 +57,24 @@ These are the audit's HIGH/MED build issues; they must be fixed or CI can never 
 
 ## Phase 3 — CI/CD on GitHub Actions  (gate: PRs gated, release automated)
 
-- [ ] **`ci.yml`** (on PR + push): matrix on Bun; steps = install → lint → typecheck → test. Spin up service containers (Redis, Postgres, MySQL) so the 33 skipped integration tests actually run. Upload coverage (`bun test --coverage`).
-- [ ] **Coverage gate**: report via Codecov/Coveralls; set a threshold (start ~70%, ratchet up).
-- [ ] **`release.yml`** (on Changesets version PR merge / tag): build, publish public packages to npm with provenance, create GitHub Release with generated notes.
-- [ ] **`mirror.yml`** (on push to `main` + tags): force-push mirror to Codeberg (`codeberg.org/<org>/iskra`) via deploy key. Mark the Codeberg repo read-only in its README.
-- [ ] **`docs.yml`** (Phase 4): build Starlight, deploy to GitHub Pages.
-- [x] Delete `.gitlab-ci.yml` and `.gitlab-ci.desactivado.yml` (done). Remaining: rewrite the stale GitLab CI/CD section in `docs/despliegue.md` + README rows (handled in Phase 3 Task 6).
-- **Acceptance:** a test PR shows all checks running & required; a dry-run tag produces a draft release; Codeberg mirror updates.
+- [x] **`ci.yml`** (on PR + push): install → lint → typecheck → test. Service containers (redis:7/postgres:16/mysql:8) wired with creds matching the integration tests' default URLs so the 33 skips un-skip. Coverage via `bun test --coverage`. actionlint clean.
+- [x] **Coverage gate**: `codecov.yml` + `codecov/codecov-action@v4`, ~70% target, `informational: true` (non-blocking first).
+- [~] **`release.yml`** (on `v*` tag): npm publish public `@iskra-bun/*` with provenance + GitHub Release. **Prepared, pending Phase 5** (Changesets version-PR trigger + `dist/` build).
+- [x] **`mirror.yml`** (on push to `main` + tags): force-push mirror to `codeberg.org/fearful/iskra` via `CODEBERG_DEPLOY_KEY`. (Read-only notice in Codeberg README is owner-operated at launch.)
+- [x] **`docs.yml`**: build Starlight + lychee link-check + deploy to GitHub Pages. (Built in Phase 4.)
+- [x] Delete `.gitlab-ci.yml`/`.gitlab-ci.desactivado.yml`; rewrite GitLab CI/CD section in `docs/despliegue.md` + `docs/README.md` as GitHub Actions (English README needed no change).
+- **Acceptance:** workflows validate (actionlint clean); live-repo checks (real PR, npm publish, Codeberg push) are owner-operated post-launch — secrets `NPM_TOKEN`/`CODECOV_TOKEN`/`CODEBERG_DEPLOY_KEY` needed. Commit `0cf5b50`.
 
 ## Phase 4 — Documentation website (Starlight + i18n)  (gate: site builds & deploys)
 
-- [ ] Scaffold Astro + Starlight in `website/` (or `docs-site/`). Configure i18n: `en` (root/default) + `es`.
-- [ ] **Migrate** existing `docs/*.md` (Spanish) into `src/content/docs/es/`; **translate** each to `en/`. Map: arquitectura, core, web-kit, db-kit, socket-kit, kv-kit, worker-kit, process-kit, desktop-kit, mobile-kit, configuracion, migraciones, despliegue, sdks.
-- [ ] Author the **missing HIGH-priority docs**: a true end-to-end **Getting Started** tutorial (build + run a real API), a **Concepts/Architecture** page (hexagonal, drivers/plugins, lifecycle), a **Templates gallery**, and a **Plugin/Driver authoring guide**.
-- [ ] **API reference**: generate with TypeDoc from package sources, embed/link from the site.
-- [ ] Landing page (hero, feature grid, install snippet, links). Built-in Pagefind search. Versioned-docs strategy noted for later.
-- [ ] Clearly badge `desktop-kit`/`mobile-kit`/`db-oracle` pages as **Experimental**.
-- [ ] Deploy via `docs.yml` to GitHub Pages; optional custom domain (`iskra.dev` / `docs.iskra.dev`) if owned, else `*.github.io`.
-- **Acceptance:** site builds with 0 broken links (link-check in CI), EN + ES both navigable, search works, deployed URL live.
+- [x] Scaffold Astro + Starlight in `website/`. i18n: `en` (root/default) + `es`; `base: '/iskra'`; Pagefind + sitemap.
+- [x] **Migrate** `docs/*.md` (Spanish) into `es/` + **translate** to `en/` (root). All 14 pages, code blocks byte-identical.
+- [x] Author **Getting Started** (install → Web+DB API → run → test), **Concepts/Architecture**, **Templates gallery**, **Plugin/Driver authoring guide** — EN + ES.
+- [x] **API reference**: TypeDoc over all 10 packages' `src/index.ts`, linked from the site (`/iskra/api/`).
+- [x] Landing page (hero, feature grid, install snippet). Pagefind search enabled.
+- [x] **Experimental** asides on `desktop-kit`/`mobile-kit`/`db-oracle` pages.
+- [x] `docs.yml` deploys to GitHub Pages with a lychee link-check. (Custom domain deferred.)
+- **Acceptance:** ✅ `bun run build` clean — 39 pages, Pagefind index (187 HTML), sitemap. EN+ES navigable. Live deploy is owner-operated (enable Pages → GitHub Actions). Commit `505a734`.
 
 ## Phase 5 — Versioning & experimental labeling  (gate: reproducible releases)
 
