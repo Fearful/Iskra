@@ -1,0 +1,53 @@
+# Mirror the repository to Codeberg.
+#
+# On every push to `main` and on every tag push, force-push a full mirror
+# (all branches + tags) to codeberg.org/fearful/iskra.
+#
+# Setup (owner-operated): generate an SSH deploy key, add the PUBLIC key to the
+# Codeberg repo (Settings -> Deploy Keys, with write access) and store the
+# PRIVATE key as the `CODEBERG_DEPLOY_KEY` Actions secret in this GitHub repo.
+name: Mirror to Codeberg
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+
+# Avoid concurrent mirrors racing on the same remote.
+concurrency:
+  group: mirror-codeberg
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Force-push mirror to Codeberg
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH deploy key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.CODEBERG_DEPLOY_KEY }}" > ~/.ssh/codeberg_key
+          chmod 600 ~/.ssh/codeberg_key
+          ssh-keyscan -t rsa,ecdsa,ed25519 codeberg.org >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Push mirror
+        env:
+          GIT_SSH_COMMAND: "ssh -i ~/.ssh/codeberg_key -o IdentitiesOnly=yes"
+        run: |
+          set -euo pipefail
+          git remote add codeberg git@codeberg.org:fearful/iskra.git
+          # --mirror force-pushes all refs (branches + tags) to match local.
+          git push --mirror --force codeberg

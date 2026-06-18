@@ -1,0 +1,35 @@
+# Codecov configuration for the Iskra monorepo.
+#
+# Coverage is informational while the suite grows: the project/patch checks are
+# kept non-blocking (informational: true) so they never fail a PR. The initial
+# target is ~70%; raise it and flip `informational` to false once coverage is
+# stable.
+coverage:
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 5%
+        informational: true
+    patch:
+      default:
+        target: 70%
+        threshold: 5%
+        informational: true
+
+# Don't block the PR on the Codecov comment/report itself.
+codecov:
+  require_ci_to_pass: false
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "**/node_modules"
+  - "**/test/**"
+  - "**/*.test.ts"
+  - "**/*.config.ts"
+  - "templates/**"
+  - "sdks/**"

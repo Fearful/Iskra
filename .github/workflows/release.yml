@@ -1,0 +1,101 @@
+# Release workflow for the Iskra monorepo.
+#
+# Triggered by pushing a version tag (`v*`, e.g. v0.1.0). It builds, publishes
+# every PUBLIC `@iskra-bun/*` package to npm with provenance, and cuts a GitHub
+# Release with auto-generated notes.
+#
+# NOTE (Phase 5): Changesets is the intended versioning tool. The Changesets
+# "version PR" flow (which opens a PR bumping versions + changelogs, and whose
+# merge is what ultimately creates the tag) is finalized in Phase 5. For now
+# this workflow simply reacts to a tag push, however that tag was created.
+#
+# NOTE (Phase 5 / dist strategy): packages currently publish their TypeScript
+# source directly (package.json `main`/`types` -> ./src/index.ts, `files`
+# includes `src`). There is no compiled `dist/` yet. The "Build" step below is
+# intentionally tolerant (it runs a per-package `build` script only if one
+# exists) so this workflow keeps working once a real build/`dist/` strategy
+# lands in Phase 5 — at that point, set the build script and adjust nothing else.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create GitHub Releases
+  id-token: write # required for npm provenance (--provenance)
+
+jobs:
+  release:
+    name: Publish to npm & create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      # npm (not bun) is used for the actual publish: `npm publish --provenance`
+      # is the supported path for npm provenance attestations today.
+      - name: Setup Node (for npm publish + provenance)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build packages (if a build script is defined)
+        run: |
+          set -euo pipefail
+          for pkg in packages/*; do
+            if [ -f "$pkg/package.json" ] && grep -q '"build"' "$pkg/package.json"; then
+              echo "Building $pkg"
+              (cd "$pkg" && bun run build)
+            fi
+          done
+
+      - name: Publish public @iskra-bun/* packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for pkg in packages/*; do
+            manifest="$pkg/package.json"
+            [ -f "$manifest" ] || continue
+
+            name=$(node -p "require('./$manifest').name || ''")
+            is_private=$(node -p "require('./$manifest').private === true")
+
+            # Guard: skip anything marked private, and only publish the public
+            # @iskra-bun scope.
+            if [ "$is_private" = "true" ]; then
+              echo "Skipping private package: $pkg"
+              continue
+            fi
+            case "$name" in
+              @iskra-bun/*) ;;
+              *)
+                echo "Skipping non-@iskra-bun package: $name ($pkg)"
+                continue
+                ;;
+            esac
+
+            echo "Publishing $name"
+            (cd "$pkg" && npm publish --provenance --access public)
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

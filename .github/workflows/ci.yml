@@ -1,0 +1,110 @@
+# Continuous Integration for the Iskra monorepo.
+#
+# Runs on every pull request and on pushes to `main`. Installs with a frozen
+# lockfile, then runs lint, typecheck and the full test suite with coverage.
+#
+# Service containers (Redis / Postgres / MySQL) are wired so the integration
+# tests that are skipped locally (they probe TEST_REDIS_URL / TEST_PG_URL /
+# TEST_MYSQL_URL for reachability) un-skip in CI. The credentials below match
+# the defaults baked into those test files exactly:
+#   - packages/web-kit/test/cache.integration.test.ts        (TEST_REDIS_URL)
+#   - packages/web-kit/test/session-db.test.ts               (TEST_PG_URL, TEST_MYSQL_URL)
+#   - packages/db-kit/test/connections.integration.test.ts   (TEST_PG_URL, TEST_MYSQL_URL)
+#   - packages/worker-kit/test/worker.integration.test.ts    (TEST_REDIS_URL)
+#   - packages/kv-kit/test/kv.integration.test.ts            (TEST_REDIS_URL)
+#   - templates/forms-app/services/*/test/*                  (TEST_REDIS_URL, TEST_PG_URL)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint, typecheck & test
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Must match the defaults in the integration test files so the gated
+      # describe() blocks detect reachable services and un-skip.
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      TEST_PG_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_MYSQL_URL: mysql://root:mysql@127.0.0.1:3306/test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test with coverage
+        run: bun test --coverage --coverage-reporter=lcov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/lcov.info
+          # Informational only for now: a failed upload must not fail CI.
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

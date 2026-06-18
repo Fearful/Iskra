@@ -1,6 +1,6 @@
 # Despliegue
 
-Guia para construir imagenes Docker y desplegar con GitLab CI/CD.
+Guia para construir imagenes Docker y entender la pipeline de CI/CD en GitHub Actions.
 
 ## Docker
 
@@ -37,57 +37,65 @@ docker run -p 3000:3000 \
 
 Si necesitas crear un Dockerfile para un template nuevo, podes usar `Dockerfile.base` como referencia. Acepta `ARG TEMPLATE_NAME` y `ARG ENTRY_POINT`.
 
-## GitLab CI/CD
+## CI/CD con GitHub Actions
 
-La pipeline esta definida en `.gitlab-ci.yml` con 5 stages:
+La pipeline vive en `.github/workflows/` y se compone de tres workflows
+independientes: `ci.yml`, `release.yml` y `mirror.yml`.
 
-```
-lint → test → build → docker-build → deploy
-```
+### `ci.yml` — Integracion Continua
 
-### Ambientes
-
-| Branch/Tag | Ambiente | Tag Docker | Deploy |
-|------------|----------|------------|--------|
-| `develop` | dev | `0.1.0-dev` | automatico |
-| `main` | test | `0.1.0-rc` | automatico |
-| `v*` tags | prod | `0.1.0` | manual |
-
-### Versionado
-
-La version se lee del `package.json` raiz y se guarda como artifact de pipeline en el archivo `VERSION`. Los tags de Docker se componen como:
-
-- **dev:** `$VERSION-dev` (ej: `0.1.0-dev`)
-- **test:** `$VERSION-rc` (ej: `0.1.0-rc`)
-- **prod:** `$VERSION` (ej: `0.1.0`)
-
-### Registry
-
-Las imagenes se pushean al GitLab Container Registry:
+Se ejecuta en cada **pull request** y en cada **push a `main`**. Pasos:
 
 ```
-$CI_REGISTRY_IMAGE/<template>:<tag>
+checkout → setup-bun → bun install --frozen-lockfile → lint → typecheck → test --coverage → upload coverage
 ```
 
-Por ejemplo: `registry.gitlab.com/mi-org/iskra/ecommerce-api:0.1.0-dev`
+Para que los tests de integracion (Redis, Postgres y MySQL) dejen de saltearse,
+el job levanta **service containers** y expone las variables de entorno que esos
+tests leen para detectar servicios disponibles:
 
-### Deploy
+| Servicio | Imagen | Variable de entorno |
+|----------|--------|---------------------|
+| Redis | `redis:7` | `TEST_REDIS_URL=redis://127.0.0.1:6379` |
+| Postgres | `postgres:16` | `TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres` |
+| MySQL | `mysql:8` | `TEST_MYSQL_URL=mysql://root:mysql@127.0.0.1:3306/test` |
 
-Los jobs de deploy son stubs que podes completar con tu herramienta:
+Las credenciales coinciden exactamente con los valores por defecto de los
+archivos de test, por lo que los bloques `describe()` gateados se activan en CI.
 
-```yaml
-# kubectl
-kubectl set image deployment/ecommerce ecommerce=$IMAGE:$TAG
+La cobertura se sube a [Codecov](https://codecov.io) con
+`codecov/codecov-action`. Es **informativa** por ahora (objetivo inicial ~70%,
+configurado en `codecov.yml` con `informational: true`), asi que no bloquea el
+merge. Requiere el secret `CODECOV_TOKEN`.
 
-# docker-compose
-docker-compose pull && docker-compose up -d
+### `release.yml` — Publicacion
 
-# helm
-helm upgrade iskra ./chart --set image.tag=$TAG
-```
+Se dispara al pushear un tag `v*` (ej: `v0.1.0`). Pasos:
+
+1. Build de los paquetes (ejecuta el script `build` de cada paquete si existe).
+2. `npm publish --provenance --access public` para cada paquete **publico**
+   `@iskra-bun/*`. Los paquetes marcados `private` se saltean.
+3. Crea un **GitHub Release** con notas generadas automaticamente.
+
+> **Nota (Fase 5):** la integracion con Changesets (el "version PR" que bumpea
+> versiones y changelogs, y cuyo merge genera el tag) se finaliza en la Fase 5.
+> La estrategia de build a `dist/` tambien se define en la Fase 5; por ahora los
+> paquetes publican su codigo TypeScript fuente directamente.
+
+Requiere los secrets `NPM_TOKEN` (publish) y usa el `GITHUB_TOKEN` automatico
+para el Release. El permiso `id-token: write` habilita la procedencia
+(provenance) de npm.
+
+### `mirror.yml` — Espejo en Codeberg
+
+En cada push a `main` y en cada tag, hace un `git push --mirror --force` hacia
+`codeberg.org/fearful/iskra`. Requiere el secret `CODEBERG_DEPLOY_KEY` (clave SSH
+privada cuya parte publica se carga como Deploy Key con escritura en el repo de
+Codeberg).
 
 ### Flujo de Trabajo
 
-1. Pusheas a `develop` → se buildea y deploya a **dev** automaticamente
-2. Merge a `main` → se buildea y deploya a **test** automaticamente
-3. Creas un tag `v0.1.0` → se buildea, y el deploy a **prod** requiere aprobacion manual
+1. Abris un PR → corre `ci.yml` (lint, typecheck, tests con servicios, cobertura).
+2. Merge a `main` → corre `ci.yml` y `mirror.yml` (actualiza el espejo en Codeberg).
+3. Creas un tag `v0.1.0` → corre `release.yml` (publica a npm + GitHub Release) y
+   `mirror.yml` (espeja el tag).

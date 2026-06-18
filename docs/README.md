@@ -15,7 +15,7 @@ Bienvenido a la documentacion de Iskra, un framework modular basado en Bun para 
 | [Worker Kit](./worker-kit.md) | Cola de jobs con BullMQ |
 | [Process Kit](./process-kit.md) | Gestion de procesos externos (Python, binarios) |
 | [Configuracion](./configuracion.md) | Sistema de config con c12, Zod, variables de entorno |
-| [Despliegue](./despliegue.md) | Docker, CI/CD con GitLab, ambientes |
+| [Despliegue](./despliegue.md) | Docker, CI/CD con GitHub Actions, ambientes |
 | [Migraciones](./migraciones.md) | Sistema de migraciones con Drizzle Kit |
 | [SDKs](./sdks.md) | Clientes para otros lenguajes (Java, Python, Go) |
 
