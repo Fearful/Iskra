@@ -153,11 +153,11 @@ Ademas de los SDKs HTTP, Iskra soporta integracion con otros lenguajes via:
 | **Redis/BullMQ** | `@iskra-bun/kv-kit`, `@iskra-bun/worker-kit` | Ambos servicios se conectan a infraestructura compartida para comunicacion asincrona |
 | **WebSocket** | `@iskra-bun/socket-kit` | Comunicacion bidireccional en tiempo real desde cualquier lenguaje |
 
-Consulta [Process Kit](/iskra/es/packages/process-kit) para la integracion via procesos y la plantilla `python-data-processor` para un ejemplo completo.
+Consulta [Process Kit](/es/packages/process-kit) para la integracion via procesos y la plantilla `python-data-processor` para un ejemplo completo.
 
 ## SDKs Futuros
 
 | Lenguaje | Paquete | Estado |
 |----------|---------|--------|
-| Go | `github.com/iskra/client-go` | Planificado |
+| Go | `github.com/client-go` | Planificado |
 | .NET | `Iskra.Client` (NuGet) | Planificado |

@@ -5,7 +5,7 @@ description: Referencia de API generada automáticamente con TypeDoc para cada p
 
 La referencia de API completa se genera a partir del código fuente TypeScript de cada paquete con [TypeDoc](https://typedoc.org).
 
-👉 **[Abrir la referencia de API generada](/iskra/api/)**
+👉 **[Abrir la referencia de API generada](/api/)**
 
 La referencia cubre los diez paquetes:
 
@@ -25,7 +25,7 @@ La referencia cubre los diez paquetes:
 ```bash
 cd website
 bun run api    # corre TypeDoc -> public/api
-bun run build  # construye el sitio (la salida de TypeDoc se sirve en /iskra/api/)
+bun run build  # construye el sitio (la salida de TypeDoc se sirve en /api/)
 ```
 
 :::note

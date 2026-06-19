@@ -54,7 +54,7 @@ export const users = sqliteTable('users', {
 
 ## Migraciones
 
-Ver [Migraciones](/iskra/es/guides/migrations/) para la guia completa.
+Ver [Migraciones](/es/guides/migrations/) para la guia completa.
 
 ```typescript
 // Ejecutar migraciones programaticamente

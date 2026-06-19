@@ -97,7 +97,7 @@ bun start
 
 ## Documentation
 
-Full documentation lives at **[fearful.github.io/iskra](https://fearful.github.io/iskra)** _(docs site coming soon)_. In the meantime, browse the [`docs/`](./docs/) directory:
+Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**. You can also browse the [`docs/`](./docs/) directory:
 
 | Document | What it covers |
 | :--- | :--- |

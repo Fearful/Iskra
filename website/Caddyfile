@@ -1,0 +1,14 @@
+# Serves the pre-built static site (website/dist) on the port Fly expects.
+# Starlight builds directory-style pages (foo/index.html) with trailing-slash
+# links, which Caddy's file_server serves directly (and it 301s /foo -> /foo/).
+:8080 {
+	root * /srv
+	encode gzip zstd
+	file_server
+
+	# Serve Starlight's generated 404 page on any not-found.
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+}

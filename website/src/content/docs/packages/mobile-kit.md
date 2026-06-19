@@ -159,4 +159,4 @@ async function main() {
 main().catch((err) => app.logger.error({ err }, 'Fallo al arrancar'));
 ```
 
-For a ready-to-use cross-platform project, check the [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md) template. For the Drivers' lifecycle, see the [architecture documentation](/iskra/concepts/architecture/) and the [Core](/iskra/packages/core/).
+For a ready-to-use cross-platform project, check the [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md) template. For the Drivers' lifecycle, see the [architecture documentation](/concepts/architecture/) and the [Core](/packages/core/).

@@ -1,0 +1,5 @@
+# Only the built site and the Caddy config belong in the image context.
+# Everything else (deps, sources, caches) is excluded.
+*
+!dist
+!Caddyfile

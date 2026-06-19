@@ -1,0 +1,19 @@
+# Fly.io config for the Iskra documentation site.
+# Change `app` to your own globally-unique Fly app name and `primary_region` to
+# the region closest to your users (run `fly platform regions` to list them).
+app = "iskra-docs"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle — a docs site doesn't need a machine running 24/7.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

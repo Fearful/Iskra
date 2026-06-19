@@ -18,59 +18,59 @@ This tutorial takes you from zero to a small HTTP API backed by SQLite, running 
 
 1. Create a project and add the kits you need:
 
-   ```bash
-   mkdir my-iskra-api && cd my-iskra-api
-   bun init -y
-   bun add @iskra-bun/core @iskra-bun/web-kit @iskra-bun/db-kit drizzle-orm
-   ```
+    ```bash
+    mkdir my-iskra-api && cd my-iskra-api
+    bun init -y
+    bun add @iskra-bun/core @iskra-bun/web-kit @iskra-bun/db-kit drizzle-orm
+    ```
 
 2. Define a database schema:
 
-   ```typescript
-   // src/db/schema.ts
-   import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+    ```typescript
+    // src/db/schema.ts
+    import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
-   export const users = sqliteTable('users', {
-     id: integer('id').primaryKey({ autoIncrement: true }),
-     name: text('name').notNull(),
-     email: text('email').notNull().unique(),
-   });
-   ```
+    export const users = sqliteTable('users', {
+        id: integer('id').primaryKey({ autoIncrement: true }),
+        name: text('name').notNull(),
+        email: text('email').notNull().unique(),
+    });
+    ```
 
 3. Wire up the app with a web server and the database driver:
 
-   ```typescript
-   // src/main.ts
-   import { App } from '@iskra-bun/core';
-   import { WebPlugin, HealthFeature, successResponse } from '@iskra-bun/web-kit';
-   import { DbDriver } from '@iskra-bun/db-kit';
-   import { Hono } from 'hono';
-   import { users } from './db/schema';
+    ```typescript
+    // src/main.ts
+    import { App } from '@iskra-bun/core';
+    import { WebPlugin, HealthFeature, successResponse } from '@iskra-bun/web-kit';
+    import { DbDriver } from '@iskra-bun/db-kit';
+    import { Hono } from 'hono';
+    import { users } from './db/schema';
 
-   const db = new DbDriver();
-   const router = new Hono();
+    const db = new DbDriver();
+    const router = new Hono();
 
-   router.get('/api/users', (c) => {
-     const all = db.db.select().from(users).all();
-     return c.json(successResponse(all));
-   });
+    router.get('/api/users', (c) => {
+        const all = db.db.select().from(users).all();
+        return c.json(successResponse(all));
+    });
 
-   router.post('/api/users', async (c) => {
-     const body = await c.req.json();
-     db.db.insert(users).values(body).run();
-     return c.json(successResponse(body), 201);
-   });
+    router.post('/api/users', async (c) => {
+        const body = await c.req.json();
+        db.db.insert(users).values(body).run();
+        return c.json(successResponse(body), 201);
+    });
 
-   const app = new App({
-     name: 'MyIskraApi',
-     db: { driver: 'sqlite', url: 'app.db' },
-   });
+    const app = new App({
+        name: 'MyIskraApi',
+        db: { driver: 'sqlite', url: 'app.db' },
+    });
 
-   app.register(db);
-   app.register(new WebPlugin({ port: 3000, router, features: [new HealthFeature()] }));
+    app.register(db);
+    app.register(new WebPlugin({ port: 3000, router, features: [new HealthFeature()] }));
 
-   app.start().catch((err) => app.logger.error({ err }, 'Failed to start'));
-   ```
+    app.start().catch((err) => app.logger.error({ err }, 'Failed to start'));
+    ```
 
 </Steps>
 
@@ -96,9 +96,8 @@ curl http://localhost:3000/health
 ```
 
 <Aside type="tip">
-Before the first run, create the table with the migrations workflow — see the
-[Migrations guide](/iskra/guides/migrations/). For a quick start you can also use
-`bunx drizzle-kit push` to sync the schema directly.
+    Before the first run, create the table with the migrations workflow — see the [Migrations
+    guide](/guides/migrations/). For a quick start you can also use `bunx drizzle-kit push` to sync the schema directly.
 </Aside>
 
 ## Test
@@ -111,12 +110,12 @@ import { describe, it, expect } from 'bun:test';
 import { App } from '@iskra-bun/core';
 
 describe('app', () => {
-  it('starts and stops cleanly', async () => {
-    const app = new App({ name: 'Test' });
-    await app.start();
-    await app.stop();
-    expect(app).toBeDefined();
-  });
+    it('starts and stops cleanly', async () => {
+        const app = new App({ name: 'Test' });
+        await app.start();
+        await app.stop();
+        expect(app).toBeDefined();
+    });
 });
 ```
 
@@ -128,6 +127,6 @@ bun test
 
 ## Next steps
 
-- Learn the design model in [Architecture](/iskra/concepts/architecture/).
-- Add features (CORS, auth, rate limiting) from the [Web Kit](/iskra/packages/web-kit/).
-- Start from a [template](/iskra/templates/) instead of scaffolding by hand.
+- Learn the design model in [Architecture](/concepts/architecture/).
+- Add features (CORS, auth, rate limiting) from the [Web Kit](/packages/web-kit/).
+- Start from a [template](/templates/) instead of scaffolding by hand.
