@@ -45,13 +45,25 @@ jobs:
         working-directory: website
         run: bun run build
 
+      # Stage the built site under a directory matching the `/iskra` base path so
+      # lychee can resolve the root-relative links Starlight emits (e.g.
+      # `/iskra/getting-started/`). `--root-dir` then maps `/` to `_linkcheck`.
+      - name: Stage site for link check
+        run: |
+          rm -rf _linkcheck
+          mkdir -p _linkcheck/iskra
+          cp -R website/dist/. _linkcheck/iskra/
+
       - name: Link check (lychee)
         uses: lycheeverse/lychee-action@v2
         with:
+          # Offline: check internal links only. External links (npm, GitHub,
+          # Codeberg) are validated elsewhere and would make docs deploys flaky.
           args: >-
+            --offline
             --no-progress
-            --base website/dist
-            'website/dist/**/*.html'
+            --root-dir ${{ github.workspace }}/_linkcheck
+            '_linkcheck/iskra/**/*.html'
           fail: true
 
       - name: Upload Pages artifact

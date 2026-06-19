@@ -112,7 +112,7 @@ Full documentation lives at **[fearful.github.io/iskra](https://fearful.github.i
 | [Configuration](./docs/configuracion.md) | Config system with c12, Zod, environment variables |
 | [Migrations](./docs/migraciones.md) | Migration system with Drizzle Kit |
 | [Deployment](./docs/despliegue.md) | Docker, CI/CD, environments |
-| [SDKs](./docs/sdks.md) | Clients for Java, Python, Go |
+| [SDKs](./docs/sdks.md) | Clients for Java and Python (Go/.NET planned) |
 
 ## SDKs for other languages
 
@@ -120,7 +120,7 @@ Iskra exposes its services over HTTP and provides client SDKs to integrate from 
 
 - **Java** — `dev.iskra:iskra-client`
 - **Python** — `iskra-client` (sync and async)
-- **Go** and **.NET** — in development
+- **Go** and **.NET** — planned (see the [roadmap](./ROADMAP.md))
 
 More details in the [SDK documentation](./docs/sdks.md).
 

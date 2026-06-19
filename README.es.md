@@ -85,7 +85,7 @@ Iskra expone sus servicios via HTTP, y provee SDKs cliente para integrar desde o
 
 - **Java** — `dev.iskra:iskra-client`
 - **Python** — `iskra-client` (sync y async)
-- **Go** y **.NET** — en desarrollo
+- **Go** y **.NET** — planeados (ver el [roadmap](./ROADMAP.md))
 
 Mas detalles en la [documentacion de SDKs](./docs/sdks.md).
 
@@ -103,8 +103,8 @@ Mas detalles en la [documentacion de SDKs](./docs/sdks.md).
 | [Process Kit](./docs/process-kit.md) | Procesos externos, modos daemon/oneshot/stdio |
 | [Configuracion](./docs/configuracion.md) | Sistema de config con c12, Zod, variables de entorno |
 | [Migraciones](./docs/migraciones.md) | Sistema de migraciones con Drizzle Kit |
-| [Despliegue](./docs/despliegue.md) | Docker, CI/CD con GitLab, ambientes |
-| [SDKs](./docs/sdks.md) | Clientes para Java, Python, Go |
+| [Despliegue](./docs/despliegue.md) | Docker, CI/CD con GitHub Actions, ambientes |
+| [SDKs](./docs/sdks.md) | Clientes para Java y Python (Go/.NET planeados) |
 
 ## Testing
 
