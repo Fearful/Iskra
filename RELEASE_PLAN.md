@@ -78,10 +78,10 @@ These are the audit's HIGH/MED build issues; they must be fixed or CI can never 
 
 ## Phase 5 — Versioning & experimental labeling  (gate: reproducible releases)
 
-- [ ] Adopt **Changesets** for the monorepo: contributor changesets → version PR → changelog per package.
-- [ ] Set the initial public version (recommend **0.1.0** across packages, or `0.0.x` for experimental kits) and a documented **semver + experimental** policy.
-- [ ] Ensure experimental kits are versioned `0.x` and flagged so semver expectations are clear.
-- **Acceptance:** `changeset version` produces correct bumps + CHANGELOG; release workflow consumes it.
+- [x] Adopt **Changesets**: `.changeset/config.json` (public, repo `fearful/iskra`, GitHub changelog, 22 apps/templates ignored). `release.yml` rewritten to the version-PR/publish flow; `version`/`release` root scripts added.
+- [x] Compiled **`dist/` publish strategy**: per-package tsup build (ESM + `.d.ts`); dual-condition `exports` (`source`/`bun`→src for dev, `types`/`import`→dist for consumers). `npm publish --dry-run` on `@iskra-bun/core` ships `dist/` + `src` + CHANGELOG. All 10 packages at **0.1.0** with an initial `CHANGELOG.md`.
+- [x] **`VERSIONING.md`** policy: semver + experimental kits (`desktop-kit`/`mobile-kit`/`db-oracle`) stay `0.x`, breaking changes allowed in minor.
+- **Acceptance:** ✅ `bun run build` deterministic (3/3, all 10 dist). `changeset version` verified: core 0.1.0→0.1.1 (patch), web-kit→0.2.0 (minor), CHANGELOGs written, internal-dep cascade correct. typecheck/test/lint stay green (394 pass/33 skip/0 fail). Commit `e23e665`. (Live `changeset publish` is owner-operated — needs `NPM_TOKEN`.)
 
 ## Phase 6 — SDK & test polish  (can partly trail launch)
 
