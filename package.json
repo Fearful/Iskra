@@ -10,6 +10,9 @@
     ],
     "scripts": {
         "test": "bun test",
+        "build": "bun run scripts/build-packages.ts",
+        "version": "changeset version",
+        "release": "bun run build && changeset publish",
         "typecheck": "tsc --noEmit",
         "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
         "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
@@ -17,11 +20,14 @@
         "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
     },
     "devDependencies": {
-        "eslint": "^9.0.0",
+        "@changesets/changelog-github": "^0.7.0",
+        "@changesets/cli": "^2.31.0",
         "@eslint/js": "^9.0.0",
-        "typescript-eslint": "^8.0.0",
+        "eslint": "^9.0.0",
         "eslint-config-prettier": "^10.0.0",
-        "prettier": "^3.0.0"
+        "prettier": "^3.0.0",
+        "tsup": "^8.3.0",
+        "typescript-eslint": "^8.0.0"
     },
     "license": "AGPL-3.0-or-later"
 }

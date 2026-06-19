@@ -68,22 +68,29 @@ La cobertura se sube a [Codecov](https://codecov.io) con
 configurado en `codecov.yml` con `informational: true`), asi que no bloquea el
 merge. Requiere el secret `CODECOV_TOKEN`.
 
-### `release.yml` — Publicacion
+### `release.yml` — Publicacion (con Changesets)
 
-Se dispara al pushear un tag `v*` (ej: `v0.1.0`). Pasos:
+Se ejecuta en cada **push a `main`** y usa [Changesets](https://github.com/changesets/changesets).
+Hace una de dos cosas:
 
-1. Build de los paquetes (ejecuta el script `build` de cada paquete si existe).
-2. `npm publish --provenance --access public` para cada paquete **publico**
-   `@iskra-bun/*`. Los paquetes marcados `private` se saltean.
-3. Crea un **GitHub Release** con notas generadas automaticamente.
+1. Si hay **changesets pendientes**, abre/actualiza un PR **"Version Packages"**
+   que los consume: bumpea la version de cada paquete `@iskra-bun/*` afectado,
+   actualiza su `CHANGELOG.md` y borra los changesets. Mergear ese PR es la
+   compuerta humana de "publicar release".
+2. Si **no hay changesets pendientes** (es decir, recien se mergeo el version PR),
+   ejecuta el script `release`: compila cada paquete a `dist/` y luego
+   `changeset publish` publica a npm con procedencia (provenance) los paquetes
+   publicos, y crea los **GitHub Releases** correspondientes.
 
-> **Nota (Fase 5):** la integracion con Changesets (el "version PR" que bumpea
-> versiones y changelogs, y cuyo merge genera el tag) se finaliza en la Fase 5.
-> La estrategia de build a `dist/` tambien se define en la Fase 5; por ahora los
-> paquetes publican su codigo TypeScript fuente directamente.
+Las versiones y changelogs nunca se editan a mano: salen de los archivos de
+changeset que agregan los contribuyentes (ver `CONTRIBUTING.md` / `VERSIONING.md`).
 
-Requiere los secrets `NPM_TOKEN` (publish) y usa el `GITHUB_TOKEN` automatico
-para el Release. El permiso `id-token: write` habilita la procedencia
+Cada paquete publica un `dist/` compilado (JS ESM + `.d.ts`, generado con tsup);
+el `exports` resuelve a `dist/` para consumidores npm/Node y a `src/` (condicion
+`source`/`bun`) para desarrollo con Bun sin necesidad de build.
+
+Requiere el secret `NPM_TOKEN` (publish) y usa el `GITHUB_TOKEN` automatico para
+el version PR y los Releases. El permiso `id-token: write` habilita la procedencia
 (provenance) de npm.
 
 ### `mirror.yml` — Espejo en Codeberg
@@ -95,7 +102,9 @@ Codeberg).
 
 ### Flujo de Trabajo
 
-1. Abris un PR → corre `ci.yml` (lint, typecheck, tests con servicios, cobertura).
-2. Merge a `main` → corre `ci.yml` y `mirror.yml` (actualiza el espejo en Codeberg).
-3. Creas un tag `v0.1.0` → corre `release.yml` (publica a npm + GitHub Release) y
-   `mirror.yml` (espeja el tag).
+1. Abris un PR (con un changeset) → corre `ci.yml` (lint, typecheck, tests con
+   servicios, cobertura).
+2. Merge a `main` → corre `ci.yml`, `mirror.yml` (actualiza el espejo en Codeberg)
+   y `release.yml` (abre el PR **"Version Packages"** si hay changesets pendientes).
+3. Mergeas el PR "Version Packages" → `release.yml` compila y publica a npm +
+   crea los GitHub Releases; `mirror.yml` espeja los cambios.

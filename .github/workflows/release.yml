@@ -1,34 +1,38 @@
-# Release workflow for the Iskra monorepo.
+# Release workflow for the Iskra monorepo (Changesets-driven).
 #
-# Triggered by pushing a version tag (`v*`, e.g. v0.1.0). It builds, publishes
-# every PUBLIC `@iskra-bun/*` package to npm with provenance, and cuts a GitHub
-# Release with auto-generated notes.
+# On every push to `main`, the Changesets action does one of two things:
 #
-# NOTE (Phase 5): Changesets is the intended versioning tool. The Changesets
-# "version PR" flow (which opens a PR bumping versions + changelogs, and whose
-# merge is what ultimately creates the tag) is finalized in Phase 5. For now
-# this workflow simply reacts to a tag push, however that tag was created.
+#   1. If there are pending changeset files, it opens (or updates) a
+#      "Version Packages" PR that consumes them: bumps each affected
+#      @iskra-bun/* package, writes its CHANGELOG.md, and deletes the
+#      changesets. Merging that PR is the human "cut a release" gate.
 #
-# NOTE (Phase 5 / dist strategy): packages currently publish their TypeScript
-# source directly (package.json `main`/`types` -> ./src/index.ts, `files`
-# includes `src`). There is no compiled `dist/` yet. The "Build" step below is
-# intentionally tolerant (it runs a per-package `build` script only if one
-# exists) so this workflow keeps working once a real build/`dist/` strategy
-# lands in Phase 5 — at that point, set the build script and adjust nothing else.
+#   2. If there are NO pending changesets (i.e. the version PR was just
+#      merged), it runs the `release` script — which builds every package
+#      to `dist/` and then `changeset publish`es each public package to npm
+#      with provenance, and creates the matching GitHub Releases.
+#
+# Versions and changelogs are therefore never hand-edited; they flow from the
+# changeset files contributors add (see CONTRIBUTING.md / VERSIONING.md).
 name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write # create GitHub Releases
-  id-token: write # required for npm provenance (--provenance)
+  contents: write # create GitHub Releases + push the version PR
+  pull-requests: write # open/update the "Version Packages" PR
+  id-token: write # npm provenance attestations
 
 jobs:
   release:
-    name: Publish to npm & create GitHub Release
+    name: Version PR or publish to npm
     runs-on: ubuntu-latest
 
     steps:
@@ -42,8 +46,8 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # npm (not bun) is used for the actual publish: `npm publish --provenance`
-      # is the supported path for npm provenance attestations today.
+      # npm (not bun) performs the actual publish: `npm publish --provenance`
+      # (enabled below via NPM_CONFIG_PROVENANCE) is the supported provenance path.
       - name: Setup Node (for npm publish + provenance)
         uses: actions/setup-node@v4
         with:
@@ -53,49 +57,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build packages (if a build script is defined)
-        run: |
-          set -euo pipefail
-          for pkg in packages/*; do
-            if [ -f "$pkg/package.json" ] && grep -q '"build"' "$pkg/package.json"; then
-              echo "Building $pkg"
-              (cd "$pkg" && bun run build)
-            fi
-          done
-
-      - name: Publish public @iskra-bun/* packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          for pkg in packages/*; do
-            manifest="$pkg/package.json"
-            [ -f "$manifest" ] || continue
-
-            name=$(node -p "require('./$manifest').name || ''")
-            is_private=$(node -p "require('./$manifest').private === true")
-
-            # Guard: skip anything marked private, and only publish the public
-            # @iskra-bun scope.
-            if [ "$is_private" = "true" ]; then
-              echo "Skipping private package: $pkg"
-              continue
-            fi
-            case "$name" in
-              @iskra-bun/*) ;;
-              *)
-                echo "Skipping non-@iskra-bun package: $name ($pkg)"
-                continue
-                ;;
-            esac
-
-            echo "Publishing $name"
-            (cd "$pkg" && npm publish --provenance --access public)
-          done
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Create Version PR or publish
+        uses: changesets/action@v1
         with:
-          generate_release_notes: true
+          version: bun run version # `changeset version` — bumps + writes CHANGELOGs
+          publish: bun run release # `bun run build && changeset publish`
+          commit: "chore: version packages"
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

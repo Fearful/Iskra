@@ -1,0 +1,39 @@
+{
+    "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+    "changelog": [
+        "@changesets/changelog-github",
+        {
+            "repo": "fearful/iskra"
+        }
+    ],
+    "commit": false,
+    "fixed": [],
+    "linked": [],
+    "access": "public",
+    "baseBranch": "main",
+    "updateInternalDependencies": "patch",
+    "ignore": [
+        "@forms-app/admin-api",
+        "@forms-app/admin-frontend",
+        "@forms-app/answer-writer",
+        "@forms-app/cron",
+        "@forms-app/form-manager",
+        "@forms-app/forms-api",
+        "@forms-app/shared",
+        "@forms-app/vite-plugin-jsonschema",
+        "chat-app",
+        "cms-starter",
+        "db-starter",
+        "desktop-app",
+        "ecommerce-api",
+        "forms-app",
+        "full-stack-app",
+        "job-worker",
+        "my-iskra-plugin",
+        "python-data-processor",
+        "realtime-feed",
+        "simple-server",
+        "starter-app",
+        "universal-app"
+    ]
+}

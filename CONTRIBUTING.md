@@ -70,11 +70,10 @@ bunx changeset
 ```
 
 Follow the prompts to select the affected packages and the semver bump (patch /
-minor / major), then commit the generated file alongside your changes.
-
-> **Note:** Changesets is being adopted as part of a later release phase. If the
-> tooling isn't wired up yet when you contribute, describe your change in the PR
-> description instead and a maintainer will help.
+minor / major), then commit the generated file alongside your changes. Merging to
+`main` opens a "Version Packages" PR; merging that PR publishes to npm. See
+[VERSIONING.md](VERSIONING.md) for the full policy (including the experimental-kit
+rules).
 
 ## Commit messages
 
