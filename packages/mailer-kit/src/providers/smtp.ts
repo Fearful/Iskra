@@ -6,10 +6,15 @@ export class SmtpEmailAdapter implements EmailAdapter {
 
     constructor(private config: EmailConfig) {
         if (!config.smtp) throw new Error("SMTP config required");
+        // Implicit TLS on port 465; STARTTLS enforced (requireTLS) elsewhere so
+        // credentials never transit in cleartext. An explicit `secure` wins.
+        const secure = config.smtp.secure ?? config.smtp.port === 465;
         this.transporter = nodemailer.createTransport({
             host: config.smtp.host,
             port: config.smtp.port,
-            secure: config.smtp.secure ?? false,
+            secure,
+            requireTLS: secure ? undefined : true,
+            tls: { rejectUnauthorized: true },
             auth: {
                 user: config.smtp.username,
                 pass: config.smtp.password
@@ -40,12 +45,9 @@ export class SmtpEmailAdapter implements EmailAdapter {
         return { messageId: (info as any).messageId, success: true };
     }
 
-    async sendTemplate(templateName: string, to: string | string[], data: TemplateData) {
-        // Simple mock template engine
-        return this.send({
-            to,
-            subject: `Template: ${templateName}`,
-            html: `<p>Template ${templateName} rendered with ${JSON.stringify(data)}</p>`
-        });
+    async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {
+        // No template engine is implemented yet; fail loudly rather than
+        // silently sending a placeholder body that looks like a real send.
+        throw new Error("sendTemplate not supported by smtp");
     }
 }

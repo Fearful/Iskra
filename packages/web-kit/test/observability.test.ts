@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Kernel } from "../src/kernel";
 import { OtelTracingFeature } from "../src/features/tracing";
-import { EmailFeature, MockEmailAdapter } from "../src/features/email";
+import { EmailFeature } from "../src/features/email";
 
 describe("Observability Features", () => {
     it("should initialize tracing", async () => {
@@ -25,8 +25,9 @@ describe("Observability Features", () => {
         await kernel.initialize();
 
         const app = kernel.getApp();
+        // getAdapter returns a validating wrapper exposing the EmailAdapter contract.
         const adapter = emailFeature.getAdapter();
-        expect(adapter).toBeInstanceOf(MockEmailAdapter);
+        expect(typeof adapter.send).toBe("function");
 
         const res = await adapter.send({
             to: "test@example.com",

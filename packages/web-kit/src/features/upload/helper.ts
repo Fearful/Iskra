@@ -24,6 +24,16 @@ export class UploadHelper {
         return this.basePath;
     }
 
+    // Defense-in-depth: reduce an attacker-controlled filename to a safe basename
+    // and strip it to an allowlisted charset so traversal segments ("../",
+    // "..\\", absolute paths) can never escape the project base path. storage-kit's
+    // sanitizePath remains the primary control; this is a second, independent gate.
+    private safeBasename(filename: string): string {
+        const base = filename.split(/[\\/]/).pop() || "";
+        const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "");
+        return cleaned.length > 0 ? cleaned : "file";
+    }
+
     private buildPath(filename: string, subfolder?: string): string {
         if (subfolder) {
             const normalized = subfolder.replace(/^\/+|\/+$/g, "");
@@ -60,7 +70,8 @@ export class UploadHelper {
 
         const data = new Uint8Array(await file.arrayBuffer());
         const opts = { ...options, contentType: options?.contentType || file.type };
-        return this.upload(file.name, data, subfolder, opts);
+        const safeName = this.safeBasename(file.name);
+        return this.upload(safeName, data, subfolder, opts);
     }
 
     async list(subfolder?: string) {

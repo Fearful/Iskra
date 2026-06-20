@@ -46,6 +46,9 @@ const storage = await createStorageAdapter({
 });
 ```
 
+A plaintext `http://` endpoint is refused at construction time unless you opt in
+explicitly with `useSSL: false` (see [Security](#security)).
+
 ### MinIO
 
 ```typescript
@@ -93,6 +96,60 @@ await storage.delete(path);
 // Check if path is a directory
 const isDir = await storage.isDirectory(path);
 ```
+
+## Security
+
+### Path traversal protection
+
+Object keys are sanitized before any I/O: backslashes are normalized to `/`, and
+empty or dot-only segments (`.`, `..`, `....`) are stripped. On top of that, the
+local adapter resolves the final path and verifies it stays inside `basePath`. Any
+key that would escape the storage root throws:
+
+```typescript
+await storage.put('../../etc/passwd', data);
+// Error: Path escapes storage root: ../../etc/passwd
+```
+
+Because keys can never escape `basePath`, it is safe to pass user-derived keys
+directly to `put`, `get`, `getStream`, `delete`, and the other methods. Validating
+the shape of keys at your application boundary is still recommended as defense in
+depth.
+
+### Secure-by-default S3 endpoints
+
+The S3 adapter refuses a plaintext `http://` endpoint to avoid sending credentials
+and data in the clear:
+
+```typescript
+new S3StorageAdapter({
+    adapter: 'minio',
+    connection: { endpoint: 'http://insecure.example.com:9000', /* ... */ },
+});
+// Error: Refusing plaintext S3 endpoint; set useSSL:false to override
+```
+
+`https://` endpoints work without any extra flag. To use a plaintext endpoint on
+purpose (for example, a local MinIO instance), opt in explicitly:
+
+```typescript
+const storage = await createStorageAdapter({
+    adapter: 'minio',
+    connection: {
+        endpoint: 'http://localhost:9000',
+        accessKey: process.env.MINIO_ACCESS_KEY,
+        secretKey: process.env.MINIO_SECRET_KEY,
+        bucket: process.env.MINIO_BUCKET,
+        useSSL: false,
+    },
+});
+```
+
+### Unguessable generated filenames
+
+When the kit generates a filename, the random component comes from a
+cryptographically strong source (`crypto.randomUUID()`), not `Math.random()`, so
+generated names cannot be predicted or enumerated.
 
 ## Environment Variables
 

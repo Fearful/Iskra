@@ -35,7 +35,10 @@ type PgMember<TS extends Record<string, unknown>> = Extract<IskraDrizzleDb<TS>, 
 describe("DbDriver typing", () => {
     test("a typed schema flows through to driver.db.query", () => {
         const driver = new DbDriver<Schema>();
-        type Db = typeof driver.db;
+        // `db` is declared `IskraDrizzleDb<TSchema> | undefined` (it is only
+        // assigned in start()), so strip the not-yet-started `undefined` before
+        // asserting the schema-flow type.
+        type Db = NonNullable<typeof driver.db>;
         // The instantiated db is the same union IskraDrizzleDb<Schema> exposes.
         type _dbIsUnion = Expect<Equal<Db, IskraDrizzleDb<Schema>>>;
         const _assertUnion: _dbIsUnion = true;
@@ -50,7 +53,7 @@ describe("DbDriver typing", () => {
 
     test("default DbDriver reproduces the historical untyped (no relations) behavior", () => {
         const driver = new DbDriver();
-        type Db = typeof driver.db;
+        type Db = NonNullable<typeof driver.db>;
         type _defaultUnion = Expect<Equal<Db, IskraDrizzleDb<Record<string, never>>>>;
         const _assertDefault: _defaultUnion = true;
 

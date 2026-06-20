@@ -15,7 +15,7 @@ class FakeDbFeature {
 }
 
 describe("Health Check Feature", () => {
-    it("reports ok with details and the registered feature list by default", async () => {
+    it("reports ok and hides details by default (includeDetails defaults to false)", async () => {
         const kernel = new Kernel();
         kernel.registerFeature(new HealthCheckFeature());
         await kernel.initialize();
@@ -25,20 +25,21 @@ describe("Health Check Feature", () => {
         const json = (await res.json()) as any;
         expect(json.status).toBe("ok");
         expect(typeof json.timestamp).toBe("string");
-        expect(Array.isArray(json.features)).toBe(true);
-        expect(json.features).toContain("health");
+        // Details are off by default; the internal feature list must not leak.
+        expect(json.features).toBeUndefined();
 
         await kernel.shutdown();
     });
 
-    it("omits details when includeDetails is false", async () => {
+    it("exposes the registered feature list when includeDetails is true", async () => {
         const kernel = new Kernel();
-        kernel.registerFeature(new HealthCheckFeature({ includeDetails: false }));
+        kernel.registerFeature(new HealthCheckFeature({ includeDetails: true }));
         await kernel.initialize();
 
         const json = (await (await kernel.getApp().request("/health")).json()) as any;
         expect(json.status).toBe("ok");
-        expect(json.features).toBeUndefined();
+        expect(Array.isArray(json.features)).toBe(true);
+        expect(json.features).toContain("health");
 
         await kernel.shutdown();
     });
@@ -46,7 +47,7 @@ describe("Health Check Feature", () => {
     it("probes a registered db feature and reports it healthy", async () => {
         const kernel = new Kernel();
         kernel.registerFeature(new FakeDbFeature() as any);
-        kernel.registerFeature(new HealthCheckFeature());
+        kernel.registerFeature(new HealthCheckFeature({ includeDetails: true }));
         await kernel.initialize();
 
         const json = (await (await kernel.getApp().request("/health")).json()) as any;
@@ -60,6 +61,7 @@ describe("Health Check Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(
             new HealthCheckFeature({
+                includeDetails: true,
                 checks: {
                     ok: async () => ({ status: "ok" }),
                     boom: async () => {
@@ -73,7 +75,8 @@ describe("Health Check Feature", () => {
         const json = (await (await kernel.getApp().request("/health")).json()) as any;
         expect(json.customChecks.ok).toEqual({ status: "ok" });
         expect(json.customChecks.boom.status).toBe("error");
-        expect(json.customChecks.boom.error).toContain("nope");
+        // The raw error string must not be serialized to the client.
+        expect(json.customChecks.boom.error).toBeUndefined();
 
         await kernel.shutdown();
     });

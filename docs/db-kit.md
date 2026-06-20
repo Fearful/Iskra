@@ -21,19 +21,24 @@ app.register(db);
 
 await app.start();
 
-// Usar Drizzle ORM
-const result = db.db.select().from(users).all();
+// Usar Drizzle ORM — db.db es undefined hasta que el driver arranca, protegelo
+const result = db.db!.select().from(users).all();
 ```
+
+`db.db` tiene el tipo `IskraDrizzleDb<TSchema> | undefined`: es `undefined`
+antes de `app.start()` y de nuevo despues de `stop()`. Protegelo
+(`if (!db.db) ...`), usa el operador de aseveracion non-null cuando sepas que la
+app ya arranco, o verifica la conexion con [`db.ping()`](#sonda-de-liveness).
 
 ## Drivers Soportados
 
 | Driver | Paquete | URL de ejemplo |
 |--------|---------|----------------|
 | `postgres` | postgres.js | `postgres://user:pass@localhost:5432/db` |
-| `mysql` | mysql2 | `mysql://user:pass@localhost:3306/db` |
+| `mysql` | mysql2 (pool de conexiones) | `mysql://user:pass@localhost:3306/db` |
 | `sqlite` | better-sqlite3 / bun:sqlite | `app.db` o `:memory:` |
 
-El `DbDriver` detecta automaticamente si esta corriendo en Bun y usa `bun:sqlite` en vez de `better-sqlite3`.
+El `DbDriver` detecta automaticamente si esta corriendo en Bun y usa `bun:sqlite` en vez de `better-sqlite3`. El driver `mysql` abre un pool de conexiones (`mysql2.createPool`) en lugar de una sola conexion.
 
 ## Schema Tipado (Generics)
 
@@ -50,8 +55,8 @@ app.register(db);
 
 await app.start();
 
-// db.db queda tipado: db.db.query.users.findMany() esta completamente inferido
-const users = await db.db.query.users.findMany({ where: eq(schema.users.active, true) });
+// db.db queda tipado (y sigue siendo `| undefined` hasta arrancar — protegelo)
+const users = await db.db!.query.users.findMany({ where: eq(schema.users.active, true) });
 ```
 
 Los tipos auxiliares `IskraDrizzleDb<TSchema>` e `IskraDrizzleTx<TSchema>` estan
@@ -153,6 +158,13 @@ flags `--schema` y `--out` a `drizzle-kit generate` y `--config` a todos los
 comandos. Anteriormente, `schemaPath` y `migrationsDir` se ignoraban
 silenciosamente a menos que existiera un `drizzle.config.ts` en el directorio
 de trabajo.
+
+Cuando un comando de migracion termina con codigo distinto de cero, el stderr
+capturado de `drizzle-kit` se **depura de credenciales** antes de adjuntarse a
+`MigrationError.context.stderr`. drizzle-kit imprime la cadena de conexion
+completa al fallar, asi que cualquier `//user:password@host` embebido se reescribe
+como `//***:***@host` — el resto del diagnostico queda intacto, de modo que las
+cadenas de conexion nunca se filtran en los logs.
 
 Tambien puedes usar `MigrationHelper` directamente para mayor control:
 

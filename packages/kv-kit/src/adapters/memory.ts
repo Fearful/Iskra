@@ -22,6 +22,12 @@ export class MemoryAdapter implements KVAdapter {
     }
 
     async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
+        // Note: storing `null`/`undefined` is undefined behavior across adapters.
+        // This in-memory adapter stores the value verbatim (so `get` returns it
+        // as-is), whereas the RedisAdapter normalizes both to "absent" because
+        // they have no faithful JSON round-trip. Callers should not depend on
+        // either form being preserved.
+        //
         // Clear any existing expiry timer for this key before setting a new one
         const existing = this.timers.get(key);
         if (existing !== undefined) {

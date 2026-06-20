@@ -5,6 +5,25 @@ export const createLogger = (name: string, level: string = 'info') => {
     return pino({
         name,
         level,
+        redact: {
+            paths: [
+                'password',
+                '*.password',
+                'pass',
+                '*.pass',
+                'apiKey',
+                '*.apiKey',
+                '*.apiSecret',
+                'token',
+                '*.token',
+                '*.authToken',
+                'secret',
+                '*.secret',
+                'config.env',
+                '*.data'
+            ],
+            censor: '[REDACTED]'
+        },
         ...(isDev && {
             transport: {
                 target: 'pino-pretty',

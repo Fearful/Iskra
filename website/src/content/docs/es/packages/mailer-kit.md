@@ -40,10 +40,22 @@ const mailer = await createEmailAdapter({ provider: 'mock' });
 
 ### SMTP
 
+El transporte aplica TLS por defecto: usa `secure: true` (TLS implicito) en el puerto 465 y, en cualquier otro puerto, fuerza STARTTLS con `requireTLS: true`. Ademas, `tls.rejectUnauthorized` siempre es `true`, asi que los certificados se validan. Un `secure` explicito en la config gana sobre el valor por defecto.
+
 ```typescript
 const mailer = await createEmailAdapter({
     provider: 'smtp',
-    smtp: { host: 'smtp.example.com', port: 587, username: 'u', password: 'p', secure: false },
+    smtp: { host: 'smtp.example.com', port: 587, username: 'u', password: 'p' },
+    from: { email: 'noreply@example.com' },
+});
+```
+
+Para servidores locales o de desarrollo que solo escuchan en el puerto 465 con TLS implicito, fija `secure: true`:
+
+```typescript
+const mailer = await createEmailAdapter({
+    provider: 'smtp',
+    smtp: { host: 'localhost', port: 465, username: 'u', password: 'p', secure: true },
     from: { email: 'noreply@example.com' },
 });
 ```
@@ -66,6 +78,38 @@ const mailer = await createEmailAdapter({
     apiKey: process.env.MAILGUN_API_KEY!,
     domain: 'mg.example.com',
     from: { email: 'noreply@example.com' },
+});
+```
+
+#### Cabeceras personalizadas (allowlist)
+
+Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permiten nombres de una lista blanca y el resto se rechaza lanzando un error (proteccion contra inyeccion de cabeceras). Ademas, todo lo que venga despues de un CR o LF en el valor se descarta para evitar inyeccion.
+
+Cabeceras permitidas:
+
+- `Reply-To`
+- `In-Reply-To`
+- `References`
+- `List-Unsubscribe`
+- `List-Unsubscribe-Post`
+- `List-Id`
+- `X-Mailgun-Variables`
+- `X-Mailgun-Tag`
+
+```typescript
+await mailer.send({
+    to: 'usuario@example.com',
+    subject: 'Boletin',
+    html: '<p>Hola!</p>',
+    headers: { 'List-Unsubscribe': '<https://example.com/unsub>' },
+});
+
+// Esto lanza un error: el nombre no esta en la allowlist.
+await mailer.send({
+    to: 'usuario@example.com',
+    subject: 'x',
+    text: 't',
+    headers: { 'X-Custom': 'valor' }, // Error: Header "X-Custom" is not allowed
 });
 ```
 
@@ -94,12 +138,13 @@ await mailer.send({
     bcc: ['oculta@example.com'],
     replyTo: 'responder@example.com',
 });
-
-// Enviar usando una plantilla
-await mailer.sendTemplate('welcome', 'usuario@example.com', { name: 'Ada' });
 ```
 
 Todos los adaptadores devuelven `{ messageId, success }`.
+
+### Plantillas (no soportadas todavia)
+
+El renderizado de plantillas del lado del proveedor aun no esta implementado. La interfaz expone `sendTemplate(templateName, to, data)`, pero hoy cada adaptador (SMTP, SendGrid, Mailgun, SES) lanza `Error("sendTemplate not supported by <provider>")` en lugar de enviar nada. Esto es intencional: falla en voz alta en vez de mandar silenciosamente un cuerpo de marcador de posicion. Renderiza tu HTML antes de llamar y usa `send()` con el campo `html`.
 
 ## Variables de Entorno
 

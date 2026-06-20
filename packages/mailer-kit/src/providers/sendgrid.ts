@@ -32,11 +32,9 @@ export class SendGridEmailAdapter implements EmailAdapter {
         return { messageId: response.headers["x-message-id"] as string, success: true };
     }
 
-    async sendTemplate(templateName: string, to: string | string[], data: TemplateData) {
-        return this.send({
-            to,
-            subject: `Template: ${templateName}`,
-            html: `<p>Template ${templateName} rendered with ${JSON.stringify(data)}</p>`
-        });
+    async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {
+        // No template engine is implemented yet; fail loudly rather than
+        // silently sending a placeholder body that looks like a real send.
+        throw new Error("sendTemplate not supported by sendgrid");
     }
 }

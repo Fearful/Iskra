@@ -4,6 +4,39 @@ import type { KVAdapter, CacheOptions, SetOptions } from './types';
 /** Internal prefix used for the tag→keys index stored in the KV adapter. */
 const TAG_INDEX_PREFIX = '__cache_tag__:';
 
+/** Keys that enable prototype-pollution when an object is later deep-merged. */
+const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
+
+/**
+ * Throw if `value` (or any nested object) carries a prototype-pollution key.
+ *
+ * Cached payloads can originate from untrusted writers; rejecting these keys at
+ * the parse boundary stops a malicious value from reaching code that deep-merges
+ * it. Reads the raw JSON text first so `__proto__` (which `JSON.parse` hides on
+ * the resulting object) is detected before traversal.
+ */
+function assertNoPollution(raw: string, value: unknown): void {
+    if (DANGEROUS_KEYS.some((k) => raw.includes(`"${k}"`))) {
+        for (const key of DANGEROUS_KEYS) {
+            if (containsKey(value, key)) {
+                throw new Error(
+                    `cache-kit: refusing to deserialize value containing the ` +
+                    `unsafe key "${key}" (prototype-pollution risk).`
+                );
+            }
+        }
+    }
+}
+
+/** Recursively test whether `value` is/contains an object with own `key`. */
+function containsKey(value: unknown, key: string): boolean {
+    if (value === null || typeof value !== 'object') return false;
+    if (Object.prototype.hasOwnProperty.call(value, key)) return true;
+    return Object.values(value as Record<string, unknown>).some((child) =>
+        containsKey(child, key)
+    );
+}
+
 /**
  * Cache — higher-level application cache backed by any {@link KVAdapter}.
  *
@@ -63,14 +96,19 @@ export class Cache {
         const raw = await this.adapter.get(this.prefixKey(key));
         if (raw === undefined || raw === null) return undefined;
 
+        const text = raw as string;
+        let parsed: unknown;
         try {
-            return JSON.parse(raw as string) as T;
+            parsed = JSON.parse(text);
         } catch {
             throw new Error(
                 `cache-kit: failed to deserialize value for key "${key}". ` +
                 'The stored value is not valid JSON.'
             );
         }
+
+        assertNoPollution(text, parsed);
+        return parsed as T;
     }
 
     /**
@@ -108,15 +146,27 @@ export class Cache {
     }
 
     /**
-     * Flush all entries owned by this Cache instance.
+     * Flush the **entire** backing store shared by this Cache and every other
+     * Cache built on the same adapter.
      *
      * Implementation note: the {@link KVAdapter} interface does not expose key
-     * enumeration, so `clear()` recycles the adapter via `disconnect()`/
-     * `connect()`. This works perfectly with the default {@link MemoryAdapter};
-     * for namespaced sub-caches that share a Redis adapter, call `clear()` only
-     * when you intend to reset the entire backing store.
+     * enumeration, so this recycles the adapter via `disconnect()`/`connect()`,
+     * which is a whole-store reset rather than a namespace-scoped one. To avoid
+     * a namespaced sub-cache silently nuking its siblings, this method refuses
+     * to run when a namespace prefix is set: it is only valid on a root Cache.
+     *
+     * @throws Error when called on a namespaced Cache (a prefix is set).
      */
     async clear(): Promise<void> {
+        if (this.prefix !== '') {
+            const namespace = this.prefix.replace(/:$/, '');
+            throw new Error(
+                `cache-kit: clear() resets the entire shared backing store and ` +
+                `cannot be called on the namespaced cache "${namespace}". ` +
+                'Delete individual keys with delete(), invalidate a group with ' +
+                'invalidateTag(), or call clear() on the root cache to reset everything.'
+            );
+        }
         await this.adapter.disconnect();
         await this.adapter.connect();
     }

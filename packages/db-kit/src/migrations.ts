@@ -1,6 +1,18 @@
 import { type App } from '@iskra-bun/core';
 import { MigrationError } from './errors';
 
+/**
+ * Redacta credenciales `//user:pass@host` embebidas en texto arbitrario (p. ej.
+ * el stderr de drizzle-kit, que suele imprimir la cadena de conexión completa al
+ * fallar). A diferencia de `scrubUrl`, opera sobre texto libre y no requiere que
+ * el contenido sea una URL parseable, dejando intacto el resto del diagnóstico.
+ *
+ * e.g. "... postgres://user:pass@host:5432/db" → "... postgres://***:***@host:5432/db"
+ */
+export function scrubCredentials(text: string): string {
+    return text.replace(/(\/\/)[^/\s:@]+:[^/\s@]+@/g, '$1***:***@');
+}
+
 export interface MigrationConfig {
     /** Dialecto de la base de datos */
     dialect: 'postgresql' | 'mysql' | 'sqlite';
@@ -98,7 +110,7 @@ export class MigrationHelper {
 
             if (exitCode !== 0) {
                 throw new MigrationError(`Migration ${operation} failed with exit code ${exitCode}`, {
-                    context: { operation, exitCode, stderr: stderr.trim() },
+                    context: { operation, exitCode, stderr: scrubCredentials(stderr.trim()) },
                 });
             }
 

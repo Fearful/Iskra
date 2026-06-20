@@ -20,6 +20,12 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         super();
         const conn = config.connection || {};
 
+        if (conn.endpoint?.startsWith("http://") && conn.useSSL !== false) {
+            throw new Error(
+                "Refusing plaintext S3 endpoint; set useSSL:false to override"
+            );
+        }
+
         this.bucket = conn.bucket || "iskra-storage";
 
         this.client = new S3Client({

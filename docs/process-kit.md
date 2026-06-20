@@ -103,9 +103,11 @@ await pm.kill('extra-worker', 2000);
 
 Lanza un error si no existe ningun proceso con ese nombre.
 
+> **Espera en el peor caso.** Tras enviar SIGTERM, `kill()` espera hasta `gracefulTimeoutMs` antes de escalar a SIGKILL, y despues otorga otra ventana de gracia para que el proceso termine. Por eso la espera maxima antes de que `kill()` (o `stop()`) resuelva es de hasta **~2x `gracefulTimeoutMs`**. Si el proceso sobrevive a **ambas** senales (SIGTERM y SIGKILL), no se descarta en silencio: se registra como huerfano via `app.logger.error` para que la fuga sea observable y puedas hacer limpieza manual.
+
 ## Parada Ordenada
 
-`stop()` (llamado automaticamente por `app.stop()`) envia **SIGTERM** a todos los procesos en paralelo y escala a **SIGKILL** tras el timeout. El timeout por defecto es `5000` ms.
+`stop()` (llamado automaticamente por `app.stop()`) envia **SIGTERM** a todos los procesos en paralelo y escala a **SIGKILL** tras el timeout. El timeout por defecto es `5000` ms. Al igual que `kill()`, la espera maxima por proceso es de hasta **~2x `gracefulTimeoutMs`**, y cualquier proceso que sobreviva a ambas senales se registra como huerfano via `app.logger.error`.
 
 ```typescript
 await app.stop(); // o: await pm.stop(3000) para un timeout de 3 s
@@ -123,9 +125,9 @@ interface ProcessConfig {
     restartCooldown?: number;      // ms; si el uptime supera este valor, el contador se reinicia. default: 60000
     env?: Record<string, string>;  // Variables de entorno adicionales
     restartBackoff?: {
-        initialMs: number;         // Retraso antes del primer reinicio
-        maxMs: number;             // Limite maximo del retraso
-        factor: number;            // Multiplicador aplicado tras cada crash
+        initialMs?: number;        // Retraso antes del primer reinicio. default: 1000
+        maxMs?: number;            // Limite maximo del retraso. default: 30000
+        factor?: number;           // Multiplicador aplicado tras cada reinicio. default: 2
     };
 }
 ```

@@ -62,7 +62,7 @@ describe("MailgunEmailAdapter send/sendTemplate (fetch mocked)", () => {
             cc: "cc@example.com",
             bcc: ["bcc1@example.com", "bcc2@example.com"],
             replyTo: "reply@example.com",
-            headers: { "X-Custom": "yes" },
+            headers: { "List-Id": "yes" },
             attachments: [
                 { filename: "a.txt", content: "hello", contentType: "text/plain" },
                 { filename: "b.bin", content: new TextEncoder().encode("bin") },
@@ -85,7 +85,7 @@ describe("MailgunEmailAdapter send/sendTemplate (fetch mocked)", () => {
         expect(form.get("cc")).toBe("cc@example.com");
         expect(form.get("bcc")).toBe("bcc1@example.com,bcc2@example.com");
         expect(form.get("h:Reply-To")).toBe("reply@example.com");
-        expect(form.get("h:X-Custom")).toBe("yes");
+        expect(form.get("h:List-Id")).toBe("yes");
         expect(form.getAll("attachment")).toHaveLength(2);
         expect((form.get("attachment") as File).name).toBe("a.txt");
     });
@@ -111,24 +111,12 @@ describe("MailgunEmailAdapter send/sendTemplate (fetch mocked)", () => {
             .rejects.toThrow("Mailgun API error (401): Forbidden");
     });
 
-    it("sends a template message with serialized variables", async () => {
+    it("sendTemplate throws instead of silently posting a placeholder", async () => {
         mockFetch(new Response(JSON.stringify({ id: "<tpl-1>", message: "Queued" }), { status: 200 }));
 
-        const result = await makeAdapter().sendTemplate("welcome", "user@example.com", { name: "Ada" });
-        expect(result).toEqual({ messageId: "<tpl-1>", success: true });
-
-        const [, init] = fetchSpy!.mock.calls[0] as [string, any];
-        const form = init.body as FormData;
-        expect(form.get("template")).toBe("welcome");
-        expect(form.get("to")).toBe("user@example.com");
-        expect(JSON.parse(form.get("h:X-Mailgun-Variables") as string)).toEqual({ name: "Ada" });
-        expect(form.get("from")).toBe("Test Sender <noreply@test.com>");
-    });
-
-    it("throws when a template send fails", async () => {
-        mockFetch(new Response("Bad template", { status: 400 }));
-        await expect(makeAdapter().sendTemplate("nope", ["user@example.com"], {}))
-            .rejects.toThrow("Mailgun API error (400): Bad template");
+        await expect(makeAdapter().sendTemplate("welcome", "user@example.com", { name: "Ada" }))
+            .rejects.toThrow("sendTemplate not supported by mailgun");
+        expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("honors a custom baseUrl", async () => {

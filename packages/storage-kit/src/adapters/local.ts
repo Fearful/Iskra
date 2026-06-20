@@ -19,11 +19,21 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
         this.connected = false;
     }
 
+    private resolveWithinBase(filePath: string): string {
+        const sanitizedPath = this.sanitizePath(filePath);
+        const base = path.resolve(this.basePath);
+        const resolved = path.resolve(base, sanitizedPath);
+        if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+            throw new Error(`Path escapes storage root: ${filePath}`);
+        }
+        return resolved;
+    }
+
     async put(filePath: string, data: Uint8Array | Buffer, options?: PutOptions): Promise<StorageFile> {
         this.ensureConnected();
 
         const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        const fullPath = this.resolveWithinBase(filePath);
 
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, data);
@@ -42,8 +52,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async get(filePath: string): Promise<Uint8Array | null> {
         this.ensureConnected();
-        const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        const fullPath = this.resolveWithinBase(filePath);
 
         try {
             return await fs.readFile(fullPath);
@@ -55,8 +64,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async getStream(filePath: string): Promise<ReadableStream | null> {
         this.ensureConnected();
-        const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        const fullPath = this.resolveWithinBase(filePath);
 
         try {
             await fs.access(fullPath);
@@ -69,8 +77,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async delete(filePath: string): Promise<void> {
         this.ensureConnected();
-        const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        const fullPath = this.resolveWithinBase(filePath);
 
         try {
             await fs.unlink(fullPath);
@@ -81,8 +88,12 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async exists(filePath: string): Promise<boolean> {
         this.ensureConnected();
-        const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        let fullPath: string;
+        try {
+            fullPath = this.resolveWithinBase(filePath);
+        } catch {
+            return false;
+        }
         try {
             await fs.access(fullPath);
             return true;
@@ -93,8 +104,12 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async isDirectory(filePath: string): Promise<boolean> {
         this.ensureConnected();
-        const sanitizedPath = this.sanitizePath(filePath);
-        const fullPath = path.join(this.basePath, sanitizedPath);
+        let fullPath: string;
+        try {
+            fullPath = this.resolveWithinBase(filePath);
+        } catch {
+            return false;
+        }
         try {
             const stat = await fs.stat(fullPath);
             return stat.isDirectory();

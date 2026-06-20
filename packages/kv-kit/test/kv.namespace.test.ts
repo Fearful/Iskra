@@ -6,20 +6,8 @@
  * - A manager without a namespace behaves identically to the current behavior
  * - All operations (get/set/del/has) are namespace-aware
  */
-import { describe, it, expect, beforeEach } from 'bun:test';
-import { MemoryAdapter } from '../src/adapters/memory';
+import { describe, it, expect } from 'bun:test';
 import { KVManager } from '../src/manager';
-
-// Helper: create a standalone KVManager backed by a shared MemoryAdapter
-// without requiring an App instance.
-function makeManager(namespace?: string, shared?: MemoryAdapter): KVManager {
-    const mgr = new KVManager({ namespace });
-    // Swap in the shared adapter via connect (adapter is set after init, but
-    // for unit tests we directly invoke connect on the default MemoryAdapter).
-    // Instead we'll rely on the default MemoryAdapter per manager — that's fine
-    // because we want isolation testing.
-    return mgr;
-}
 
 describe('KVManager — namespace isolation', () => {
     it('two namespaced managers on different namespaces do NOT collide', async () => {

@@ -13,7 +13,11 @@ export interface SocketContext<TPayload = unknown, TData extends SocketData = So
     socket: ServerWebSocket<TData>;
     /** Send a message back to this socket only. */
     reply(data: unknown): void;
-    /** Publish data to all sockets subscribed to topic (e.g. 'global'). data is sent as-is. */
+    /**
+     * Publish to all sockets subscribed to topic (e.g. 'global'). The frame is
+     * wrapped in the driver envelope: {event: topic, payload: data}. Subject to
+     * the driver's canPublish authorization hook.
+     */
     broadcast(topic: string, data: unknown): void;
     /** Subscribe this socket to a named room. */
     join(room: string): void;
@@ -28,8 +32,16 @@ export type SocketHandler<TPayload = unknown, TData extends SocketData = SocketD
 export class SocketRouter {
     private handlers: Map<string, SocketHandler> = new Map();
 
-    on(event: string, handler: SocketHandler) {
-        this.handlers.set(event, handler);
+    /**
+     * Register a handler for an event. The generic lets callers pass a handler
+     * with a narrower payload type without an `as SocketHandler` cast; the
+     * handler is stored widened internally.
+     */
+    on<TPayload = unknown, TData extends SocketData = SocketData>(
+        event: string,
+        handler: SocketHandler<TPayload, TData>
+    ) {
+        this.handlers.set(event, handler as SocketHandler);
         return this;
     }
 

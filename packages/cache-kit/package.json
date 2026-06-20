@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/cache-kit",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "Cache de aplicación de alto nivel para Iskra, construido sobre @iskra-bun/kv-kit.",
     "keywords": [
         "iskra",

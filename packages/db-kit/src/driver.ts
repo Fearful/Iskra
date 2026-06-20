@@ -55,10 +55,20 @@ export function scrubUrl(url: string): string | undefined {
     }
 }
 
+/**
+ * The minimal teardown surface {@link DbDriver.stop} probes on the underlying
+ * client. postgres-js and mysql2 expose async `end()`; bun:sqlite and libsql
+ * expose synchronous `close()`. Typed as optional so either shape satisfies it.
+ */
+interface DbClient {
+    end?(): Promise<void>;
+    close?(): void;
+}
+
 export class DbDriver<TSchema extends Record<string, unknown> = Record<string, never>> implements Driver {
     name = 'db';
-    private client: any;
-    public db!: IskraDrizzleDb<TSchema>;
+    private client: DbClient | undefined;
+    public db: IskraDrizzleDb<TSchema> | undefined;
 
     private app: App | undefined;
     private onQuery: OnQueryHook | undefined;
@@ -110,26 +120,32 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
 
         try {
             switch (config.driver) {
-                case 'postgres':
-                    this.client = postgres(config.url);
-                    this.db = drizzle<TSchema>(this.client, { logger });
+                case 'postgres': {
+                    const client = postgres(config.url);
+                    this.client = client;
+                    this.db = drizzle<TSchema>(client, { logger });
                     break;
-                case 'mysql':
-                    this.client = mysql.createPool(config.url);
-                    this.db = drizzleMysql<TSchema>(this.client, { logger });
+                }
+                case 'mysql': {
+                    const client = mysql.createPool(config.url);
+                    this.client = client;
+                    this.db = drizzleMysql<TSchema>(client, { logger });
                     break;
+                }
                 case 'sqlite': {
                     const { Database } = await import("bun:sqlite");
                     const { drizzle: drizzleSqlite } = await import("drizzle-orm/bun-sqlite");
-                    this.client = new Database(config.url);
-                    this.db = drizzleSqlite<TSchema>(this.client, { logger });
+                    const client = new Database(config.url);
+                    this.client = client;
+                    this.db = drizzleSqlite<TSchema>(client, { logger });
                     break;
                 }
                 case 'libsql': {
                     const { createClient } = await import('@libsql/client');
                     const { drizzle: drizzleLibsql } = await import('drizzle-orm/libsql');
-                    this.client = createClient({ url: config.url, authToken: config.authToken });
-                    this.db = drizzleLibsql<TSchema>(this.client, { logger });
+                    const client = createClient({ url: config.url, authToken: config.authToken });
+                    this.client = client;
+                    this.db = drizzleLibsql<TSchema>(client, { logger });
                     break;
                 }
                 default:
@@ -234,15 +250,24 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
     }
 
     async stop() {
-        if (this.client) {
-            // Close connections based on client type
-            if (this.client.end) { // Postgres usage with postgres.js usually handles itself or has end. 
-                // mysql2 has end()
-                await this.client.end();
-            } else if (this.client.close) { // bun:sqlite / libsql
-                this.client.close();
+        const client = this.client;
+        try {
+            // postgres-js / mysql2 expose async end(); bun:sqlite / libsql expose
+            // synchronous close(). Probe for whichever this client provides.
+            if (client?.end) {
+                await client.end();
+            } else if (client?.close) {
+                client.close();
             }
-            // postgres.js handles cleanup usually but explicit close might be needed depending on version/usage
+        } catch (error) {
+            // A throwing teardown must never abort the orderly shutdown of other
+            // drivers; log and continue so the handles below are still cleared.
+            this.app?.logger.error({ error }, 'Failed to close DB connection cleanly');
+        } finally {
+            // Null the handles so a post-stop ping()/transaction() hits the
+            // not-started guard instead of an already-closed connection.
+            this.client = undefined;
+            this.db = undefined;
         }
     }
 }

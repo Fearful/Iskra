@@ -1,6 +1,7 @@
 export {
     createBetterAuth,
     type Auth,
+    type AuthKitDrizzleDb,
     type BetterAuthConfigOptions,
 } from "./better-auth-config";
 

@@ -121,7 +121,12 @@ export class CsrfFeature implements Feature {
                 const bodyToken = body._csrf || body[this.config.cookieName];
                 if (bodyToken && constantTimeEqual(String(bodyToken), expectedToken)) return true;
             }
-        } catch { /* ignored */ }
+        } catch (error) {
+            // A malformed/unparseable body just means no valid body token is
+            // present; fall through to rejection. Surface detail at debug only.
+            const logger = c.get("logger");
+            if (logger?.debug) logger.debug("CSRF body token parse failed", { error });
+        }
 
         return false;
     }

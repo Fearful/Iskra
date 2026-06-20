@@ -52,8 +52,14 @@ export class AuthFeature implements Feature {
     private config: Required<Pick<AuthConfig, "secret" | "basePath">> & AuthConfig;
     private kernel?: Kernel;
     private authMode: "oidc" | "email";
+    private createAuth: typeof createBetterAuth;
 
-    constructor(config: AuthConfig) {
+    // The second parameter is an internal seam: it defaults to the real
+    // createBetterAuth and lets tests inject a fake without globally mocking the
+    // @iskra-bun/auth-kit module (bun's mock.module is process-global and cannot
+    // be restored, which would otherwise leak into auth-kit's own test suite).
+    constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
+        this.createAuth = createAuth;
         this.config = {
             ...config,
             basePath: config.basePath || "/api/sso",
@@ -81,7 +87,14 @@ export class AuthFeature implements Feature {
             throw new Error("DbFeature must expose 'adapter' type (postgres, mysql, sqlite)");
         }
 
-        this.auth = createBetterAuth({
+        // CSRF kill-switch is honored only outside production. Even if a config
+        // ships with disableCSRFCheck enabled, it is neutralized in prod so CSRF
+        // protection cannot be silently turned off in a deployed environment.
+        const disableCSRFCheck = process.env.NODE_ENV !== "production"
+            ? this.config.disableCSRFCheck === true
+            : false;
+
+        this.auth = this.createAuth({
             db,
             adapterType,
             secret: this.config.secret,
@@ -89,12 +102,17 @@ export class AuthFeature implements Feature {
             basePath: this.config.basePath,
             trustedOrigins: this.config.trustedOrigins,
             enableEmailPassword: true,
-            disableCSRFCheck: this.config.disableCSRFCheck,
+            disableCSRFCheck,
             socialProviders: this.config.socialProviders,
             oidcConfig: this.config.oidcConfig,
         });
 
         const app = kernel.getApp();
+
+        // Per-IP rate limiting on the auth routes by default, throttling
+        // credential-stuffing / brute-force against sign-in and sign-up.
+        app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+
         app.use("*", async (c: Context, next: Next) => {
             try {
                 const session = await this.auth!.api.getSession({
@@ -106,12 +124,41 @@ export class AuthFeature implements Feature {
                     c.set("authUser", session.user);
                 }
             } catch (error) {
-                // Ignore session errors (just not logged in)
+                // A failed getSession means "not authenticated" — expected for
+                // anonymous requests. Surface unexpected detail at debug only;
+                // never block the request on a session read.
+                const logger = c.get("logger");
+                if (logger?.debug) logger.debug("Auth session read failed", { error });
             }
             await next();
         });
 
         console.log("✅ Auth feature initialized (better-auth)");
+    }
+
+    // ─── Auth-route rate limiting ────────────────────────────────────────────
+    private authRateLimitHits = new Map<string, { count: number; expiresAt: number }>();
+    private readonly authRateLimitWindowMs = 15 * 60 * 1000;
+    private readonly authRateLimitMax = 20;
+
+    private authRateLimitMiddleware() {
+        return async (c: Context, next: Next) => {
+            const ip = c.req.header("x-forwarded-for")
+                || c.req.header("x-real-ip")
+                || "unknown";
+            const now = Date.now();
+            const entry = this.authRateLimitHits.get(ip);
+
+            const next_entry = !entry || now > entry.expiresAt
+                ? { count: 1, expiresAt: now + this.authRateLimitWindowMs }
+                : { count: entry.count + 1, expiresAt: entry.expiresAt };
+            this.authRateLimitHits.set(ip, next_entry);
+
+            if (next_entry.count > this.authRateLimitMax) {
+                throw new HTTPException(429, { message: "Too many authentication attempts" });
+            }
+            await next();
+        };
     }
 
     routes(app: Hono): void {

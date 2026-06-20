@@ -40,6 +40,8 @@ const kv = new KVManager(); // usa memoria por defecto
 
 ### Redis
 
+`connection` se pasa directamente al cliente `ioredis`, por lo que acepta tanto un objeto de opciones (`RedisOptions`) como una cadena de conexión:
+
 ```typescript
 const app = new App({
     name: 'MiApp',
@@ -47,6 +49,12 @@ const app = new App({
         driver: 'redis',
         connection: { url: process.env.REDIS_URL || 'redis://localhost:6379' },
     },
+});
+
+// O una cadena de conexión:
+const app = new App({
+    name: 'MiApp',
+    kv: { driver: 'redis', connection: 'redis://localhost:6379' },
 });
 ```
 
@@ -88,6 +96,23 @@ if (usuario) {
 ```
 
 Una clave inexistente resuelve a `undefined` (no `null`). Anteriormente el adaptador Redis podía devolver `null` para claves inexistentes; ahora está normalizado en todos los adaptadores.
+
+## Codec de Valores en Redis
+
+El adaptador de Redis usa un único codec consistente para cada escritura y lectura: los valores se serializan con `JSON.stringify` al escribir y se parsean con `JSON.parse` al leer. Esto preserva los tipos de JavaScript, igual que el adaptador de memoria:
+
+```typescript
+await kv.set('numerica', '123'); // string
+typeof (await kv.get('numerica')); // 'string' — NO se convierte en número 123
+
+await kv.set('jsonish', '{}');    // string
+await kv.get('jsonish');          // '{}' — sigue siendo string, NO un objeto vacío
+
+await kv.set('contador', 42);     // number
+typeof (await kv.get('contador')); // 'number'
+```
+
+`undefined` se trata de forma explícita (se almacena como el literal JSON `null` y se decodifica de vuelta a `undefined`), por lo que nunca se corrompe en la cadena `"undefined"`. Valores escritos fuera del adaptador que no sean JSON válido se devuelven tal cual (como cadena).
 
 ## Namespace
 

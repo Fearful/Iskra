@@ -166,8 +166,8 @@ describe('ProcessManager restart backoff – unit (no real waits)', () => {
         for (let i = 1; i < scheduledDelays.length; i++) {
             expect(scheduledDelays[i]).toBeGreaterThan(scheduledDelays[i - 1]);
         }
-        // First delay should be the initial backoff times factor (since process crashed quickly)
-        expect(scheduledDelays[0]).toBe(2000); // 1000 * 2
+        // First delay is exactly initialMs — growth begins on the second restart
+        expect(scheduledDelays[0]).toBe(1000); // initialMs
         // Delays should not exceed maxMs
         for (const d of scheduledDelays) {
             expect(d).toBeLessThanOrEqual(32000);

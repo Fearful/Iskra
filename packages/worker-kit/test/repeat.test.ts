@@ -25,11 +25,19 @@ function injectQueue(wm: WorkerManager, queue: ReturnType<typeof fakeQueue>) {
     (wm as any).app = { logger: { debug: () => {} } };
 }
 
+// enqueue now validates that a handler is registered for the job name; these
+// tests only exercise repeat-forwarding mechanics, so register a no-op handler
+// for whatever name the test enqueues.
+function registerNoop(wm: WorkerManager, ...names: string[]) {
+    for (const name of names) wm.register(name, async () => {});
+}
+
 describe('enqueue with repeat option', () => {
     it('forwards a cron string repeat to Queue.add', async () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'report.daily');
 
         await wm.enqueue('report.daily', { kind: 'daily' }, { repeat: '0 0 * * *' });
 
@@ -41,6 +49,7 @@ describe('enqueue with repeat option', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'heartbeat');
 
         await wm.enqueue('heartbeat', { ok: true }, { repeat: { every: 5000 } });
 
@@ -51,6 +60,7 @@ describe('enqueue with repeat option', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'weekly');
 
         await wm.enqueue('weekly', {}, { repeat: { pattern: '0 0 * * 0', tz: 'UTC', limit: 4 } });
 
@@ -61,6 +71,7 @@ describe('enqueue with repeat option', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'plain');
 
         await wm.enqueue('plain', {});
 
@@ -73,6 +84,7 @@ describe('schedule() convenience method', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'cleanup');
 
         await wm.schedule('cleanup', { scope: 'tmp' }, '*/15 * * * *');
 
@@ -86,6 +98,7 @@ describe('schedule() convenience method', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'poll');
 
         await wm.schedule('poll', {}, { every: 1000 });
 
@@ -96,6 +109,7 @@ describe('schedule() convenience method', () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
         const q = fakeQueue();
         injectQueue(wm, q);
+        registerNoop(wm, 'digest');
 
         await wm.schedule('digest', {}, { every: 60000 }, { priority: 3, attempts: 2 });
 

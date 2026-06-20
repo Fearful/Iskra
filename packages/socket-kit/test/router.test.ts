@@ -109,17 +109,19 @@ describe('SocketContext / SocketHandler type safety', () => {
         expect(typeof handler).toBe('function');
     });
 
-    it('SocketRouter.on() accepts a typed handler cast to the base SocketHandler', () => {
-        // Typed handlers are narrower than SocketHandler<unknown, unknown>. The
-        // router stores the widened type; callers cast when registering, which is
-        // the standard pattern for heterogeneous handler maps.
+    it('SocketRouter.on() registers a narrower typed handler without an `as` cast', () => {
+        // The generic on<TPayload>() must accept a handler narrower than the base
+        // SocketHandler<unknown> WITHOUT a cast at the call site. If on() were
+        // non-generic this line would fail tsc (the regression the fix prevents).
         interface GreetPayload { name: string }
         const router = new SocketRouter();
         let captured = '';
         const handler: SocketHandler<GreetPayload> = async (ctx: SocketContext<GreetPayload>) => {
             captured = ctx.payload.name; // ctx.payload.name is string, not any
         };
-        router.on('greet', handler as SocketHandler);
+        // No cast here — this is the behavior the LOW finding requires.
+        router.on('greet', handler);
+        // getHandler returns the widened base type; the stored handler is identical.
         expect(router.getHandler('greet')).toBe(handler as SocketHandler);
         // Satisfy the captured variable usage so TS does not optimise it away.
         expect(captured).toBe('');

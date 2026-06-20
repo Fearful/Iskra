@@ -29,6 +29,7 @@ describe('enqueue descriptor result()', () => {
             }),
         };
 
+        wm.register('email.send', async () => {});
         const descriptor = await wm.enqueue('email.send', { to: 'x@y.com' });
         expect(descriptor.id).toBe('job-42');
 
@@ -51,6 +52,7 @@ describe('enqueue descriptor result()', () => {
             }),
         };
 
+        wm.register('slow.job', async () => {});
         const descriptor = await wm.enqueue('slow.job', {});
         const result = await descriptor.result(2500);
         expect(result).toBe('ok');
@@ -72,6 +74,8 @@ describe('enqueue descriptor result()', () => {
             }),
         };
 
+        wm.register('a', async () => {});
+        wm.register('b', async () => {});
         const d1 = await wm.enqueue('a', {});
         const d2 = await wm.enqueue('b', {});
         await d1.result();

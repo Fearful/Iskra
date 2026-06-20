@@ -1,10 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { createBetterAuth } from "../src/better-auth-config";
+import { createBetterAuth, type AuthKitDrizzleDb } from "../src/better-auth-config";
 
 // Better Auth's drizzle adapter only wraps the db object at construction time
 // (no connection), so a plain object stands in for a real Drizzle instance here.
 const SECRET = "test-secret-at-least-32-chars-long-xyz";
-const fakeDb = {};
+const fakeDb = {} as unknown as AuthKitDrizzleDb;
 
 describe("createBetterAuth", () => {
     it("builds an auth instance for each supported adapter type", () => {

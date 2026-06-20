@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/config-kit",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "Carga y validacion de configuracion de entorno con Zod para Iskra.",
     "keywords": [
         "iskra",

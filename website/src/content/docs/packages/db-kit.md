@@ -24,19 +24,24 @@ app.register(db);
 
 await app.start();
 
-// Usar Drizzle ORM
-const result = db.db.select().from(users).all();
+// Usar Drizzle ORM — db.db is undefined until the driver starts, so guard it
+const result = db.db!.select().from(users).all();
 ```
+
+`db.db` is typed `IskraDrizzleDb<TSchema> | undefined`: it is `undefined`
+before `app.start()` and again after `stop()`. Guard it (`if (!db.db) ...`),
+use the non-null assertion when you know the app has started, or check
+liveness with [`db.ping()`](#liveness-probe).
 
 ## Supported Drivers
 
 | Driver | Package | Example URL |
 |--------|---------|----------------|
 | `postgres` | postgres.js | `postgres://user:pass@localhost:5432/db` |
-| `mysql` | mysql2 | `mysql://user:pass@localhost:3306/db` |
+| `mysql` | mysql2 (connection pool) | `mysql://user:pass@localhost:3306/db` |
 | `sqlite` | better-sqlite3 / bun:sqlite | `app.db` or `:memory:` |
 
-The `DbDriver` automatically detects whether it is running on Bun and uses `bun:sqlite` instead of `better-sqlite3`.
+The `DbDriver` automatically detects whether it is running on Bun and uses `bun:sqlite` instead of `better-sqlite3`. The `mysql` driver opens a connection pool (`mysql2.createPool`) rather than a single connection.
 
 ## Typed Schema (Generics)
 
@@ -53,8 +58,8 @@ app.register(db);
 
 await app.start();
 
-// db.db is now typed: db.db.query.users.findMany() is fully inferred
-const users = await db.db.query.users.findMany({ where: eq(schema.users.active, true) });
+// db.db is now typed (and still `| undefined` until started — guard it)
+const users = await db.db!.query.users.findMany({ where: eq(schema.users.active, true) });
 ```
 
 The exported helper types `IskraDrizzleDb<TSchema>` and `IskraDrizzleTx<TSchema>`
@@ -151,6 +156,12 @@ await db.runMigrations('./src/db/schema.ts', './drizzle');
 `--schema` and `--out` flags to `drizzle-kit generate` and `--config` to all
 commands. Previously, `schemaPath` and `migrationsDir` were silently ignored
 unless a `drizzle.config.ts` was present in the working directory.
+
+When a migration command exits non-zero, the captured `drizzle-kit` stderr is
+**scrubbed of credentials** before it is attached to `MigrationError.context.stderr`.
+drizzle-kit echoes the full connection string on failure, so any embedded
+`//user:password@host` is rewritten to `//***:***@host` — the rest of the
+diagnostic survives intact, so connection strings never leak into logs.
 
 You can also use `MigrationHelper` directly if you need finer control:
 

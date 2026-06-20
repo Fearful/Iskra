@@ -33,6 +33,7 @@ describe("S3StorageAdapter - construction", () => {
                 accessKey: "minioadmin",
                 secretKey: "minioadmin",
                 bucket: "test-bucket",
+                useSSL: false,
             },
         });
         expect(adapter).toBeDefined();
@@ -75,6 +76,7 @@ describe("S3StorageAdapter - connect failure", () => {
                 accessKey: "fake",
                 secretKey: "fake",
                 bucket: "nonexistent",
+                useSSL: false,
             },
         });
         await expect(adapter.connect()).rejects.toThrow("Failed to connect");
@@ -338,7 +340,7 @@ describe("S3StorageAdapter - factory integration", () => {
     it("StorageFeature can be constructed with s3 adapter (import check)", async () => {
         const feature = new S3StorageAdapter({
             adapter: "s3",
-            connection: { endpoint: "http://localhost:9000", accessKey: "x", secretKey: "x", bucket: "b" },
+            connection: { endpoint: "http://localhost:9000", accessKey: "x", secretKey: "x", bucket: "b", useSSL: false },
         });
         expect(feature).toBeDefined();
     });

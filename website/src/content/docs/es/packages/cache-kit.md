@@ -47,9 +47,18 @@ const exists = await cache.has('user:1');
 // Eliminar
 await cache.delete('user:1');
 
-// Limpiar todo
+// Vacía todo el backing store (solo en la cache raíz — ver advertencia abajo)
 await cache.clear();
 ```
+
+> **Advertencia — `clear()` reinicia todo el store, no es por namespace.** Recicla
+> el adaptador (`disconnect()`/`connect()`), borrando **todas** las claves del
+> backing store compartido por esta cache y cualquier otra `Cache` construida sobre
+> el mismo adaptador — en todos los namespaces. Para evitar que una sub-cache con
+> namespace vacíe silenciosamente a sus hermanas, `clear()` **lanza un error** cuando
+> hay un prefijo de namespace; solo es válido en una `Cache` raíz. Para limpiar un
+> único namespace, elimina claves individualmente con `delete()` o invalida un grupo
+> con `invalidateTag()`.
 
 ## Cache-Aside: remember() / wrap()
 

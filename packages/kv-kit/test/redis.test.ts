@@ -89,19 +89,21 @@ describe("RedisAdapter", () => {
     });
 
     it("passes EX ttl through to the client when a ttl is given", async () => {
+        // Values are JSON-encoded on write, so the string "token" is stored as
+        // its JSON form '"token"'. The assertion targets the EX/ttl plumbing.
         await adapter.set("session", "token", 60);
-        expect(fake.setCalls).toEqual([["session", "token", "EX", 60]]);
+        expect(fake.setCalls).toEqual([["session", JSON.stringify("token"), "EX", 60]]);
     });
 
     it("omits the EX argument when no ttl is given", async () => {
         await adapter.set("perm", "value");
-        expect(fake.setCalls).toEqual([["perm", "value"]]);
+        expect(fake.setCalls).toEqual([["perm", JSON.stringify("value")]]);
     });
 
     it("treats ttl of 0 as no expiry (falsy)", async () => {
         // The adapter guards with `if (ttl)`, so 0 must not add EX.
         await adapter.set("zero", "v", 0);
-        expect(fake.setCalls).toEqual([["zero", "v"]]);
+        expect(fake.setCalls).toEqual([["zero", JSON.stringify("v")]]);
     });
 
     it("deletes a key", async () => {
@@ -126,9 +128,8 @@ describe("RedisAdapter", () => {
         expect(fake.disconnected).toBe(true);
     });
 
-    it("serializes a number value via String() and parses it back via JSON.parse", async () => {
-        // typeof 42 !== 'object', so it is stored as String(value) = "42".
-        // JSON.parse('42') still yields the number 42 on read.
+    it("serializes a number value via JSON and parses it back as a number", async () => {
+        // JSON.stringify(42) === "42"; JSON.parse("42") yields the number 42.
         await adapter.set<number>("count", 42);
         expect(fake.store.get("count")).toBe("42");
         expect(await adapter.get<number>("count")).toBe(42);

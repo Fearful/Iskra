@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/mailer-kit",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "Envio de correo de Iskra, agnostico del transporte, con adaptadores de SMTP, SendGrid, Mailgun y SES.",
     "keywords": [
         "iskra",

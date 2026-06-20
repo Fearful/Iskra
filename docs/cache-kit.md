@@ -44,9 +44,18 @@ const exists = await cache.has('user:1');
 // Eliminar
 await cache.delete('user:1');
 
-// Vaciar todo
+// Vacia todo el backing store (solo en la cache raiz — ver advertencia abajo)
 await cache.clear();
 ```
+
+> **Advertencia — `clear()` reinicia todo el store, no es por namespace.** Recicla
+> el adaptador (`disconnect()`/`connect()`), borrando **todas** las claves del
+> backing store compartido por esta cache y cualquier otra `Cache` construida sobre
+> el mismo adaptador — en todos los namespaces. Para evitar que una sub-cache con
+> namespace vacie silenciosamente a sus hermanas, `clear()` **lanza un error** cuando
+> hay un prefijo de namespace; solo es valido en una `Cache` raiz. Para limpiar un
+> unico namespace, elimina claves individualmente con `delete()` o invalida un grupo
+> con `invalidateTag()`.
 
 ## Cache-aside: remember() / wrap()
 
@@ -60,7 +69,7 @@ const data = await cache.remember('dashboard:stats', 60, async () => {
 const data2 = await cache.wrap('dashboard:stats', 60, async () => db.query('...'));
 ```
 
-El fallback se llama **exactamente una vez** por miss. Las llamadas concurrentes no multiplican las llamadas al fallback porque la segunda llamada ya encuentra el valor en cache tras el primer store.
+El fallback se llama **exactamente una vez** por miss — nunca en un hit. No hay deduplicacion de llamadas concurrentes: dos `remember()` que arranquen antes del primer `set()` veran ambos un miss y llamaran cada uno al fallback.
 
 ## Namespacing
 

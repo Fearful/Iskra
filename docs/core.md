@@ -69,6 +69,22 @@ childLogger.info('Procesando pago');
 
 Se configura con `logger.level` en la config de la app.
 
+### Redaccion de secretos
+
+El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Cualquier campo estructurado que coincida con estos paths se reemplaza por `[REDACTED]`:
+
+`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+
+Esto hace que sea seguro loguear objetos de config o de error completos: las credenciales se eliminan antes de escribir la linea.
+
+```typescript
+app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');
+// => { "password": "[REDACTED]", "userId": 123, "msg": "Login" }
+
+app.logger.info({ config: { env: { DB_URL: '...' } } }, 'Config cargada');
+// => config.env aparece como "[REDACTED]"
+```
+
 ## Configuracion
 
 La config se carga con c12, que soporta archivos `.env` y `app.config.ts`:
@@ -98,6 +114,21 @@ interface AppConfig {
     kv?: { driver: 'memory' | 'redis' | 'libsql'; connection?: any };
     processes?: Record<string, ProcessConfig>;
     [key: string]: any; // extensible
+}
+```
+
+### RestartBackoffConfig
+
+Cada entrada de `processes` acepta un `restartBackoff` opcional que controla el backoff exponencial entre reinicios. Todos sus campos son opcionales y tienen valores por defecto:
+
+```typescript
+interface RestartBackoffConfig {
+    /** Demora inicial en ms antes del primer reinicio. Default: 1000 */
+    initialMs?: number;
+    /** Tope maximo de demora en ms. Default: 30000 */
+    maxMs?: number;
+    /** Multiplicador aplicado a la demora tras cada reinicio. Default: 2 */
+    factor?: number;
 }
 ```
 

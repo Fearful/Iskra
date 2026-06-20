@@ -46,6 +46,9 @@ const storage = await createStorageAdapter({
 });
 ```
 
+Un endpoint `http://` en texto plano se rechaza al construir el adaptador, salvo
+que lo habilites de forma explicita con `useSSL: false` (ver [Seguridad](#seguridad)).
+
 ### MinIO
 
 ```typescript
@@ -93,6 +96,62 @@ await storage.delete(path);
 // Verificar si la ruta es un directorio
 const isDir = await storage.isDirectory(path);
 ```
+
+## Seguridad
+
+### Proteccion contra path traversal
+
+Las claves de objeto se sanean antes de cualquier operacion de E/S: las barras
+invertidas se normalizan a `/`, y los segmentos vacios o compuestos solo por puntos
+(`.`, `..`, `....`) se eliminan. Ademas, el adaptador local resuelve la ruta final
+y verifica que permanezca dentro de `basePath`. Cualquier clave que intente escapar
+de la raiz de almacenamiento lanza un error:
+
+```typescript
+await storage.put('../../etc/passwd', data);
+// Error: Path escapes storage root: ../../etc/passwd
+```
+
+Como las claves nunca pueden escapar de `basePath`, es seguro pasar claves derivadas
+del usuario directamente a `put`, `get`, `getStream`, `delete` y los demas metodos.
+Aun asi, se recomienda validar el formato de las claves en el limite de tu
+aplicacion como defensa en profundidad.
+
+### Endpoints S3 seguros por defecto
+
+El adaptador de S3 rechaza un endpoint `http://` en texto plano para evitar enviar
+credenciales y datos sin cifrar:
+
+```typescript
+new S3StorageAdapter({
+    adapter: 'minio',
+    connection: { endpoint: 'http://insecure.example.com:9000', /* ... */ },
+});
+// Error: Refusing plaintext S3 endpoint; set useSSL:false to override
+```
+
+Los endpoints `https://` funcionan sin ningun flag adicional. Para usar un endpoint
+en texto plano a proposito (por ejemplo, una instancia local de MinIO), habilitalo
+de forma explicita:
+
+```typescript
+const storage = await createStorageAdapter({
+    adapter: 'minio',
+    connection: {
+        endpoint: 'http://localhost:9000',
+        accessKey: process.env.MINIO_ACCESS_KEY,
+        secretKey: process.env.MINIO_SECRET_KEY,
+        bucket: process.env.MINIO_BUCKET,
+        useSSL: false,
+    },
+});
+```
+
+### Nombres de archivo generados impredecibles
+
+Cuando el kit genera un nombre de archivo, el componente aleatorio proviene de una
+fuente criptograficamente fuerte (`crypto.randomUUID()`), no de `Math.random()`, de
+modo que los nombres generados no pueden predecirse ni enumerarse.
 
 ## Variables de Entorno
 

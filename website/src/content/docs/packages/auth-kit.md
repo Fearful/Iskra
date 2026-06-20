@@ -11,14 +11,32 @@ Transport-agnostic authentication integration powered by [better-auth](https://w
 import { createBetterAuth } from '@iskra-bun/auth-kit';
 
 const auth = createBetterAuth({
-    db,                       // instancia de Drizzle
+    db,                       // Drizzle instance
     adapterType: 'postgres',  // 'postgres' | 'mysql' | 'sqlite'
-    secret: process.env.AUTH_SECRET!,
-    baseURL: 'https://mi-app.com',
+    secret: process.env.AUTH_SECRET!,  // >= 32 chars, from an env var
+    baseURL: 'https://my-app.com',
 });
 
 // Verify the session from any transport
 const session = await auth.api.getSession({ headers });
+```
+
+## Signing secret (required, >= 32 characters)
+
+The `secret` signs sessions, so it **must** be at least 32 characters long. Construction **throws** if the secret is empty or shorter, before better-auth ever sees it, rather than silently building an insecure auth instance:
+
+```typescript
+createBetterAuth({ db, adapterType: 'postgres', secret: '' });        // throws
+createBetterAuth({ db, adapterType: 'postgres', secret: 'short' });   // throws
+```
+
+Always supply the secret from an environment variable; never hardcode it:
+
+```typescript
+const secret = process.env.AUTH_SECRET;
+if (!secret) throw new Error('AUTH_SECRET is not configured');
+
+const auth = createBetterAuth({ db, adapterType: 'postgres', secret });
 ```
 
 ## Database adapters
@@ -61,11 +79,34 @@ const auth = createBetterAuth({
         clientId: process.env.OIDC_CLIENT_ID!,
         clientSecret: process.env.OIDC_CLIENT_SECRET!,
         issuer: 'https://idp.example.com',
+        // optional endpoints/scopes are derived from the issuer if omitted
     },
 });
 ```
 
+PKCE is **enabled by default** (`pkce: true`) for the generic OAuth/OIDC provider. This protects against authorization-code interception and injection. It is only turned off with an explicit `false`:
+
+```typescript
+oidcConfig: {
+    clientId, clientSecret, issuer,
+    pkce: false,  // explicit opt-out; not recommended
+},
+```
+
 You can also configure better-auth's native social providers via `socialProviders`.
+
+## Session cookie cache
+
+Sessions use a cookie cache to avoid a database lookup on every request. `cookieCacheMaxAge` (in seconds, default `300` = 5 minutes) controls how long that cache lives. It is also the revocation window: a revoked session keeps passing the cached checks until the entry expires. Lower it to tighten that window, at the cost of more frequent database lookups:
+
+```typescript
+const auth = createBetterAuth({
+    db,
+    adapterType: 'postgres',
+    secret,
+    cookieCacheMaxAge: 30,  // 30-second revocation window
+});
+```
 
 ## Drizzle schema
 
@@ -82,5 +123,6 @@ import { pgSchema, mysqlSchema, sqliteSchema } from '@iskra-bun/auth-kit';
 ## Environment Variables
 
 ```bash
-AUTH_SECRET=a-key-of-at-least-32-characters
+# Must be at least 32 characters; use a random, secret value
+AUTH_SECRET=replace-with-32-or-more-random-characters
 ```

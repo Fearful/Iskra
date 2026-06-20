@@ -43,6 +43,8 @@ const kv = new KVManager(); // usa memoria por defecto
 
 ### Redis
 
+`connection` is passed straight to the `ioredis` client, so it accepts either an options object (`RedisOptions`) or a connection string:
+
 ```typescript
 const app = new App({
     name: 'MiApp',
@@ -50,6 +52,12 @@ const app = new App({
         driver: 'redis',
         connection: { url: process.env.REDIS_URL || 'redis://localhost:6379' },
     },
+});
+
+// Or a connection string:
+const app = new App({
+    name: 'MiApp',
+    kv: { driver: 'redis', connection: 'redis://localhost:6379' },
 });
 ```
 
@@ -91,6 +99,23 @@ if (user) {
 ```
 
 A missing key resolves to `undefined` (not `null`). Previously the Redis adapter could return `null` for missing keys; this is now normalised across all adapters.
+
+## Redis Value Codec
+
+The Redis adapter uses a single consistent codec for every write and read: values are serialised with `JSON.stringify` on write and parsed with `JSON.parse` on read. This preserves JavaScript types, matching the in-memory adapter:
+
+```typescript
+await kv.set('numeric', '123'); // string
+typeof (await kv.get('numeric')); // 'string' — NOT coerced to the number 123
+
+await kv.set('jsonish', '{}');    // string
+await kv.get('jsonish');          // '{}' — still a string, NOT an empty object
+
+await kv.set('count', 42);        // number
+typeof (await kv.get('count'));   // 'number'
+```
+
+`undefined` is handled explicitly (stored as the JSON `null` literal and decoded back to `undefined`), so it can never be corrupted into the string `"undefined"`. Values written outside the adapter that are not valid JSON are returned as-is (as a string).
 
 ## Namespace
 

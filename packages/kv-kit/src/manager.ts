@@ -76,14 +76,20 @@ export class KVManager implements Driver, KVAdapter {
         return this.adapter.has(this.prefixed(key));
     }
 
-    // Batch operations — implemented at manager level so KVAdapter stays unchanged
-    // and existing implementers (e.g. cache-kit's MemoryAdapter) are unaffected.
-    //
-    // Follow-up: RedisAdapter could override these with native MGET/MSET for
-    // better throughput at scale.
+    // Batch operations. When the underlying adapter exposes a native batch
+    // method, the manager delegates to it (a single round-trip) after applying
+    // the namespace prefix; otherwise it falls back to a per-key loop. This
+    // keeps the optional adapter methods out of the hot path for adapters that
+    // do not implement them while avoiding the N+1 fan-out for those that do.
 
     async mget<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-        return Promise.all(keys.map(k => this.get<T>(k)));
+        const prefixed = keys.map(k => this.prefixed(k));
+
+        if (this.adapter.mget) {
+            return this.adapter.mget<T>(prefixed);
+        }
+
+        return Promise.all(prefixed.map(k => this.adapter.get<T>(k)));
     }
 
     async mset<T = unknown>(
@@ -94,10 +100,26 @@ export class KVManager implements Driver, KVAdapter {
             ? entries
             : (Object.entries(entries) as Array<[string, T]>);
 
-        await Promise.all(pairs.map(([k, v]) => this.set<T>(k, v, ttl)));
+        const prefixed: Array<[string, T]> = pairs.map(
+            ([k, v]) => [this.prefixed(k), v] as [string, T]
+        );
+
+        if (this.adapter.mset) {
+            await this.adapter.mset<T>(prefixed, ttl);
+            return;
+        }
+
+        await Promise.all(prefixed.map(([k, v]) => this.adapter.set<T>(k, v, ttl)));
     }
 
     async mdel(keys: string[]): Promise<void> {
-        await Promise.all(keys.map(k => this.del(k)));
+        const prefixed = keys.map(k => this.prefixed(k));
+
+        if (this.adapter.mdel) {
+            await this.adapter.mdel(prefixed);
+            return;
+        }
+
+        await Promise.all(prefixed.map(k => this.adapter.del(k)));
     }
 }

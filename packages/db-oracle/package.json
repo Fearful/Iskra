@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/db-oracle",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Soporte para Oracle Database en Iskra (via puente/sidecar).",
     "keywords": [
         "iskra",

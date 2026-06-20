@@ -71,6 +71,8 @@ export default defineConfig({
                     translations: { es: 'Guías' },
                     items: [
                         { slug: 'guides/migrations' },
+                        { slug: 'guides/security' },
+                        { slug: 'guides/upgrading-to-0-2' },
                         { slug: 'guides/deployment' },
                         { slug: 'guides/sdks' },
                         { slug: 'templates' },

@@ -16,7 +16,7 @@ export class HealthCheckFeature implements Feature {
             path: config.path || "/health",
             readinessPath: config.readinessPath || "/health/ready",
             livenessPath: config.livenessPath || "/health/live",
-            includeDetails: config.includeDetails !== undefined ? config.includeDetails : true,
+            includeDetails: config.includeDetails !== undefined ? config.includeDetails : false,
             checks: config.checks,
         };
         const initial = config.readinessChecks ?? {};
@@ -65,7 +65,10 @@ export class HealthCheckFeature implements Feature {
                     try {
                         customChecks[name] = await check(c);
                     } catch (error) {
-                        customChecks[name] = { status: "error", error: String(error) };
+                        // Log the detail server-side; never serialize the raw error
+                        // (it may embed connection strings or other secrets) to the client.
+                        console.error(`Health custom check "${name}" failed:`, error);
+                        customChecks[name] = { status: "error" };
                     }
                 }
                 response.customChecks = customChecks;
@@ -84,7 +87,10 @@ export class HealthCheckFeature implements Feature {
                 report[key] = { status: "ok" };
             }
         } catch (e) {
-            report[key] = { status: "error", error: String(e) };
+            // Log server-side; return only a generic status so DB/cache error
+            // strings (which can carry connection details) never reach the client.
+            console.error(`Health feature check "${key}" failed:`, e);
+            report[key] = { status: "error" };
         }
     }
 

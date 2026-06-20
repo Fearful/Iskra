@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Kernel } from "../src/kernel";
-import { EmailFeature, MockEmailAdapter, type EmailAdapter } from "../src/features/email";
+import { EmailFeature, type EmailAdapter } from "../src/features/email";
 
 describe("Email Feature", () => {
     it("should initialize with mock provider", async () => {
@@ -9,9 +9,12 @@ describe("Email Feature", () => {
         kernel.registerFeature(email);
         await kernel.initialize();
 
+        // getAdapter returns a validating wrapper around the underlying adapter;
+        // it exposes the EmailAdapter contract (send / sendTemplate).
         const adapter = email.getAdapter();
         expect(adapter).toBeDefined();
-        expect(adapter).toBeInstanceOf(MockEmailAdapter);
+        expect(typeof adapter.send).toBe("function");
+        expect(typeof adapter.sendTemplate).toBe("function");
 
         await kernel.shutdown();
     });

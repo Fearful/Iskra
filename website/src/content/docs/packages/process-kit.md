@@ -106,9 +106,11 @@ await pm.kill('extra-worker', 2000);
 
 Throws if no process with that name exists.
 
+> **Worst-case wait.** After sending SIGTERM, `kill()` waits up to `gracefulTimeoutMs` before escalating to SIGKILL, then allows a further grace window for the process to actually exit. As a result the maximum wait before `kill()` (or `stop()`) resolves is up to **~2x `gracefulTimeoutMs`**. If the process survives **both** signals (SIGTERM and SIGKILL), it is not dropped silently: it is logged as an orphan via `app.logger.error` so the leak is observable and you can clean it up manually.
+
 ## Graceful Shutdown
 
-`stop()` (called automatically by `app.stop()`) sends **SIGTERM** to all running processes in parallel and escalates to **SIGKILL** after the timeout. The default timeout is `5000` ms.
+`stop()` (called automatically by `app.stop()`) sends **SIGTERM** to all running processes in parallel and escalates to **SIGKILL** after the timeout. The default timeout is `5000` ms. Like `kill()`, the per-process worst-case wait is up to **~2x `gracefulTimeoutMs`**, and any process that survives both signals is logged as an orphan via `app.logger.error`.
 
 ```typescript
 await app.stop(); // or: await pm.stop(3000) for a 3 s timeout
@@ -126,9 +128,9 @@ interface ProcessConfig {
     restartCooldown?: number;      // ms; if process uptime exceeds this, restart counter resets. default: 60000
     env?: Record<string, string>;  // Additional environment variables
     restartBackoff?: {
-        initialMs: number;         // Delay before first restart
-        maxMs: number;             // Maximum delay cap
-        factor: number;            // Multiplier applied after each crash
+        initialMs?: number;        // Delay before first restart. default: 1000
+        maxMs?: number;            // Maximum delay cap. default: 30000
+        factor?: number;           // Multiplier applied after each restart. default: 2
     };
 }
 ```

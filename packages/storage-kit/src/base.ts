@@ -81,15 +81,16 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     protected generateFileName(originalName: string): string {
         const ext = originalName.split(".").pop();
         const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 15);
+        const random = crypto.randomUUID().replace(/-/g, "");
         return `${timestamp}-${random}.${ext}`;
     }
 
     protected sanitizePath(path: string): string {
-        return path
-            .replace(/^\/+/, "")
-            .replace(/\/+/g, "/")
-            .replace(/\\/g, "/");
+        const normalized = path.replace(/\\/g, "/");
+        const segments = normalized
+            .split("/")
+            .filter((segment) => segment !== "" && !/^\.+$/.test(segment));
+        return segments.join("/");
     }
 
     protected getMimeType(filename: string): string {

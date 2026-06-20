@@ -50,10 +50,6 @@ export interface JobOptions {
     repeat?: RepeatSpec;
 }
 
-export interface JobData {
-    [key: string]: any;
-}
-
 /**
  * Handler de un job. Puede devolver un valor `R` que queda disponible como
  * resultado del job (recuperable vía `job.waitUntilFinished`). Devolver `void`

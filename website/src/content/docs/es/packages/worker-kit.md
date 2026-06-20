@@ -83,6 +83,28 @@ await worker.enqueue('payment.process', { orderId: 456 }, {
 });
 ```
 
+## Validacion de Entrada
+
+`enqueue` valida la entrada **antes** de tocar Redis, para evitar que entrada no confiable inunde la queue o almacene payloads gigantes. Cualquier problema lanza `QueueError` y el job nunca llega a la queue:
+
+- **Handler desconocido:** el `name` debe corresponder a un handler ya registrado con `register`. Si no, lanza `QueueError` (`No handler registered for job "<name>"`).
+- **Payload sobredimensionado:** `data` se serializa a JSON y se rechaza si supera el tope de ~1 MB (`Job "<name>" payload too large: <bytes> bytes (max 1048576)`). Un `data` no serializable tambien lanza `QueueError`.
+- **RepeatSpec invalida:** una spec de repeticion vacia, un `{ every }` no positivo o un cron en blanco lanzan `QueueError`.
+
+```typescript
+import { QueueError } from '@iskra-bun/worker-kit';
+
+try {
+    await worker.enqueue('handler.no.registrado', { ok: true });
+} catch (err) {
+    if (err instanceof QueueError) {
+        // "No handler registered for job "handler.no.registrado""
+    }
+}
+```
+
+`schedule` delega en `enqueue`, asi que hereda exactamente las mismas validaciones.
+
 ## Payloads Tipados
 
 `register` y `enqueue` aceptan parametros de tipo para que `job.data` y el valor de retorno sean completamente tipados. Por defecto son `unknown`/`void`, por lo que el codigo existente sin tipos sigue funcionando sin cambios.
@@ -205,6 +227,21 @@ interface JobDescriptor<T, R> {
 ```
 
 `result()` abre una conexion `QueueEvents` compartida de forma perezosa en la primera llamada. Si el job falla, `result()` rechaza con el error de fallo.
+
+### result() antes de stop()
+
+`result()` requiere una conexion `QueueEvents` viva, que el manager abre de forma perezosa. Una vez que llamas a `stop()`, esa conexion (y la queue) se cierran, y cualquier llamada posterior a `result()` **rechaza con `QueueError`** (`WorkerManager is stopped; cannot open QueueEvents`) en lugar de abrir una conexion huerfana que nunca se cerraria.
+
+Por eso, **espera el resultado del job antes de llamar a `stop()`**:
+
+```typescript
+const descriptor = await worker.enqueue('email.send', { to: 'user@example.com' });
+const result = await descriptor.result(10_000); // OK: antes de stop()
+
+await worker.stop();
+
+await descriptor.result(); // rechaza con QueueError: el manager esta detenido
+```
 
 ## Manejo de Dead-Letter
 

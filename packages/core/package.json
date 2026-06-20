@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/core",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Nucleo del framework Iskra: App, DI, eventos, logger, errores.",
     "keywords": [
         "iskra",

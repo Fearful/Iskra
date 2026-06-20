@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/web-kit",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Servidor HTTP de Iskra basado en Hono, con Kernel y features (auth, cors, db, health, etc.).",
     "keywords": [
         "iskra",

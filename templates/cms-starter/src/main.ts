@@ -2,6 +2,7 @@ import { App } from '@iskra-bun/core';
 import { WebPlugin } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { config } from './app.config.ts';
+import { content, contentVersions } from './db/schema.ts';
 import { ContentService } from './domain/content/content.service.ts';
 import { createContentRouter } from './interfaces/http/router.ts';
 
@@ -13,7 +14,7 @@ const app = new App({
     },
 });
 
-const db = new DbDriver();
+const db = new DbDriver<{ content: typeof content; contentVersions: typeof contentVersions }>();
 const contentService = new ContentService(db);
 
 // El DbDriver debe iniciar antes que el WebPlugin para que el servicio tenga conexion.

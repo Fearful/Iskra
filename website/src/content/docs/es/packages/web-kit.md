@@ -9,7 +9,7 @@ El web-kit provee un servidor HTTP basado en Hono con un sistema modular de feat
 
 ```typescript
 import { App } from '@iskra-bun/core';
-import { WebPlugin, CorsFeature, HealthFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, CorsFeature, HealthCheckFeature } from '@iskra-bun/web-kit';
 
 const app = new App({ name: 'MiAPI' });
 
@@ -17,7 +17,7 @@ const web = new WebPlugin({
     port: 3000,
     features: [
         new CorsFeature({ origin: '*' }),
-        new HealthFeature(),
+        new HealthCheckFeature(),
     ],
     router: (hono) => {
         hono.get('/api/users', (c) => c.json({ users: [] }));
@@ -31,6 +31,30 @@ const web = new WebPlugin({
 app.register(web);
 await app.start();
 ```
+
+## WebDriver (servidor standalone)
+
+`WebDriver` es un driver liviano basado en OpenAPIHono para exponer rutas tipadas sin el Kernel de features. Acepta `{ port, routes }` (antes se llamaba `WebServer` — **cambio incompatible**, actualiza tus imports).
+
+```typescript
+import { WebDriver } from '@iskra-bun/web-kit';
+
+const driver = new WebDriver({
+    port: 3000,
+    routes: [
+        {
+            method: 'GET',
+            path: '/api/users',
+            handler: async (ctx) => ({ users: [] }),
+        },
+    ],
+});
+
+app.register(driver);
+await app.start();
+```
+
+Aplica los mismos headers de seguridad estandar que el stack HTTP del Kernel. Los errores lanzados por un handler se registran en el servidor; al cliente solo se le devuelve `{ error: 'Internal Server Error' }` con status 500 (nunca se serializa el mensaje crudo, que podria filtrar connection strings u otros secretos).
 
 ## Kernel
 
@@ -55,7 +79,7 @@ El `Kernel` es el micro-kernel que orquesta las features web:
 | `CacheFeature` | Cache con Redis o memoria |
 | `SessionFeature` | Sesiones (DB, cache, o memoria) |
 | `PermissionsFeature` | RBAC (roles y permisos) |
-| `HealthFeature` | Health checks (readiness/liveness) |
+| `HealthCheckFeature` | Health checks (readiness/liveness) |
 | `OpenAPIFeature` | Documentacion Swagger/OpenAPI |
 | `LoggerFeature` | Logging de request/response |
 | `ErrorHandlerFeature` | Manejo centralizado de errores |
@@ -95,6 +119,17 @@ health.addReadinessCheck('db', async () => {
 
 Si algun check registrado retorna `false` o lanza una excepcion, `/health/ready` responde con **503** e incluye los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
 
+### Detalles del endpoint /health
+
+Por defecto `includeDetails` es **`false`** (cambio respecto a versiones previas). El endpoint `/health` sin autenticar ya no expone la lista interna de features ni strings de error crudos: los errores se registran en el servidor y la respuesta es generica (`{ status: "ok", timestamp }`).
+
+Para incluir el detalle de features y checks, activa `includeDetails: true`. Como esto revela informacion interna, **gatea el endpoint detras de autenticacion**:
+
+```typescript
+const health = new HealthCheckFeature({ includeDetails: true });
+// Exponer solo en una ruta protegida — no en el /health publico
+```
+
 ## Errores HTTP
 
 ```typescript
@@ -128,7 +163,29 @@ El Kernel aplica headers de seguridad por defecto:
 
 Se pueden personalizar via `KernelConfig.security`.
 
-**Notas de hardening de seguridad:** Los tokens CSRF ahora estan firmados criptograficamente (antes no firmados). Los identificadores de API keys ya no incluyen el prefijo de la key en las respuestas para reducir exposicion accidental.
+**Notas de hardening de seguridad:**
+
+- **CSRF (`CsrfFeature`):** double-submit cookie firmada con HMAC-SHA256 bajo el `secret` configurado y comparada en tiempo constante. Un token sin firma o ajeno se rechaza antes de cualquier comparacion. El kill-switch `disableCSRFCheck` se **ignora en produccion** (`NODE_ENV === 'production'`), por lo que la proteccion CSRF no puede desactivarse silenciosamente en un entorno desplegado.
+- **API keys (`ApiKeyFeature`):** la clave de cache es un hash **SHA-256** de la key (la key en claro nunca se persiste en el cache, p. ej. Redis). Los `id` de las API keys son aleatorios (UUID) y no filtran ningun prefijo del secreto. La comparacion de keys es en tiempo constante.
+- **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar. Ver la seccion de Auth.
+
+## Auth
+
+`AuthFeature` envuelve Better Auth (impulsado por [`@iskra-bun/auth-kit`](/packages/auth-kit/)) y depende de `DbFeature`. Soporta los modos `email` (email/password) y `oidc`.
+
+```typescript
+import { AuthFeature } from '@iskra-bun/web-kit';
+
+new AuthFeature({
+    secret: process.env.AUTH_SECRET!, // requerido, >= 32 caracteres
+    basePath: '/api/sso',             // default
+    authMode: 'email',
+});
+```
+
+- El `secret` firma las sesiones y **debe tener al menos 32 caracteres**; uno mas corto o vacio lanza un error al inicializar.
+- Las rutas de auth (`{basePath}/*`) tienen rate limiting por IP por defecto (20 intentos / 15 min) para frenar credential stuffing.
+- Usa `requireAuth(kernel)` como middleware para proteger rutas que requieren sesion.
 
 ## Respuestas Estandarizadas
 

@@ -43,11 +43,13 @@ describe("OracleDriver", () => {
 describe("OracleDriver bridge protocol", () => {
     const prevConn = process.env.ORA_CONN;
     let driver: OracleDriver;
+    let app: App;
 
     beforeAll(async () => {
         process.env.ORA_CONN = "fake://localhost/test";
+        app = makeApp();
         driver = new OracleDriver(FAKE_BRIDGE);
-        await driver.init(makeApp());
+        await driver.init(app);
         await driver.start();
     });
 
@@ -81,7 +83,9 @@ describe("OracleDriver bridge protocol", () => {
     });
 
     test("recovers from a malformed line emitted by the bridge", async () => {
-        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+        const errSpy = spyOn(app.logger, "error").mockImplementation(
+            (() => {}) as any,
+        );
         try {
             const rows = await driver.query("BAD_JSON_TEST");
             expect(rows).toEqual([{ recovered: true }]);
@@ -92,7 +96,9 @@ describe("OracleDriver bridge protocol", () => {
     });
 
     test("a fatal message rejects all pending promises including the triggering query", async () => {
-        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+        const errSpy = spyOn(app.logger, "error").mockImplementation(
+            (() => {}) as any,
+        );
         try {
             // Fire the fatal-triggering query and capture (don't await) so we can
             // assert it rejects rather than hangs.

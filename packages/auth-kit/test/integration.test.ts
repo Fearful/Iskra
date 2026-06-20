@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { createBetterAuth } from "../src/better-auth-config";
+import { createBetterAuth, type AuthKitDrizzleDb } from "../src/better-auth-config";
 
 // End-to-end exercise of the better-auth drizzle adapter against a REAL database.
 // sqlite runs locally and in-memory (bun:sqlite), so this stays infra-free and
@@ -111,7 +111,7 @@ describe("createBetterAuth against a real sqlite database", () => {
 describe.if(pgUp)("createBetterAuth against a real postgres database (requires Postgres)", () => {
     it("builds a postgres-backed auth instance that exposes getSession", () => {
         const auth = createBetterAuth({
-            db: {},
+            db: {} as unknown as AuthKitDrizzleDb,
             adapterType: "postgres",
             secret: SECRET,
         });

@@ -76,17 +76,15 @@ describe("SesEmailAdapter", () => {
             .rejects.toThrow("From address required");
     });
 
-    it("sendTemplate() delegates to send() and resolves success", async () => {
+    it("sendTemplate() throws instead of silently sending a placeholder", async () => {
         const { sent, client, sendEmailCommand } = makeMocks();
         const adapter = new SesEmailAdapter(
             { provider: "ses", from: { email: "no-reply@iskra.dev" } },
             { client, sendEmailCommand },
         );
 
-        const result = await adapter.sendTemplate("welcome", "user@example.com", { name: "Ada" });
-
-        expect(result).toEqual({ messageId: "ses-message-id-123", success: true });
-        const input = sent[0]!.input as any;
-        expect(input.Content.Simple.Subject.Data).toBe("Template: welcome");
+        await expect(adapter.sendTemplate("welcome", "user@example.com", { name: "Ada" }))
+            .rejects.toThrow("sendTemplate not supported by ses");
+        expect(sent).toHaveLength(0);
     });
 });

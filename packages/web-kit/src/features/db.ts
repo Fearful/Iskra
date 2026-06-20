@@ -79,7 +79,10 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
             }
             console.log('✅ DB connected successfully.');
         } catch (error) {
-            console.error('❌ Failed to connect to DB', error);
+            // Log only the message — the full error/config object can embed the
+            // connection string (host, user, password) and must not be logged.
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`❌ Failed to connect to DB: ${message}`);
             throw error;
         }
 

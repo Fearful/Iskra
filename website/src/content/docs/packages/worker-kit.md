@@ -83,6 +83,28 @@ await worker.enqueue('payment.process', { orderId: 456 }, {
 });
 ```
 
+## Input Validation
+
+`enqueue` validates input **before** touching Redis, so untrusted input cannot flood the queue or store oversized payloads. Any problem throws `QueueError` and the job never reaches the queue:
+
+- **Unknown handler:** `name` must match a handler already registered with `register`. Otherwise it throws `QueueError` (`No handler registered for job "<name>"`).
+- **Oversized payload:** `data` is serialized to JSON and rejected if it exceeds the ~1 MB cap (`Job "<name>" payload too large: <bytes> bytes (max 1048576)`). A non-serializable `data` also throws `QueueError`.
+- **Invalid RepeatSpec:** an empty repeat spec, a non-positive `{ every }`, or a blank cron string throw `QueueError`.
+
+```typescript
+import { QueueError } from '@iskra-bun/worker-kit';
+
+try {
+    await worker.enqueue('unregistered.handler', { ok: true });
+} catch (err) {
+    if (err instanceof QueueError) {
+        // "No handler registered for job "unregistered.handler""
+    }
+}
+```
+
+`schedule` delegates to `enqueue`, so it inherits exactly the same validations.
+
 ## Typed Payloads
 
 `register` and `enqueue` accept type parameters so `job.data` and the return value are fully typed. Both default to `unknown`/`void`, so existing untyped code continues to work without changes.
@@ -205,6 +227,21 @@ interface JobDescriptor<T, R> {
 ```
 
 `result()` opens a shared `QueueEvents` connection lazily on first call. If the job fails, `result()` rejects with the failure error.
+
+### result() before stop()
+
+`result()` requires a live `QueueEvents` connection, which the manager opens lazily. Once you call `stop()`, that connection (and the queue) are closed, and any subsequent `result()` call **rejects with `QueueError`** (`WorkerManager is stopped; cannot open QueueEvents`) instead of opening an orphan connection that would never be closed.
+
+So **await the job result before calling `stop()`**:
+
+```typescript
+const descriptor = await worker.enqueue('email.send', { to: 'user@example.com' });
+const result = await descriptor.result(10_000); // OK: before stop()
+
+await worker.stop();
+
+await descriptor.result(); // rejects with QueueError: the manager is stopped
+```
 
 ## Dead-Letter Handling
 

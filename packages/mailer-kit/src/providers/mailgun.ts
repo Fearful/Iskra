@@ -1,5 +1,27 @@
 import type { EmailAdapter, EmailMessage, EmailConfig, TemplateData } from "../types";
 
+/**
+ * Outbound custom mail headers callers are permitted to set. Anything outside
+ * this set is rejected so a caller cannot spoof Reply-To / Sender / routing
+ * headers via the generic `headers` map.
+ */
+const ALLOWED_HEADERS = new Set([
+    "reply-to",
+    "in-reply-to",
+    "references",
+    "list-unsubscribe",
+    "list-unsubscribe-post",
+    "list-id",
+    "x-mailgun-variables",
+    "x-mailgun-tag",
+]);
+
+/**
+ * Truncate a header value at the first CR/LF. Anything after a line break is an
+ * injected header (or folded continuation) and must be dropped, not preserved.
+ */
+const stripCrlf = (value: string): string => value.split(/[\r\n]/)[0] ?? "";
+
 export class MailgunEmailAdapter implements EmailAdapter {
     private apiKey: string;
     private domain: string;
@@ -36,7 +58,10 @@ export class MailgunEmailAdapter implements EmailAdapter {
 
         if (message.headers) {
             for (const [key, value] of Object.entries(message.headers)) {
-                form.append(`h:${key}`, value);
+                if (!ALLOWED_HEADERS.has(key.toLowerCase())) {
+                    throw new Error(`Header "${key}" is not allowed`);
+                }
+                form.append(`h:${key}`, stripCrlf(value));
             }
         }
 
@@ -68,32 +93,9 @@ export class MailgunEmailAdapter implements EmailAdapter {
         return { messageId: result.id, success: true };
     }
 
-    async sendTemplate(templateName: string, to: string | string[], data: TemplateData): Promise<{ messageId: string; success: boolean }> {
-        const form = new FormData();
-
-        if (this.defaultFrom) {
-            const from = this.defaultFrom;
-            form.append("from", from.name ? `${from.name} <${from.email}>` : from.email);
-        }
-
-        form.append("to", Array.isArray(to) ? to.join(",") : to);
-        form.append("template", templateName);
-        form.append("h:X-Mailgun-Variables", JSON.stringify(data));
-
-        const response = await fetch(`${this.baseUrl}/${this.domain}/messages`, {
-            method: "POST",
-            headers: {
-                Authorization: "Basic " + btoa(`api:${this.apiKey}`),
-            },
-            body: form,
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Mailgun API error (${response.status}): ${errorText}`);
-        }
-
-        const result = await response.json() as { id: string; message: string };
-        return { messageId: result.id, success: true };
+    async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {
+        // No template engine is implemented yet; fail loudly rather than
+        // silently sending a placeholder that looks like a real send.
+        throw new Error("sendTemplate not supported by mailgun");
     }
 }

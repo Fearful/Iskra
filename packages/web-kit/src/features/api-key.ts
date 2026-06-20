@@ -2,6 +2,15 @@ import type { Feature, ApiKeyConfig, ApiKeyMetadata, ApiKeyValidationResult } fr
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { createHash } from "crypto";
+
+// Resolved config: scalar/array fields are always populated by the constructor
+// defaults, while the genuinely optional callbacks stay optional. This replaces
+// the previous `as unknown as Required<ApiKeyConfig>` cast, which masked shape
+// drift by pretending the callbacks were always present.
+type ResolvedApiKeyConfig =
+    Required<Omit<ApiKeyConfig, "vaultService" | "customExtractor" | "onError" | "onValidated">>
+    & Pick<ApiKeyConfig, "vaultService" | "customExtractor" | "onError" | "onValidated">;
 
 // --- ApiKeyStore ---
 
@@ -9,7 +18,7 @@ export class ApiKeyStore {
     private staticKeysMap: Map<string, ApiKeyMetadata> = new Map();
     private cache?: any;
 
-    constructor(private config: Required<ApiKeyConfig>, private kernel: Kernel) {
+    constructor(private config: ResolvedApiKeyConfig, private kernel: Kernel) {
         this.initializeStaticKeys();
     }
 
@@ -67,11 +76,18 @@ export class ApiKeyStore {
         return new Date() > expiresAt;
     }
 
+    private cacheKeyFor(key: string): string {
+        // Hash the key before using it as a cache key so the plaintext secret is
+        // never persisted (e.g. in Redis) where it could leak via cache dumps.
+        const hash = createHash("sha256").update(key).digest("hex");
+        return `apikey:${hash}`;
+    }
+
     async validate(key: string): Promise<ApiKeyValidationResult> {
         if (!key) return { isValid: false, error: "API key is required" };
 
         const cache = this.getCache();
-        const cacheKey = `apikey:${key}`;
+        const cacheKey = this.cacheKeyFor(key);
 
         if (cache) {
             try {
@@ -91,18 +107,20 @@ export class ApiKeyStore {
                 if (this.isExpired(metadata.expiresAt)) {
                     return { isValid: false, error: "API key has expired" };
                 }
-                metadata.lastUsedAt = new Date();
+                // Build a derived object instead of mutating the metadata held in
+                // staticKeysMap (immutability — the stored object must stay intact).
+                const usedMetadata: ApiKeyMetadata = { ...metadata, lastUsedAt: new Date() };
 
                 if (cache) {
                     const ttl = this.config.cacheTtl ? Math.floor(this.config.cacheTtl / 1000) : 300;
                     try {
-                        await cache.set(cacheKey, JSON.stringify(metadata), ttl);
+                        await cache.set(cacheKey, JSON.stringify(usedMetadata), ttl);
                     } catch {
                         // ignore cache write failures — validation already succeeded
                     }
                 }
 
-                return { isValid: true, key: metadata };
+                return { isValid: true, key: usedMetadata };
             }
         }
 
@@ -143,24 +161,27 @@ declare module "hono" {
 export class ApiKeyFeature implements Feature {
     name = "apiKey";
     private store?: ApiKeyStore;
-    private config: Required<ApiKeyConfig>;
+    private config: ResolvedApiKeyConfig;
 
     constructor(config: ApiKeyConfig = {}) {
-        this.config = {
+        // Explicit, fully-typed defaults object — every resolved field is assigned
+        // a concrete value so shape drift surfaces at compile time instead of
+        // being masked by an `as unknown as` cast.
+        const defaults: ResolvedApiKeyConfig = {
             staticKeys: config.staticKeys || [],
             headerName: config.headerName || "X-API-Key",
             queryParamName: config.queryParamName || "api_key",
             extractStrategies: config.extractStrategies || ["header", "bearer"],
-            // Defaults for other optional properties
-            vaultService: undefined,
-            customExtractor: undefined,
+            vaultService: config.vaultService,
+            customExtractor: config.customExtractor,
             enableCache: config.enableCache ?? true,
             cacheTtl: config.cacheTtl ?? 300000,
             requireScopes: config.requireScopes ?? false,
             skipPaths: config.skipPaths || [],
             onError: config.onError,
-            onValidated: config.onValidated
-        } as unknown as Required<ApiKeyConfig>;
+            onValidated: config.onValidated,
+        };
+        this.config = defaults;
     }
 
     async initialize(kernel: Kernel): Promise<void> {
@@ -184,6 +205,12 @@ export class ApiKeyFeature implements Feature {
             const result = await this.store!.validate(apiKey);
             if (!result.isValid) {
                 throw new HTTPException(401, { message: result.error || "Invalid API key" });
+            }
+
+            // When requireScopes is enabled, a validated key that carries no scope
+            // is treated as insufficiently privileged and rejected.
+            if (this.config.requireScopes && !(result.key?.scopes && result.key.scopes.length > 0)) {
+                throw new HTTPException(403, { message: "API key has no scopes" });
             }
 
             c.set("apiKey", result.key);

@@ -18,7 +18,7 @@ describe('SocketKit', () => {
             ctx.reply(String(ctx.payload).toUpperCase());
         });
         router.on('announce', async (ctx) => {
-            ctx.broadcast('global', { event: 'announcement', payload: ctx.payload });
+            ctx.broadcast('global', ctx.payload);
         });
 
         driver = new SocketDriver({ port: PORT, router });
@@ -189,7 +189,9 @@ describe('SocketKit', () => {
         const announcePromise = new Promise(resolve => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
-                if (data.event === 'announcement') resolve(data.payload);
+                // ctx.broadcast now wraps frames in the {event: topic, payload}
+                // envelope, so the topic 'global' surfaces as data.event.
+                if (data.event === 'global') resolve(data.payload);
             };
         });
 

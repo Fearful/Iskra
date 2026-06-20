@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/desktop-kit",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Soporte para apps de escritorio con Tauri en Iskra.",
     "keywords": [
         "iskra",

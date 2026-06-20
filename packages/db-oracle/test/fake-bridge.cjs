@@ -27,6 +27,14 @@ rl.on('line', (line) => {
             process.exit(1);
         }
 
+        if (sql === 'NO_RESPONSE_TEST') {
+            // Black hole: accept the request but never answer it. Used to
+            // exercise the driver's per-request timeout. The process stays
+            // alive so the stream does not close (which would otherwise reject
+            // the pending promise for the wrong reason).
+            return;
+        }
+
         if (sql === 'BAD_JSON_TEST') {
             // A malformed line must not crash the driver's reader.
             process.stdout.write('this is not valid json\n');

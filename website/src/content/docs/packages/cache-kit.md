@@ -47,9 +47,17 @@ const exists = await cache.has('user:1');
 // Remove
 await cache.delete('user:1');
 
-// Flush everything
+// Flush the entire backing store (root cache only — see warning below)
 await cache.clear();
 ```
+
+> **Warning — `clear()` is a whole-store reset, not namespace-scoped.** It recycles
+> the adapter (`disconnect()`/`connect()`), wiping **every** key in the backing
+> store shared by this cache and any other `Cache` built on the same adapter — across
+> all namespaces. To prevent a namespaced sub-cache from silently flushing its
+> siblings, `clear()` **throws** when a namespace prefix is set; it is only valid on
+> a root `Cache`. To clear a single namespace, delete keys individually with
+> `delete()` or invalidate a group with `invalidateTag()`.
 
 ## Cache-Aside: remember() / wrap()
 

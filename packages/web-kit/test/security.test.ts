@@ -73,7 +73,8 @@ describe("Security Features", () => {
 
         kernel.registerFeature(new DbFeature({ adapter: "sqlite", connection: { database: ":memory:" } }));
         kernel.registerFeature(new SessionFeature({ store: "memory", secret: "test" }));
-        kernel.registerFeature(new AuthFeature({ secret: "test" }));
+        // auth-kit rejects secrets shorter than 32 chars; supply a valid one.
+        kernel.registerFeature(new AuthFeature({ secret: "x".repeat(32) }));
         kernel.registerFeature(new PermissionsFeature({
             loadPermissions: async () => ["read:own"], // Default permission
             enableRBAC: false

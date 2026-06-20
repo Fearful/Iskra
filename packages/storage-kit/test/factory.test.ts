@@ -25,7 +25,7 @@ describe("createStorageAdapter", () => {
     it("returns an S3StorageAdapter for adapter: minio", async () => {
         const adapter = await createStorageAdapter({
             adapter: "minio",
-            connection: { endpoint: "http://localhost:9000", accessKey: "k", secretKey: "s", bucket: "b" },
+            connection: { endpoint: "http://localhost:9000", accessKey: "k", secretKey: "s", bucket: "b", useSSL: false },
         });
         expect(adapter).toBeInstanceOf(S3StorageAdapter);
     });
