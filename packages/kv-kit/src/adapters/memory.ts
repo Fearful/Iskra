@@ -2,31 +2,58 @@ import type { KVAdapter } from '../types';
 
 export class MemoryAdapter implements KVAdapter {
     id = 'memory';
-    private store = new Map<string, any>();
+    private store = new Map<string, unknown>();
+    private timers = new Map<string, ReturnType<typeof setTimeout>>();
 
     connect() {
         // No-op
     }
+
     disconnect() {
+        for (const timer of this.timers.values()) {
+            clearTimeout(timer);
+        }
+        this.timers.clear();
         this.store.clear();
     }
 
-    async get(key: string) {
-        return this.store.get(key);
+    async get<T = unknown>(key: string): Promise<T | undefined> {
+        return this.store.get(key) as T | undefined;
     }
 
-    async set(key: string, value: any, ttl?: number) {
+    async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
+        // Clear any existing expiry timer for this key before setting a new one
+        const existing = this.timers.get(key);
+        if (existing !== undefined) {
+            clearTimeout(existing);
+            this.timers.delete(key);
+        }
+
         this.store.set(key, value);
+
         if (ttl) {
-            setTimeout(() => this.store.delete(key), ttl * 1000);
+            const timer = setTimeout(() => {
+                this.store.delete(key);
+                this.timers.delete(key);
+            }, ttl * 1000);
+
+            // Avoid keeping the process alive just for expiry timers
+            timer.unref?.();
+
+            this.timers.set(key, timer);
         }
     }
 
-    async del(key: string) {
+    async del(key: string): Promise<void> {
+        const timer = this.timers.get(key);
+        if (timer !== undefined) {
+            clearTimeout(timer);
+            this.timers.delete(key);
+        }
         this.store.delete(key);
     }
 
-    async has(key: string) {
+    async has(key: string): Promise<boolean> {
         return this.store.has(key);
     }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { IskraError } from '@iskra-bun/core';
 import { SocketRouter, SocketConnectionError, SocketMessageError } from '../src';
-import type { SocketContext } from '../src';
+import type { SocketContext, SocketHandler } from '../src';
 
 // Unit tests for the pure routing surface of SocketRouter. The integration
 // suite in socket.test.ts drives the driver over a real WebSocket; here we
@@ -80,6 +80,49 @@ describe('SocketRouter', () => {
         // Build a minimal context — the router itself never touches the socket.
         await handler!({ payload: { hello: 'world' } } as unknown as SocketContext);
         expect(seen).toEqual({ hello: 'world' });
+    });
+});
+
+// Type-safety assertions (compile-time): these tests verify that the generic
+// parameters on SocketContext and SocketHandler work correctly and that using
+// the typed payload does not require any `as any` casts.
+describe('SocketContext / SocketHandler type safety', () => {
+    it('SocketContext defaults TPayload to unknown, preventing unguarded property access', () => {
+        // A handler that uses the default (unknown) payload must narrow before access.
+        const handler: SocketHandler = async (ctx: SocketContext) => {
+            // ctx.payload is unknown here — narrowing is required.
+            if (typeof ctx.payload === 'object' && ctx.payload !== null && 'event' in ctx.payload) {
+                const _event = (ctx.payload as { event: string }).event;
+                expect(typeof _event).toBe('string');
+            }
+        };
+        expect(typeof handler).toBe('function');
+    });
+
+    it('typed TPayload flows through to ctx.payload without casts', () => {
+        interface PingPayload { seq: number }
+        // SocketHandler<PingPayload> means ctx.payload is PingPayload — no cast needed.
+        const handler: SocketHandler<PingPayload> = async (ctx: SocketContext<PingPayload>) => {
+            const seq: number = ctx.payload.seq; // type-checked without cast
+            expect(typeof seq).toBe('number');
+        };
+        expect(typeof handler).toBe('function');
+    });
+
+    it('SocketRouter.on() accepts a typed handler cast to the base SocketHandler', () => {
+        // Typed handlers are narrower than SocketHandler<unknown, unknown>. The
+        // router stores the widened type; callers cast when registering, which is
+        // the standard pattern for heterogeneous handler maps.
+        interface GreetPayload { name: string }
+        const router = new SocketRouter();
+        let captured = '';
+        const handler: SocketHandler<GreetPayload> = async (ctx: SocketContext<GreetPayload>) => {
+            captured = ctx.payload.name; // ctx.payload.name is string, not any
+        };
+        router.on('greet', handler as SocketHandler);
+        expect(router.getHandler('greet')).toBe(handler as SocketHandler);
+        // Satisfy the captured variable usage so TS does not optimise it away.
+        expect(captured).toBe('');
     });
 });
 

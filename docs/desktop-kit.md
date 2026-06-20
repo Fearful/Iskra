@@ -1,5 +1,7 @@
 # @iskra-bun/desktop-kit
 
+> ⚠️ **Alpha (no funcional aún).** El `DesktopDriver` actual solo registra el ciclo de vida; los wrappers reales de las APIs de Tauri (ventanas, IPC, menús) llegan en **v0.2**. Los ejemplos describen la API planificada y todavía no son utilizables.
+
 Soporte para aplicaciones de escritorio con [Tauri](https://tauri.app). Expone un `DesktopDriver` que se registra en el Core y actua como puente entre la logica de tu App de Iskra y las APIs nativas de Tauri (ventanas, IPC, menus).
 
 ## Inicio Rapido

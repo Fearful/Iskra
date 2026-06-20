@@ -7,6 +7,8 @@ interface RunningProcess {
     name: string;
     restarts: number;
     startedAt: number;
+    /** Current computed backoff delay in ms (grows with each crash) */
+    currentBackoffMs: number;
 }
 
 export class ProcessManager implements Driver {
@@ -32,6 +34,57 @@ export class ProcessManager implements Driver {
 
         for (const [name, config] of Object.entries(processConfigs)) {
             this.spawnProcess(name, config);
+        }
+    }
+
+    /**
+     * Spawn and register a new process at runtime. Reuses the existing internal
+     * spawn logic and respects the process mode (stdio/daemon/oneshot).
+     *
+     * @throws {Error} if a process with the given name is already registered.
+     */
+    async spawn(name: string, config: ProcessConfig): Promise<void> {
+        if (this.processes.has(name)) {
+            throw new Error(`Process '${name}' is already registered. Kill it first or use a different name.`);
+        }
+        this.spawnProcess(name, config);
+    }
+
+    /**
+     * Gracefully stop and remove a single named process. Sends SIGTERM and
+     * escalates to SIGKILL after gracefulTimeoutMs if the process has not exited.
+     *
+     * @throws {Error} if no process with the given name exists.
+     */
+    async kill(name: string, gracefulTimeoutMs = 5000): Promise<void> {
+        const procInfo = this.processes.get(name);
+        if (!procInfo) {
+            throw new Error(`Process '${name}' not found. It may have already exited or never been spawned.`);
+        }
+
+        // Remove from the map before terminating so handleExit won't try to restart it
+        this.processes.delete(name);
+
+        const proc = procInfo.process;
+        if (proc.killed) return;
+
+        proc.kill('SIGTERM');
+
+        const deadline = gracefulTimeoutMs * 2;
+        const forceKillTimer = setTimeout(() => {
+            if (!proc.killed) {
+                this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
+                proc.kill();
+            }
+        }, gracefulTimeoutMs);
+
+        try {
+            await Promise.race([
+                proc.exited,
+                new Promise<void>(r => setTimeout(r, deadline)),
+            ]);
+        } finally {
+            clearTimeout(forceKillTimer);
         }
     }
 
@@ -72,6 +125,30 @@ export class ProcessManager implements Driver {
         }
     }
 
+    /**
+     * Compute the next backoff delay for a process restart.
+     *
+     * - If no `restartBackoff` config is provided, returns the flat 1000 ms default.
+     * - Otherwise applies exponential growth: `min(currentMs * factor, maxMs)`.
+     * - If the process was stable (uptime > restartCooldown), the backoff resets to initialMs.
+     */
+    private computeBackoffMs(procInfo: RunningProcess): number {
+        const backoffCfg = procInfo.config.restartBackoff;
+        if (!backoffCfg) {
+            return 1000;
+        }
+
+        const cooldown = procInfo.config.restartCooldown ?? 60000;
+        const uptime = Date.now() - procInfo.startedAt;
+        if (uptime > cooldown) {
+            // Process was stable — reset to initial delay
+            return backoffCfg.initialMs;
+        }
+
+        const next = Math.min(procInfo.currentBackoffMs * backoffCfg.factor, backoffCfg.maxMs);
+        return next;
+    }
+
     private handleExit(name: string, exitCode: number, signalCode: number) {
         if (this.stopping) return;
 
@@ -82,6 +159,12 @@ export class ProcessManager implements Driver {
 
         // Remove from map so we don't try to kill it again on stop()
         this.processes.delete(name);
+
+        // oneshot processes run to completion once and are never restarted
+        if (procInfo.config.mode === 'oneshot') {
+            this.app?.emit('process:exit', { name, exitCode });
+            return;
+        }
 
         if (procInfo.config.restartOnCrash) {
             const maxRestarts = procInfo.config.maxRestarts ?? 10;
@@ -97,17 +180,21 @@ export class ProcessManager implements Driver {
                 return;
             }
 
-            this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts})`);
+            const delayMs = this.computeBackoffMs(procInfo);
+
+            this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts}) in ${delayMs}ms`);
 
             setTimeout(() => {
-                this.spawnProcess(name, procInfo.config, restarts);
-            }, 1000);
+                this.spawnProcess(name, procInfo.config, restarts, delayMs);
+            }, delayMs);
         }
     }
 
-    // Updated spawn signature to track restarts
-    private spawnProcess(name: string, config: ProcessConfig, restarts = 0) {
+    // Updated spawn signature to track restarts and backoff state
+    private spawnProcess(name: string, config: ProcessConfig, restarts = 0, currentBackoffMs?: number) {
         if (this.stopping || !this.app) return;
+
+        const initialBackoffMs = config.restartBackoff?.initialMs ?? 1000;
 
         this.app.logger.info(`Spawning process: ${name} (${config.command} ${config.args?.join(' ') || ''})`);
 
@@ -131,6 +218,7 @@ export class ProcessManager implements Driver {
                 name,
                 restarts,
                 startedAt: Date.now(),
+                currentBackoffMs: currentBackoffMs ?? initialBackoffMs,
             });
 
             if (config.mode === 'stdio') {
@@ -187,15 +275,40 @@ export class ProcessManager implements Driver {
         }
     }
 
-    async stop() {
+    async stop(gracefulTimeoutMs = 5000) {
         this.stopping = true;
         this.app?.logger.info('Stopping all processes...');
 
-        for (const [name, info] of this.processes) {
-            if (!info.process.killed) {
-                info.process.kill();
-            }
-        }
+        const entries = [...this.processes.entries()];
         this.processes.clear();
+
+        await Promise.all(
+            entries.map(async ([name, info]) => {
+                const proc = info.process;
+                if (proc.killed) return;
+
+                // Send SIGTERM and give the process a chance to flush and exit cleanly
+                proc.kill('SIGTERM');
+
+                // Hard deadline: SIGKILL after gracefulTimeoutMs, then wait up to
+                // the same window again before giving up (guards against Bun exited quirks)
+                const deadline = gracefulTimeoutMs * 2;
+                const forceKillTimer = setTimeout(() => {
+                    if (!proc.killed) {
+                        this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
+                        proc.kill();
+                    }
+                }, gracefulTimeoutMs);
+
+                try {
+                    await Promise.race([
+                        proc.exited,
+                        new Promise<void>(r => setTimeout(r, deadline)),
+                    ]);
+                } finally {
+                    clearTimeout(forceKillTimer);
+                }
+            })
+        );
     }
 }

@@ -1,6 +1,7 @@
 import type { App, Driver } from '@iskra-bun/core';
 import { SocketRouter } from './router';
-import type { ServerWebSocket } from 'bun';
+import type { SocketData } from './router';
+import type { Server, ServerWebSocket } from 'bun';
 import { SocketMessageError } from './errors';
 
 export class SocketDriver implements Driver {
@@ -8,7 +9,7 @@ export class SocketDriver implements Driver {
     private app: App | null = null;
     private router: SocketRouter;
     private port: number;
-    private runningServer: any;
+    private runningServer: Server<SocketData> | null = null;
 
     constructor(options: { port?: number; router?: SocketRouter } = {}) {
         this.port = options.port || 3001;
@@ -22,11 +23,12 @@ export class SocketDriver implements Driver {
     start() {
         this.app?.logger.info(`Starting SocketDriver on port ${this.port}...`);
 
-        this.runningServer = Bun.serve({
+        this.runningServer = Bun.serve<SocketData>({
             port: this.port,
             fetch(req, server) {
-                // Upgrade logic
-                if (server.upgrade(req)) {
+                // Assign a unique id per connection at upgrade time.
+                const connectionId = crypto.randomUUID();
+                if (server.upgrade(req, { data: { connectionId } })) {
                     return; // Bun handles the rest
                 }
                 return new Response("Upgrade failed", { status: 500 });
@@ -35,7 +37,10 @@ export class SocketDriver implements Driver {
                 open: (ws) => {
                     this.app?.logger.debug('Socket connected');
                     ws.subscribe('global');
-                    this.app?.emit('socket:connected', { id: ws.remoteAddress });
+                    this.app?.emit('socket:connected', {
+                        id: ws.remoteAddress,
+                        connectionId: ws.data.connectionId,
+                    });
                 },
                 message: async (ws, message) => {
                     await this.handleMessage(ws, message);
@@ -43,25 +48,31 @@ export class SocketDriver implements Driver {
                 close: (ws) => {
                     ws.unsubscribe('global');
                     this.app?.logger.debug('Socket disconnected');
+                    this.app?.emit('socket:disconnected', {
+                        id: ws.remoteAddress,
+                        connectionId: ws.data.connectionId,
+                    });
                 }
             }
         });
     }
 
-    public broadcast(event: string, payload: any) {
-        if (this.runningServer) {
-            this.runningServer.publish('global', JSON.stringify({ event, payload }));
-        }
+    /** Publish to all sockets subscribed to the global topic. */
+    public broadcast(event: string, payload: unknown) {
+        this.runningServer?.publish('global', JSON.stringify({ event, payload }));
+    }
+
+    /** Publish to all sockets subscribed to a specific room. */
+    public broadcastTo(room: string, event: string, payload: unknown) {
+        this.runningServer?.publish(room, JSON.stringify({ event, payload }));
     }
 
     stop() {
-        if (this.runningServer) {
-            this.runningServer.stop();
-        }
+        this.runningServer?.stop();
         this.app?.logger.info('SocketDriver stopped');
     }
 
-    private async handleMessage(ws: ServerWebSocket<any>, message: string | Buffer) {
+    private async handleMessage(ws: ServerWebSocket<SocketData>, message: string | Buffer) {
         try {
             const text = typeof message === 'string' ? message : new TextDecoder().decode(message);
             const eventData = JSON.parse(text);
@@ -78,7 +89,9 @@ export class SocketDriver implements Driver {
                     payload: payload || {},
                     socket: ws,
                     reply: (data) => ws.send(JSON.stringify({ event: `${event}:reply`, payload: data })),
-                    broadcast: (evt, data) => this.runningServer.publish(evt, JSON.stringify(data)) // Publish to topic/channel logic needed? Or just broadcast
+                    broadcast: (evt, data) => this.runningServer?.publish(evt, JSON.stringify(data)),
+                    join: (room) => ws.subscribe(room),
+                    leave: (room) => ws.unsubscribe(room),
                 });
             } else {
                 // 2. Fallback to Global App Event

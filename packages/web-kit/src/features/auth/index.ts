@@ -1,11 +1,11 @@
 import type { AuthConfig, Feature, Kernel } from "../../types";
 import type { Context, Hono, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { type Auth, createBetterAuth } from "./better-auth-config";
+import { type Auth, createBetterAuth } from "@iskra-bun/auth-kit";
 import { z } from "@hono/zod-openapi";
 import type { DbFeature } from "../db";
 import type { OpenAPIFeature } from "../openapi";
-import type { User } from "./types";
+import type { User } from "@iskra-bun/auth-kit";
 
 declare module "hono" {
     interface ContextVariableMap {

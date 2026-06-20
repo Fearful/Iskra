@@ -20,15 +20,22 @@ Para un analisis mas detallado de las capas, interfaces y patrones de diseno, re
 | Paquete | Descripcion | Docs |
 | :--- | :--- | :--- |
 | `@iskra-bun/core` | Nucleo del framework: App, DI, eventos, logger, errores | [Core](./docs/core.md) |
+| `@iskra-bun/config-kit` | Carga y validacion de configuracion de entorno con Zod. | [Config Kit](./docs/config-kit.md) |
 | `@iskra-bun/web-kit` | Servidor HTTP con Hono, Kernel y +15 features integradas | [Web Kit](./docs/web-kit.md) |
+| `@iskra-bun/auth-kit` | Autenticacion con better-auth (config + esquema Drizzle), independiente del HTTP. | [Auth Kit](./docs/auth-kit.md) |
 | `@iskra-bun/db-kit` | Base de datos SQL con Drizzle ORM (PostgreSQL, MySQL, SQLite) | [DB Kit](./docs/db-kit.md) |
 | `@iskra-bun/db-oracle` | Soporte para Oracle Database (via Bridge/Sidecar) | [DB Kit](./docs/db-kit.md) |
 | `@iskra-bun/socket-kit` | WebSocket nativo de Bun con router y broadcast | [Socket Kit](./docs/socket-kit.md) |
 | `@iskra-bun/kv-kit` | Key-Value store con adaptadores de Redis y memoria | [KV Kit](./docs/kv-kit.md) |
+| `@iskra-bun/cache-kit` | Cache de alto nivel (cache-aside, TTL, namespaces, tags) sobre kv-kit. | [Cache Kit](./docs/cache-kit.md) |
 | `@iskra-bun/worker-kit` | Cola de jobs en segundo plano con BullMQ | [Worker Kit](./docs/worker-kit.md) |
+| `@iskra-bun/mailer-kit` | Email independiente del transporte (SMTP/SendGrid/Mailgun/SES). | [Mailer Kit](./docs/mailer-kit.md) |
+| `@iskra-bun/storage-kit` | Almacenamiento de archivos (local, S3/MinIO) con streaming. | [Storage Kit](./docs/storage-kit.md) |
 | `@iskra-bun/process-kit` | Gestion de procesos externos (Python, binarios) | [Process Kit](./docs/process-kit.md) |
+| `@iskra-bun/testing-kit` | Utilidades de testing (createTestApp, mocks de logger/driver, withTempDir). | [Testing Kit](./docs/testing-kit.md) |
 | `@iskra-bun/desktop-kit` | Soporte para apps de escritorio con Tauri | [Desktop Kit](./docs/desktop-kit.md) |
 | `@iskra-bun/mobile-kit` | Soporte para plataformas moviles | [Mobile Kit](./docs/mobile-kit.md) |
+| `create-iskra` | CLI de andamiaje de proyectos (`bun create iskra`). | [create-iskra](./docs/create-iskra.md) |
 
 ## Templates
 

@@ -75,17 +75,24 @@ title="index.ts"
 
 ## Packages
 
-| Package                  | Description                                                 |
-| :----------------------- | :---------------------------------------------------------- |
-| `@iskra-bun/core`        | Framework core: App, DI, events, logger, errors             |
-| `@iskra-bun/web-kit`     | HTTP server with Hono, Kernel, and 15+ built-in features    |
-| `@iskra-bun/db-kit`      | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite)   |
-| `@iskra-bun/socket-kit`  | Native Bun WebSocket with router and broadcast              |
-| `@iskra-bun/kv-kit`      | Key-Value store with Redis and in-memory adapters           |
-| `@iskra-bun/worker-kit`  | Background job queue with BullMQ                            |
-| `@iskra-bun/process-kit` | External process management (Python, binaries)              |
-| `@iskra-bun/desktop-kit` | Desktop app support with Tauri _(experimental)_             |
-| `@iskra-bun/mobile-kit`  | Mobile platform support _(experimental)_                    |
-| `@iskra-bun/db-oracle`   | Oracle Database support via bridge/sidecar _(experimental)_ |
+| Package                    | Description                                                          |
+| :------------------------- | :------------------------------------------------------------------- |
+| `@iskra-bun/core`          | Framework core: App, DI, events, logger, errors                      |
+| `@iskra-bun/config-kit`    | Typed, Zod-validated environment/config loading                      |
+| `@iskra-bun/web-kit`       | HTTP server with Hono, Kernel, and 15+ built-in features             |
+| `@iskra-bun/auth-kit`      | Transport-agnostic better-auth (config + Drizzle schema)             |
+| `@iskra-bun/db-kit`        | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite)            |
+| `@iskra-bun/socket-kit`    | Native Bun WebSocket with router and broadcast                       |
+| `@iskra-bun/kv-kit`        | Key-Value store with Redis and in-memory adapters                    |
+| `@iskra-bun/cache-kit`     | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit |
+| `@iskra-bun/worker-kit`    | Background job queue with BullMQ                                     |
+| `@iskra-bun/mailer-kit`    | Transport-agnostic email (SMTP/SendGrid/Mailgun/SES)                 |
+| `@iskra-bun/storage-kit`   | File storage (local, S3/MinIO) with streaming                        |
+| `@iskra-bun/process-kit`   | External process management (Python, binaries)                       |
+| `@iskra-bun/testing-kit`   | Test utilities (createTestApp, mock logger/driver, withTempDir)      |
+| `@iskra-bun/desktop-kit`   | Desktop app support with Tauri _(experimental)_                      |
+| `@iskra-bun/mobile-kit`    | Mobile platform support _(experimental)_                             |
+| `@iskra-bun/db-oracle`     | Oracle Database support via bridge/sidecar _(experimental)_          |
+| `create-iskra`             | Project scaffolding CLI (`bun create iskra`)                         |
 
 Requires **Bun v1.0+**. Some native dependencies also expect **Node.js v18+**.

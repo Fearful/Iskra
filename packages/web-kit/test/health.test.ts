@@ -94,6 +94,80 @@ describe("Health Check Feature", () => {
         await kernel.shutdown();
     });
 
+    it("readiness: returns 200 with no checks registered", async () => {
+        const kernel = new Kernel();
+        kernel.registerFeature(new HealthCheckFeature());
+        await kernel.initialize();
+
+        const res = await kernel.getApp().request("/health/ready");
+        expect(res.status).toBe(200);
+        const json = (await res.json()) as any;
+        expect(json.status).toBe("ready");
+
+        await kernel.shutdown();
+    });
+
+    it("readiness: returns 200 when all registered checks pass", async () => {
+        const feature = new HealthCheckFeature();
+        feature.addReadinessCheck("db", async () => true);
+        feature.addReadinessCheck("cache", async () => true);
+
+        const kernel = new Kernel();
+        kernel.registerFeature(feature);
+        await kernel.initialize();
+
+        const res = await kernel.getApp().request("/health/ready");
+        expect(res.status).toBe(200);
+        const json = (await res.json()) as any;
+        expect(json.status).toBe("ready");
+        expect(json.checks.db).toBe(true);
+        expect(json.checks.cache).toBe(true);
+
+        await kernel.shutdown();
+    });
+
+    it("readiness: returns 503 and names failing checks when any check returns false", async () => {
+        const feature = new HealthCheckFeature({
+            readinessChecks: {
+                db: async () => true,
+                cache: async () => false,
+            },
+        });
+
+        const kernel = new Kernel();
+        kernel.registerFeature(feature);
+        await kernel.initialize();
+
+        const res = await kernel.getApp().request("/health/ready");
+        expect(res.status).toBe(503);
+        const json = (await res.json()) as any;
+        expect(json.status).toBe("not ready");
+        expect(json.failed).toContain("cache");
+        expect(json.failed).not.toContain("db");
+        expect(json.checks.cache).toBe(false);
+
+        await kernel.shutdown();
+    });
+
+    it("readiness: returns 503 (not 500) when a check throws", async () => {
+        const feature = new HealthCheckFeature();
+        feature.addReadinessCheck("broken", async () => {
+            throw new Error("connection refused");
+        });
+
+        const kernel = new Kernel();
+        kernel.registerFeature(feature);
+        await kernel.initialize();
+
+        const res = await kernel.getApp().request("/health/ready");
+        expect(res.status).toBe(503);
+        const json = (await res.json()) as any;
+        expect(json.status).toBe("not ready");
+        expect(json.failed).toContain("broken");
+
+        await kernel.shutdown();
+    });
+
     it("honors custom probe paths", async () => {
         const kernel = new Kernel();
         kernel.registerFeature(

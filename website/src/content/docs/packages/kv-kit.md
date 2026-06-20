@@ -56,19 +56,78 @@ const app = new App({
 ## API
 
 ```typescript
-// Guardar (con TTL opcional en segundos)
-await kv.set('clave', valor);
-await kv.set('clave', valor, 60); // expira en 60 segundos
+// Store (with optional TTL in seconds)
+await kv.set('key', value);
+await kv.set('key', value, 60); // expires in 60 seconds
 
-// Obtener
-const data = await kv.get('clave');
+// Retrieve — returns undefined when the key does not exist
+const data = await kv.get('key');
 
-// Eliminar
-await kv.del('clave');
+// Delete
+await kv.del('key');
 
-// Verificar existencia
-const existe = await kv.has('clave');
+// Check existence
+const exists = await kv.has('key');
 ```
+
+## Generic (Typed) Values
+
+`get` and `set` accept a type parameter so you get typed reads instead of `any`:
+
+```typescript
+interface User {
+    name: string;
+    role: string;
+}
+
+// Typed write
+await kv.set<User>('user:123', { name: 'Juan', role: 'admin' });
+
+// Typed read — resolves to User | undefined
+const user = await kv.get<User>('user:123');
+if (user) {
+    console.log(user.role); // string, not any
+}
+```
+
+A missing key resolves to `undefined` (not `null`). Previously the Redis adapter could return `null` for missing keys; this is now normalised across all adapters.
+
+## Namespace
+
+Pass a `namespace` option to transparently prefix every key and prevent collisions between modules that share the same store:
+
+```typescript
+const sessions = new KVManager({ namespace: 'sessions' });
+const cache    = new KVManager({ namespace: 'cache' });
+
+// These write to "sessions:token" and "cache:token" — no collision
+await sessions.set('token', sessionData);
+await cache.set('token', cachedResponse);
+```
+
+The prefix is applied automatically; you never include it in your key strings. The option defaults to `""` (no prefix) so existing code is unaffected.
+
+## Batch Operations
+
+`KVManager` exposes three batch helpers that run their underlying calls concurrently:
+
+```typescript
+// Read multiple keys at once — order-preserving, undefined for missing keys
+const [a, b, c] = await kv.mget<string>(['key:a', 'key:b', 'key:c']);
+
+// Write multiple key/value pairs (optional shared TTL)
+await kv.mset({ 'key:a': 'alpha', 'key:b': 'beta' });
+await kv.mset([['key:c', 'gamma'], ['key:d', 'delta']], 120); // TTL = 120 s
+
+// Delete multiple keys
+await kv.mdel(['key:a', 'key:b', 'key:c']);
+```
+
+`mset` accepts either an array of `[key, value]` tuples or a plain object.
+
+## TTL and the Memory Adapter
+
+The in-memory adapter manages expiry timers without leaks: overwriting a key with a new `set` call cancels any previous timer before scheduling the new one, so a stale timer can never delete a freshly written value.
 
 ## Environment Variables
 

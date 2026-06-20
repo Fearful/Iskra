@@ -3,15 +3,25 @@ import type { KVAdapter } from './types';
 import { MemoryAdapter } from './adapters/memory';
 import { RedisAdapter } from './adapters/redis';
 
+export interface KVManagerOptions {
+    /**
+     * Optional namespace prepended to every key as `"<namespace>:<key>"`.
+     * Defaults to `""` (no prefix) to preserve existing behavior.
+     */
+    namespace?: string;
+}
+
 export class KVManager implements Driver, KVAdapter {
     name = 'KVManager';
     id = 'manager';
     private app: App | null = null;
     private adapter: KVAdapter;
+    private readonly prefix: string;
 
-    constructor() {
+    constructor(options: KVManagerOptions = {}) {
         // Default to memory until configured
         this.adapter = new MemoryAdapter();
+        this.prefix = options.namespace ? `${options.namespace}:` : '';
     }
 
     init(app: App) {
@@ -45,9 +55,49 @@ export class KVManager implements Driver, KVAdapter {
         await this.disconnect();
     }
 
-    // Proxy methods
-    get(key: string) { return this.adapter.get(key); }
-    set(key: string, value: any, ttl?: number) { return this.adapter.set(key, value, ttl); }
-    del(key: string) { return this.adapter.del(key); }
-    has(key: string) { return this.adapter.has(key); }
+    private prefixed(key: string): string {
+        return `${this.prefix}${key}`;
+    }
+
+    // Proxy methods (namespace-aware)
+    get<T = unknown>(key: string): Promise<T | undefined> {
+        return this.adapter.get<T>(this.prefixed(key));
+    }
+
+    set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
+        return this.adapter.set<T>(this.prefixed(key), value, ttl);
+    }
+
+    del(key: string): Promise<void> {
+        return this.adapter.del(this.prefixed(key));
+    }
+
+    has(key: string): Promise<boolean> {
+        return this.adapter.has(this.prefixed(key));
+    }
+
+    // Batch operations — implemented at manager level so KVAdapter stays unchanged
+    // and existing implementers (e.g. cache-kit's MemoryAdapter) are unaffected.
+    //
+    // Follow-up: RedisAdapter could override these with native MGET/MSET for
+    // better throughput at scale.
+
+    async mget<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
+        return Promise.all(keys.map(k => this.get<T>(k)));
+    }
+
+    async mset<T = unknown>(
+        entries: Array<[string, T]> | Record<string, T>,
+        ttl?: number
+    ): Promise<void> {
+        const pairs: Array<[string, T]> = Array.isArray(entries)
+            ? entries
+            : (Object.entries(entries) as Array<[string, T]>);
+
+        await Promise.all(pairs.map(([k, v]) => this.set<T>(k, v, ttl)));
+    }
+
+    async mdel(keys: string[]): Promise<void> {
+        await Promise.all(keys.map(k => this.del(k)));
+    }
 }

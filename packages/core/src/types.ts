@@ -64,6 +64,15 @@ export interface AppConfig {
     [key: string]: any;
 }
 
+export interface RestartBackoffConfig {
+    /** Initial delay in ms before the first restart. Default: 1000 */
+    initialMs: number;
+    /** Maximum delay cap in ms. Default: 30000 */
+    maxMs: number;
+    /** Multiplier applied to the delay after each restart. Default: 2 */
+    factor: number;
+}
+
 export interface ProcessConfig {
     command: string;
     args?: string[];
@@ -72,4 +81,6 @@ export interface ProcessConfig {
     maxRestarts?: number;
     restartCooldown?: number;
     env?: Record<string, string>;
+    /** Exponential backoff settings for restarts. Defaults to 1000 ms flat (no backoff). */
+    restartBackoff?: RestartBackoffConfig;
 }

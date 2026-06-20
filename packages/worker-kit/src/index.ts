@@ -1,17 +1,33 @@
 import type { Driver, App } from '@iskra-bun/core';
-import { Queue, Worker, type Job as BullJob } from 'bullmq';
+import { Queue, QueueEvents, Worker, type Job as BullJob } from 'bullmq';
 import { QueueError, JobError } from './errors';
-import type { WorkerManagerOptions, JobOptions, JobHandler } from './types';
+import type {
+    WorkerManagerOptions,
+    JobOptions,
+    JobHandler,
+    RepeatSpec,
+    JobDescriptor,
+    DeadLetterPayload,
+} from './types';
 
-export type { WorkerManagerOptions, JobOptions, JobHandler } from './types';
+export type {
+    WorkerManagerOptions,
+    JobOptions,
+    JobHandler,
+    RepeatSpec,
+    JobDescriptor,
+    DeadLetterPayload,
+} from './types';
 export * from './errors';
 
 export class WorkerManager implements Driver {
     name = 'WorkerManager';
     private app: App | null = null;
-    private handlers: Map<string, JobHandler> = new Map();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private handlers: Map<string, JobHandler<any, any>> = new Map();
     private queue: Queue | null = null;
     private worker: Worker | null = null;
+    private queueEvents: QueueEvents | null = null;
     private options: WorkerManagerOptions;
 
     constructor(options: WorkerManagerOptions) {
@@ -37,17 +53,24 @@ export class WorkerManager implements Driver {
     }
 
     /**
-     * Registra un handler para un tipo de job.
+     * Registra un handler para un tipo de job. El handler puede devolver un
+     * valor `R` que queda disponible como resultado del job.
      */
-    register(jobName: string, handler: JobHandler) {
+    register<T = unknown, R = void>(jobName: string, handler: JobHandler<T, R>) {
         this.handlers.set(jobName, handler);
         return this;
     }
 
     /**
-     * Encola un job para ser procesado.
+     * Encola un job para ser procesado. Devuelve un descriptor que, además de
+     * los datos del job, expone `result()` para esperar el valor de retorno del
+     * handler.
      */
-    async enqueue(name: string, data: any, opts?: JobOptions) {
+    async enqueue<T = unknown, R = unknown>(
+        name: string,
+        data: T,
+        opts?: JobOptions,
+    ): Promise<JobDescriptor<T, R>> {
         if (!this.queue) {
             throw new QueueError('Queue not initialized. Did you call init()?', {
                 context: { jobName: name },
@@ -56,7 +79,22 @@ export class WorkerManager implements Driver {
 
         const job = await this.queue.add(name, data, this.mapJobOptions(opts));
         this.app?.logger.debug({ jobId: job.id, jobName: name }, 'Job enqueued');
-        return { id: job.id!, name, data };
+        return this.buildDescriptor<T, R>(job, name, data);
+    }
+
+    /**
+     * Programa un job repetible (cron o intervalo). Conveniencia sobre
+     * `enqueue` con la opción `repeat` ya configurada.
+     *
+     * @param repeat patrón cron (string) o `{ every: ms }`/`{ pattern: cron }`.
+     */
+    async schedule<T = unknown, R = unknown>(
+        name: string,
+        data: T,
+        repeat: RepeatSpec,
+        opts?: JobOptions,
+    ): Promise<JobDescriptor<T, R>> {
+        return this.enqueue<T, R>(name, data, { ...opts, repeat });
     }
 
     async start() {
@@ -72,7 +110,7 @@ export class WorkerManager implements Driver {
                 }
 
                 try {
-                    await handler({
+                    return await handler({
                         id: job.id!,
                         name: job.name,
                         data: job.data,
@@ -98,7 +136,7 @@ export class WorkerManager implements Driver {
         });
 
         this.worker.on('failed', (job, err) => {
-            this.app?.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'Job failed');
+            this.onFailed(job, err);
         });
 
         this.app?.logger.info({
@@ -108,16 +146,43 @@ export class WorkerManager implements Driver {
     }
 
     async stop() {
-        const closePromises: Promise<void>[] = [];
-
+        // Close the worker first (without force) so BullMQ waits for any
+        // in-flight job to finish before tearing down its Redis connections.
+        // Only then close the queue — closing them concurrently can cut the
+        // queue connection out from under a still-draining worker.
         if (this.worker) {
-            closePromises.push(this.worker.close());
-        }
-        if (this.queue) {
-            closePromises.push(this.queue.close());
+            try {
+                await this.worker.close();
+            } catch (err) {
+                this.app?.logger.error(
+                    { err: err instanceof Error ? err : new Error(String(err)) },
+                    'WorkerManager: error while closing worker',
+                );
+            }
         }
 
-        await Promise.all(closePromises);
+        if (this.queueEvents) {
+            try {
+                await this.queueEvents.close();
+            } catch (err) {
+                this.app?.logger.error(
+                    { err: err instanceof Error ? err : new Error(String(err)) },
+                    'WorkerManager: error while closing queue events',
+                );
+            }
+        }
+
+        if (this.queue) {
+            try {
+                await this.queue.close();
+            } catch (err) {
+                this.app?.logger.error(
+                    { err: err instanceof Error ? err : new Error(String(err)) },
+                    'WorkerManager: error while closing queue',
+                );
+            }
+        }
+
         this.app?.logger.info('WorkerManager stopped');
     }
 
@@ -136,7 +201,7 @@ export class WorkerManager implements Driver {
 
     private mapJobOptions(opts?: JobOptions) {
         if (!opts) return undefined;
-        return {
+        const mapped: Record<string, unknown> = {
             attempts: opts.attempts,
             delay: opts.delay,
             priority: opts.priority,
@@ -144,5 +209,85 @@ export class WorkerManager implements Driver {
             removeOnComplete: opts.removeOnComplete,
             removeOnFail: opts.removeOnFail,
         };
+        if (opts.repeat !== undefined) {
+            mapped.repeat = this.mapRepeat(opts.repeat);
+        }
+        return mapped;
+    }
+
+    /**
+     * Normaliza una RepeatSpec a la forma `repeat` de BullMQ:
+     * - string  → `{ pattern: cron }`
+     * - `{ every }` / `{ pattern }` → se reenvían tal cual.
+     */
+    private mapRepeat(repeat: RepeatSpec) {
+        if (typeof repeat === 'string') {
+            return { pattern: repeat };
+        }
+        return { ...repeat };
+    }
+
+    /**
+     * Maneja el evento `failed` del worker. Loggea el fallo y, si el job agotó
+     * todos sus reintentos y `deadLetter` está activado, emite
+     * `worker:dead-letter` en el bus de eventos de la App.
+     */
+    private onFailed(job: BullJob | undefined, err: Error) {
+        this.app?.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'Job failed');
+
+        if (!this.options.deadLetter || !job) return;
+
+        // BullMQ default attempts is 1 when unspecified.
+        const maxAttempts = job.opts?.attempts ?? 1;
+        if (job.attemptsMade < maxAttempts) return;
+
+        const payload: DeadLetterPayload = {
+            jobId: job.id,
+            name: job.name,
+            data: job.data,
+            failedReason: job.failedReason ?? err?.message,
+            attemptsMade: job.attemptsMade,
+        };
+        this.app?.events.emit('worker:dead-letter', payload);
+        this.app?.logger.warn(
+            { jobId: job.id, jobName: job.name, attemptsMade: job.attemptsMade },
+            'Job routed to dead-letter',
+        );
+    }
+
+    /**
+     * Construye el descriptor de un job, incluyendo el helper `result()` que
+     * espera el valor de retorno del handler vía `job.waitUntilFinished`.
+     */
+    private buildDescriptor<T, R>(job: BullJob, name: string, data: T): JobDescriptor<T, R> {
+        return {
+            id: job.id!,
+            name,
+            data,
+            result: (ttlMs?: number): Promise<R> => {
+                const queueEvents = this.getQueueEvents();
+                return job.waitUntilFinished(queueEvents, ttlMs) as Promise<R>;
+            },
+        };
+    }
+
+    /**
+     * Devuelve (creando perezosamente) una instancia compartida de QueueEvents
+     * usada para esperar resultados de jobs.
+     */
+    private getQueueEvents(): QueueEvents {
+        if (!this.queueEvents) {
+            try {
+                this.queueEvents = new QueueEvents(this.options.queueName || 'iskra-jobs', {
+                    connection: this.parseConnection(),
+                });
+            } catch (err) {
+                throw new QueueError('Failed to initialize BullMQ QueueEvents', {
+                    cause: err instanceof Error ? err : new Error(String(err)),
+                    context: { queueName: this.options.queueName || 'iskra-jobs' },
+                });
+            }
+        }
+        return this.queueEvents;
     }
 }

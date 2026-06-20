@@ -58,16 +58,16 @@ describe.if(redisUp)('RedisAdapter (requires Redis)', () => {
 
     it('round-trips an object through JSON serialization', async () => {
         await adapter.set(prefix + 'obj', { a: 1, b: [2, 3] });
-        expect(await adapter.get(prefix + 'obj')).toEqual({ a: 1, b: [2, 3] });
+        expect(await adapter.get<{ a: number; b: number[] }>(prefix + 'obj')).toEqual({ a: 1, b: [2, 3] });
     });
 
     it('returns a non-JSON string value unchanged', async () => {
         await adapter.set(prefix + 'str', 'hello-world');
-        expect(await adapter.get(prefix + 'str')).toBe('hello-world');
+        expect(await adapter.get<string>(prefix + 'str')).toBe('hello-world');
     });
 
-    it('returns null for a missing key', async () => {
-        expect(await adapter.get(prefix + 'missing')).toBeNull();
+    it('returns undefined for a missing key', async () => {
+        expect(await adapter.get(prefix + 'missing')).toBeUndefined();
     });
 
     it('reports key existence with has()', async () => {
@@ -84,7 +84,7 @@ describe.if(redisUp)('RedisAdapter (requires Redis)', () => {
 
     it('applies a TTL on set', async () => {
         await adapter.set(prefix + 'ttl', 'temp', 60);
-        expect(await adapter.get(prefix + 'ttl')).toBe('temp');
+        expect(await adapter.get<string>(prefix + 'ttl')).toBe('temp');
         expect(await adapter.has(prefix + 'ttl')).toBe(true);
     });
 });
@@ -112,7 +112,7 @@ describe.if(redisUp)('KVManager with the Redis driver', () => {
 
     it('selects the Redis adapter and persists values to Redis', async () => {
         await kv.set(key, { ok: true });
-        expect(await kv.get(key)).toEqual({ ok: true });
+        expect(await kv.get<{ ok: boolean }>(key)).toEqual({ ok: true });
         expect(await kv.has(key)).toBe(true);
     });
 });

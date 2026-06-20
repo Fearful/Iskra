@@ -1,17 +1,95 @@
 import { type App, type Driver, type AppConfig, DriverError } from '@iskra-bun/core';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { drizzle as drizzleMysql, type MySql2Database } from 'drizzle-orm/mysql2';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import postgres from 'postgres';
 import mysql from 'mysql2/promise';
-import { ConnectionError } from './errors';
+import { sql } from 'drizzle-orm';
+import { ConnectionError, QueryError } from './errors';
 import { MigrationHelper, mapDialect } from './migrations';
 
-export class DbDriver implements Driver {
+/**
+ * Observability callback invoked for every SQL statement Drizzle executes.
+ * Receives the rendered query and its bound parameters.
+ */
+export type OnQueryHook = (query: string, params: unknown[]) => void;
+
+/**
+ * The transaction handle passed to {@link DbDriver.transaction}. Drizzle types
+ * the transaction object per dialect, so — like {@link IskraDrizzleDb} — this is
+ * the union of the supported dialect databases for the same schema. Callers can
+ * narrow by dialect if they need dialect-specific transaction APIs.
+ */
+export type IskraDrizzleTx<TSchema extends Record<string, unknown> = Record<string, never>> =
+    IskraDrizzleDb<TSchema>;
+
+/**
+ * The Drizzle database handle exposed by {@link DbDriver}, parameterized by the
+ * caller's schema. Because the concrete dialect is chosen at runtime, this is a
+ * union of the supported dialect databases — all four share the same
+ * `TSchema extends Record<string, unknown> = Record<string, never>` parameter,
+ * so passing a schema types `db.query.*` for opt-in callers while the default
+ * `Record<string, never>` reproduces the historical untyped behavior.
+ */
+export type IskraDrizzleDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+    | PostgresJsDatabase<TSchema>
+    | MySql2Database<TSchema>
+    | BunSQLiteDatabase<TSchema>
+    | LibSQLDatabase<TSchema>;
+
+/**
+ * Redact username and password from a database URL so it is safe to log.
+ * Returns the scrubbed URL string, or undefined if parsing fails.
+ *
+ * e.g. postgres://user:pass@host:5432/db → postgres://***:***@host:5432/db
+ */
+export function scrubUrl(url: string): string | undefined {
+    try {
+        const parsed = new URL(url);
+        if (parsed.username) parsed.username = '***';
+        if (parsed.password) parsed.password = '***';
+        return parsed.toString();
+    } catch {
+        return undefined;
+    }
+}
+
+export class DbDriver<TSchema extends Record<string, unknown> = Record<string, never>> implements Driver {
     name = 'db';
     private client: any;
-    public db: any;
+    public db!: IskraDrizzleDb<TSchema>;
 
     private app: App | undefined;
+    private onQuery: OnQueryHook | undefined;
+
+    /**
+     * Register an observability callback that receives every SQL statement (and
+     * its bound params) Drizzle executes. Must be called before {@link start},
+     * since Drizzle's logger is wired at connection time. A throwing callback is
+     * swallowed so observability never breaks a real query.
+     */
+    setOnQuery(onQuery: OnQueryHook): void {
+        this.onQuery = onQuery;
+    }
+
+    /**
+     * Build the Drizzle `logger` option that forwards to {@link onQuery} when a
+     * hook is registered, or `undefined` to leave Drizzle's default logging off.
+     */
+    private buildLogger(): { logQuery(query: string, params: unknown[]): void } | undefined {
+        const hook = this.onQuery;
+        if (!hook) return undefined;
+        return {
+            logQuery: (query: string, params: unknown[]) => {
+                try {
+                    hook(query, params);
+                } catch {
+                    // Observability must never break the underlying query.
+                }
+            },
+        };
+    }
 
     async init(app: App) {
         this.app = app;
@@ -28,28 +106,30 @@ export class DbDriver implements Driver {
 
         this.app!.logger.info(`Initializing DB driver: ${config.driver}`);
 
+        const logger = this.buildLogger();
+
         try {
             switch (config.driver) {
                 case 'postgres':
                     this.client = postgres(config.url);
-                    this.db = drizzle(this.client);
+                    this.db = drizzle<TSchema>(this.client, { logger });
                     break;
                 case 'mysql':
-                    this.client = await mysql.createConnection(config.url);
-                    this.db = drizzleMysql(this.client);
+                    this.client = mysql.createPool(config.url);
+                    this.db = drizzleMysql<TSchema>(this.client, { logger });
                     break;
                 case 'sqlite': {
                     const { Database } = await import("bun:sqlite");
                     const { drizzle: drizzleSqlite } = await import("drizzle-orm/bun-sqlite");
                     this.client = new Database(config.url);
-                    this.db = drizzleSqlite(this.client);
+                    this.db = drizzleSqlite<TSchema>(this.client, { logger });
                     break;
                 }
                 case 'libsql': {
                     const { createClient } = await import('@libsql/client');
                     const { drizzle: drizzleLibsql } = await import('drizzle-orm/libsql');
                     this.client = createClient({ url: config.url, authToken: config.authToken });
-                    this.db = drizzleLibsql(this.client);
+                    this.db = drizzleLibsql<TSchema>(this.client, { logger });
                     break;
                 }
                 default:
@@ -62,9 +142,13 @@ export class DbDriver implements Driver {
         } catch (error) {
             if (error instanceof DriverError) throw error;
             this.app!.logger.error({ error }, 'Failed to connect to DB');
+            const safeUrl = scrubUrl(config.url);
             throw new ConnectionError('Failed to connect to DB', {
                 cause: error instanceof Error ? error : new Error(String(error)),
-                context: { driver: config.driver, url: config.url },
+                context: {
+                    driver: config.driver,
+                    ...(safeUrl !== undefined ? { url: safeUrl } : {}),
+                },
             });
         }
     }
@@ -91,6 +175,62 @@ export class DbDriver implements Driver {
         );
 
         await helper.migrate();
+    }
+
+    /**
+     * Run `fn` inside a database transaction, delegating to Drizzle's
+     * `db.transaction`. Callers receive the transaction-scoped db handle instead
+     * of reaching into the raw `db`. The dialect union means `tx` is typed as
+     * {@link IskraDrizzleTx}; narrow by dialect if you need dialect-specific APIs.
+     * Failures are wrapped in {@link QueryError} (Drizzle rolls back on throw).
+     */
+    async transaction<R>(fn: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R> {
+        if (!this.db) {
+            throw new QueryError('Cannot run transaction: DB is not started', {
+                context: { driver: this.app?.config.db?.driver },
+            });
+        }
+        try {
+            // The dialect-specific `transaction` overloads do not unify across the
+            // union, so we route through the runtime method with a faithful cast
+            // of the public handle types.
+            return await (this.db as IskraDrizzleDb<TSchema> & {
+                transaction(cb: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R>;
+            }).transaction((tx) => fn(tx));
+        } catch (error) {
+            if (error instanceof QueryError) throw error;
+            throw new QueryError('Transaction failed', {
+                cause: error instanceof Error ? error : new Error(String(error)),
+                context: { driver: this.app?.config.db?.driver },
+            });
+        }
+    }
+
+    /**
+     * Liveness probe for readiness checks (e.g. web-kit's addReadinessCheck /
+     * k8s readiness). Runs a trivial `SELECT 1` against the active dialect and
+     * resolves `true` on success or `false` on any failure — it never rejects.
+     */
+    async ping(): Promise<boolean> {
+        if (!this.db) return false;
+        try {
+            // bun-sqlite exposes the synchronous `.run()`; postgres-js, mysql2 and
+            // libsql expose the async `.execute()`. Prefer whichever exists.
+            const handle = this.db as {
+                run?(query: unknown): unknown;
+                execute?(query: unknown): Promise<unknown>;
+            };
+            if (typeof handle.run === 'function') {
+                await handle.run(sql`SELECT 1`);
+            } else if (typeof handle.execute === 'function') {
+                await handle.execute(sql`SELECT 1`);
+            } else {
+                return false;
+            }
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     async stop() {

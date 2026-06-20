@@ -91,13 +91,15 @@ describe("OracleDriver bridge protocol", () => {
         }
     });
 
-    test("a fatal message does not break subsequent queries", async () => {
+    test("a fatal message rejects all pending promises including the triggering query", async () => {
         const errSpy = spyOn(console, "error").mockImplementation(() => {});
         try {
-            // Fatal messages carry no id, so this query never resolves — fire and forget.
-            void driver.query("FATAL_TEST");
-            const rows = await driver.query("SELECT 2 FROM dual");
-            expect(rows).toEqual([{ echo: "SELECT 2 FROM dual", params: [] }]);
+            // Fire the fatal-triggering query and capture (don't await) so we can
+            // assert it rejects rather than hangs.
+            const fatalPromise = driver.query("FATAL_TEST").catch((e) => e);
+            const err = await fatalPromise;
+            expect(err).toBeInstanceOf(Error);
+            expect((err as Error).message).toMatch(/fatal/i);
             expect(errSpy).toHaveBeenCalled();
         } finally {
             errSpy.mockRestore();

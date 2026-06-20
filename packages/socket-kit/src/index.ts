@@ -1,3 +1,3 @@
 export { SocketDriver } from './driver';
-export { SocketRouter, type SocketContext } from './router';
+export { SocketRouter, type SocketContext, type SocketHandler, type SocketData } from './router';
 export * from './errors';

@@ -138,25 +138,74 @@ describe("Migration System", () => {
         it("passes --name to generate when provided", async () => {
             mockSpawn({ exitCode: 0 });
             await helper().generate("add_users");
-            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "generate", "--name", "add_users"]);
+            expect(lastCmd).toContain("--name");
+            expect(lastCmd).toContain("add_users");
         });
 
         it("runs generate without --name when omitted", async () => {
             mockSpawn({ exitCode: 0 });
             await helper().generate();
-            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "generate"]);
+            expect(lastCmd).not.toContain("--name");
         });
 
-        it("runs `drizzle-kit push`", async () => {
+        // Regression: schemaPath/migrationsDir from the config were silently
+        // ignored because no flags were passed. generate supports both --schema
+        // and --out, so both must appear in the spawned argv.
+        it("passes --schema and --out to generate from the config", async () => {
+            mockSpawn({ exitCode: 0 });
+            await helper().generate();
+            expect(lastCmd).toEqual([
+                "bunx",
+                "drizzle-kit",
+                "generate",
+                "--schema",
+                "./schema.ts",
+                "--out",
+                "./drizzle",
+            ]);
+        });
+
+        it("runs `drizzle-kit push` with --schema (push has no --out)", async () => {
             mockSpawn({ exitCode: 0 });
             await helper().push();
-            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "push"]);
+            // push accepts --schema but not --out
+            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "push", "--schema", "./schema.ts"]);
+            expect(lastCmd).not.toContain("--out");
         });
 
-        it("runs `drizzle-kit drop`", async () => {
+        it("runs `drizzle-kit drop` with --out (drop has no --schema)", async () => {
             mockSpawn({ exitCode: 0 });
             await helper().drop();
-            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "drop"]);
+            // drop accepts --out but not --schema
+            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "drop", "--out", "./drizzle"]);
+            expect(lastCmd).not.toContain("--schema");
+        });
+
+        // migrate only supports --config; schema/out are not CLI flags for it.
+        it("runs `drizzle-kit migrate` without --schema/--out (unsupported there)", async () => {
+            mockSpawn({ exitCode: 0 });
+            await helper().migrate();
+            expect(lastCmd).toEqual(["bunx", "drizzle-kit", "migrate"]);
+        });
+
+        // configPath, when provided, threads through to every command via --config.
+        it("passes --config to migrate when configPath is set", async () => {
+            mockSpawn({ exitCode: 0 });
+            const h = new MigrationHelper({
+                dialect: "postgresql",
+                dbUrl: "postgres://localhost/test",
+                schemaPath: "./schema.ts",
+                migrationsDir: "./drizzle",
+                configPath: "./drizzle.config.ts",
+            });
+            await h.migrate();
+            expect(lastCmd).toEqual([
+                "bunx",
+                "drizzle-kit",
+                "migrate",
+                "--config",
+                "./drizzle.config.ts",
+            ]);
         });
 
         it("throws MigrationError carrying exit code and stderr on failure", async () => {

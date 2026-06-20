@@ -1,23 +1,35 @@
 import type { Feature, DbConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
-import { drizzle as drizzleBunSqlite } from 'drizzle-orm/bun-sqlite';
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { drizzle as drizzleMysql, type MySql2Database } from 'drizzle-orm/mysql2';
+import { drizzle as drizzleBunSqlite, type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import postgres from 'postgres';
 import mysql from 'mysql2/promise';
 import { Database } from 'bun:sqlite';
 
+/**
+ * The Drizzle database handle a {@link DbFeature} exposes, parameterized by the
+ * caller's schema. A union of the supported dialect databases — all share the
+ * same `TSchema extends Record<string, unknown> = Record<string, never>`
+ * parameter, so passing a schema types `db.query.*` for opt-in callers while the
+ * default `Record<string, never>` reproduces the historical untyped behavior.
+ */
+export type WebKitDrizzleDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+    | PostgresJsDatabase<TSchema>
+    | MySql2Database<TSchema>
+    | BunSQLiteDatabase<TSchema>;
+
 declare module "hono" {
     interface ContextVariableMap {
-        db: any;
+        db: WebKitDrizzleDb;
     }
 }
 
-export class DbFeature implements Feature {
+export class DbFeature<TSchema extends Record<string, unknown> = Record<string, never>> implements Feature {
     name = "db";
     private client: any;
-    public db: any;
+    public db!: WebKitDrizzleDb<TSchema>;
     public readonly adapter: string;
 
     constructor(private config: DbConfig) {
@@ -40,7 +52,7 @@ export class DbFeature implements Feature {
                         password: config.connection.password!
                     };
                     this.client = postgres(pgConfig as any);
-                    this.db = drizzle(this.client);
+                    this.db = drizzle<TSchema>(this.client);
                     break;
                 }
                 case 'mysql': {
@@ -53,13 +65,13 @@ export class DbFeature implements Feature {
                         password: config.connection.password!
                     };
                     this.client = await mysql.createConnection(mysqlConfig as any);
-                    this.db = drizzleMysql(this.client);
+                    this.db = drizzleMysql<TSchema>(this.client);
                     break;
                 }
                 case 'sqlite': {
                     const url = config.connection?.database || ':memory:';
                     this.client = new Database(url);
-                    this.db = drizzleBunSqlite(this.client);
+                    this.db = drizzleBunSqlite<TSchema>(this.client);
                     break;
                 }
                 default:
@@ -73,7 +85,7 @@ export class DbFeature implements Feature {
 
         const app = kernel.getApp();
         app.use("*", async (c: Context, next: Next) => {
-            c.set("db", this.db);
+            c.set("db", this.db as WebKitDrizzleDb);
             await next();
         });
     }

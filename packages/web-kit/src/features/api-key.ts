@@ -46,8 +46,11 @@ export class ApiKeyStore {
         console.log(`✅ Loaded ${this.staticKeysMap.size} static API keys`);
     }
 
-    private generateId(key: string): string {
-        return key.substring(0, 8);
+    private generateId(_key: string): string {
+        // Derive the id independently of the secret key material so it can never
+        // leak a usable prefix of the key. Lookup is keyed by the plaintext key
+        // (staticKeysMap / cache), never by id, so a random id is sufficient.
+        return crypto.randomUUID();
     }
 
     private compareKeys(a: string, b: string): boolean {

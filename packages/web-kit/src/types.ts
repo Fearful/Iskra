@@ -132,6 +132,9 @@ export interface HealthCheckConfig {
             details?: any;
         }>;
     };
+    readinessChecks?: {
+        [name: string]: () => Promise<boolean>;
+    };
 }
 
 export interface RequestIdConfig {

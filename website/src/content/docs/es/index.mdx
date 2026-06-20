@@ -77,17 +77,24 @@ title="index.ts"
 
 ## Paquetes
 
-| Paquete                  | Descripción                                                    |
-| :----------------------- | :------------------------------------------------------------- |
-| `@iskra-bun/core`        | Núcleo del framework: App, DI, eventos, logger, errores        |
-| `@iskra-bun/web-kit`     | Servidor HTTP con Hono, Kernel y 15+ features integradas       |
-| `@iskra-bun/db-kit`      | Base de datos SQL con Drizzle ORM (PostgreSQL, MySQL, SQLite)  |
-| `@iskra-bun/socket-kit`  | WebSocket nativo de Bun con router y broadcast                 |
-| `@iskra-bun/kv-kit`      | Store Key-Value con adapters Redis y memoria                   |
-| `@iskra-bun/worker-kit`  | Cola de jobs en background con BullMQ                          |
-| `@iskra-bun/process-kit` | Gestión de procesos externos (Python, binarios)                |
-| `@iskra-bun/desktop-kit` | Soporte de apps de escritorio con Tauri _(experimental)_       |
-| `@iskra-bun/mobile-kit`  | Soporte de plataformas móviles _(experimental)_                |
-| `@iskra-bun/db-oracle`   | Soporte de Oracle Database vía bridge/sidecar _(experimental)_ |
+| Paquete                    | Descripción                                                                          |
+| :------------------------- | :----------------------------------------------------------------------------------- |
+| `@iskra-bun/core`          | Núcleo del framework: App, DI, eventos, logger, errores                              |
+| `@iskra-bun/config-kit`    | Carga y validación de configuración de entorno con Zod.                              |
+| `@iskra-bun/web-kit`       | Servidor HTTP con Hono, Kernel y 15+ features integradas                             |
+| `@iskra-bun/auth-kit`      | Autenticación con better-auth (config + esquema Drizzle), independiente del HTTP.    |
+| `@iskra-bun/db-kit`        | Base de datos SQL con Drizzle ORM (PostgreSQL, MySQL, SQLite)                        |
+| `@iskra-bun/socket-kit`    | WebSocket nativo de Bun con router y broadcast                                       |
+| `@iskra-bun/kv-kit`        | Store Key-Value con adapters Redis y memoria                                         |
+| `@iskra-bun/cache-kit`     | Caché de alto nivel (cache-aside, TTL, namespaces, tags) sobre kv-kit.               |
+| `@iskra-bun/worker-kit`    | Cola de jobs en background con BullMQ                                                |
+| `@iskra-bun/mailer-kit`    | Email independiente del transporte (SMTP/SendGrid/Mailgun/SES).                      |
+| `@iskra-bun/storage-kit`   | Almacenamiento de archivos (local, S3/MinIO) con streaming.                          |
+| `@iskra-bun/process-kit`   | Gestión de procesos externos (Python, binarios)                                      |
+| `@iskra-bun/testing-kit`   | Utilidades de testing (createTestApp, mocks de logger/driver, withTempDir).          |
+| `@iskra-bun/desktop-kit`   | Soporte de apps de escritorio con Tauri _(experimental)_                             |
+| `@iskra-bun/mobile-kit`    | Soporte de plataformas móviles _(experimental)_                                      |
+| `@iskra-bun/db-oracle`     | Soporte de Oracle Database vía bridge/sidecar _(experimental)_                       |
+| `create-iskra`             | CLI de andamiaje de proyectos (`bun create iskra`).                                  |
 
 Requiere **Bun v1.0+**. Algunas dependencias nativas también esperan **Node.js v18+**.

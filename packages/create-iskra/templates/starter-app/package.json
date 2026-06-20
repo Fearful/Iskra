@@ -1,0 +1,14 @@
+{
+    "name": "starter-app",
+    "version": "0.1.0",
+    "main": "src/main.ts",
+    "scripts": {
+        "start": "bun run src/main.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/web-kit": "workspace:*",
+        "@iskra-bun/process-kit": "workspace:*",
+        "zod": "^3.24.1"
+    }
+}

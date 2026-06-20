@@ -23,7 +23,7 @@ describe('KVKit', () => {
 
     it('should set and get values', async () => {
         await kv.set('foo', 'bar');
-        const val = await kv.get('foo');
+        const val = await kv.get<string>('foo');
         expect(val).toBe('bar');
     });
 
@@ -36,7 +36,7 @@ describe('KVKit', () => {
 
     it('should respect TTL', async () => {
         await kv.set('temp', 'gone', 0.1); // 100ms
-        const imm = await kv.get('temp');
+        const imm = await kv.get<string>('temp');
         expect(imm).toBe('gone');
 
         await new Promise(r => setTimeout(r, 150));
@@ -46,7 +46,7 @@ describe('KVKit', () => {
 
     it('should delete keys', async () => {
         await kv.set('to-delete', 'value');
-        expect(await kv.get('to-delete')).toBe('value');
+        expect(await kv.get<string>('to-delete')).toBe('value');
 
         await kv.del('to-delete');
         expect(await kv.get('to-delete')).toBeUndefined();
@@ -65,10 +65,10 @@ describe('KVKit', () => {
 
     it('should overwrite existing values', async () => {
         await kv.set('overwrite', 'first');
-        expect(await kv.get('overwrite')).toBe('first');
+        expect(await kv.get<string>('overwrite')).toBe('first');
 
         await kv.set('overwrite', 'second');
-        expect(await kv.get('overwrite')).toBe('second');
+        expect(await kv.get<string>('overwrite')).toBe('second');
     });
 
     it('should handle arrays as values', async () => {

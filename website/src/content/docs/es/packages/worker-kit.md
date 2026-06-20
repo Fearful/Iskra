@@ -53,6 +53,7 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 | `concurrency` | `number` | `1` | Jobs procesados en paralelo |
 | `queueName` | `string` | `'iskra-jobs'` | Nombre de la queue en Redis |
 | `defaultJobOptions` | `JobOptions` | `undefined` | Opciones por defecto para todos los jobs |
+| `deadLetter` | `boolean` | `false` | Activa el ruteo a dead-letter (ver [Manejo de Dead-Letter](#manejo-de-dead-letter)) |
 
 ### JobOptions
 
@@ -64,6 +65,7 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 | `backoff` | `{ type, delay }` | Backoff entre reintentos (`fixed` o `exponential`) |
 | `removeOnComplete` | `boolean \| number` | Eliminar job al completar (o mantener los ultimos N) |
 | `removeOnFail` | `boolean \| number` | Eliminar job al fallar (o mantener los ultimos N) |
+| `repeat` | `RepeatSpec` | Programa el job como repetible (cron o intervalo) |
 
 ## Encolar con Opciones
 
@@ -81,6 +83,45 @@ await worker.enqueue('payment.process', { orderId: 456 }, {
 });
 ```
 
+## Payloads Tipados
+
+`register` y `enqueue` aceptan parametros de tipo para que `job.data` y el valor de retorno sean completamente tipados. Por defecto son `unknown`/`void`, por lo que el codigo existente sin tipos sigue funcionando sin cambios.
+
+```typescript
+interface EmailPayload {
+    to: string;
+    subject: string;
+}
+
+interface EmailResult {
+    messageId: string;
+}
+
+// Handler tipado — job.data es EmailPayload, tipo de retorno es EmailResult
+worker.register<EmailPayload, EmailResult>('email.send', async (job) => {
+    const { to, subject } = job.data; // tipado
+    const id = await enviarEmail(to, subject);
+    return { messageId: id };         // retorno tipado
+});
+
+// Encolar — descriptor.data y descriptor.result() estan tipados
+const descriptor = await worker.enqueue<EmailPayload, EmailResult>(
+    'email.send',
+    { to: 'user@example.com', subject: 'Hola' },
+);
+```
+
+El tipo `JobHandler<T, R>` tambien puede importarse directamente para declaraciones de handlers:
+
+```typescript
+import type { JobHandler } from '@iskra-bun/worker-kit';
+
+const handler: JobHandler<EmailPayload, EmailResult> = async (job) => {
+    return { messageId: await enviarEmail(job.data.to, job.data.subject) };
+};
+worker.register('email.send', handler);
+```
+
 ## Handler
 
 Cada handler recibe un objeto con:
@@ -95,6 +136,107 @@ worker.register('mi.job', async (job) => {
 ```
 
 Si el handler tira una excepcion, BullMQ lo reintenta automaticamente segun la config de `attempts` y `backoff`.
+
+## Jobs Programados / Repetibles
+
+Usa el metodo de conveniencia `schedule` o agrega el campo `repeat` en `JobOptions` para ejecutar un job de forma recurrente.
+
+`RepeatSpec` acepta:
+
+- Un string cron: `'0 9 * * 1-5'`
+- Un objeto de intervalo: `{ every: ms, limit?: n }`
+- Un objeto cron con zona horaria: `{ pattern: '0 9 * * *', tz: 'America/New_York', limit?: n }`
+
+```typescript
+// String cron — todos los dias de semana a las 09:00
+await worker.schedule('reporte.diario', { tipo: 'diario' }, '0 9 * * 1-5');
+
+// Cada 30 minutos, maximo 10 veces
+await worker.schedule('cache.warm', {}, { every: 30 * 60 * 1000, limit: 10 });
+
+// Cron con zona horaria
+await worker.schedule(
+    'facturacion.mensual',
+    { plan: 'pro' },
+    { pattern: '0 0 1 * *', tz: 'UTC' },
+);
+
+// Equivalente via enqueue + opcion repeat
+await worker.enqueue('reporte.diario', { tipo: 'diario' }, {
+    repeat: '0 9 * * 1-5',
+    attempts: 2,
+});
+```
+
+Firma de `schedule`:
+
+```typescript
+schedule<T, R>(
+    name: string,
+    data: T,
+    repeat: RepeatSpec,
+    opts?: JobOptions,       // el resto de JobOptions sigue aplicando
+): Promise<JobDescriptor<T, R>>
+```
+
+## Resultados de Jobs
+
+Tanto `enqueue` como `schedule` devuelven un `JobDescriptor`. El helper `result()` espera a que el job termine y resuelve con el valor de retorno del handler (respaldado por `QueueEvents` de BullMQ).
+
+```typescript
+const descriptor = await worker.enqueue<EmailPayload, EmailResult>(
+    'email.send',
+    { to: 'user@example.com', subject: 'Hola' },
+);
+
+// Esperar hasta 10 segundos a que el handler termine
+const { messageId } = await descriptor.result(10_000);
+```
+
+Forma de `JobDescriptor`:
+
+```typescript
+interface JobDescriptor<T, R> {
+    id: string;
+    name: string;
+    data: T;
+    result(ttlMs?: number): Promise<R>; // ttlMs: timeout opcional en milisegundos
+}
+```
+
+`result()` abre una conexion `QueueEvents` compartida de forma perezosa en la primera llamada. Si el job falla, `result()` rechaza con el error de fallo.
+
+## Manejo de Dead-Letter
+
+Activa con `deadLetter: true` en `WorkerManagerOptions`. Una vez activado, cuando un job agota todos sus reintentos el manager emite el evento `worker:dead-letter` en el bus de eventos de la App en lugar de descartar el job silenciosamente.
+
+```typescript
+const worker = new WorkerManager({
+    connection: process.env.REDIS_URL || 'redis://localhost:6379',
+    deadLetter: true,
+    defaultJobOptions: { attempts: 3 },
+});
+
+// Escuchar en el bus de eventos de la App
+app.events.on('worker:dead-letter', (payload) => {
+    console.error('Job en dead-letter:', payload);
+    // payload.jobId, payload.name, payload.data, payload.failedReason, payload.attemptsMade
+});
+```
+
+Forma de `DeadLetterPayload`:
+
+```typescript
+interface DeadLetterPayload {
+    jobId: string | undefined;
+    name: string | undefined;
+    data: unknown;
+    failedReason: string | undefined;
+    attemptsMade: number;
+}
+```
+
+`deadLetter` tiene por defecto `false`, por lo que el codigo existente no se ve afectado.
 
 ## Errores
 

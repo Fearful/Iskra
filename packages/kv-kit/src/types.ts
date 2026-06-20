@@ -3,8 +3,8 @@ export interface KVAdapter {
     connect(): Promise<void> | void;
     disconnect(): Promise<void> | void;
 
-    get(key: string): Promise<any>;
-    set(key: string, value: any, ttl?: number): Promise<void>;
+    get<T = unknown>(key: string): Promise<T | undefined>;
+    set<T = unknown>(key: string, value: T, ttl?: number): Promise<void>;
     del(key: string): Promise<void>;
     has(key: string): Promise<boolean>;
 }

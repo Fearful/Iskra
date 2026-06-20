@@ -25,15 +25,22 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | Package | Description | Docs |
 | :--- | :--- | :--- |
 | `@iskra-bun/core` | Framework core: App, DI, events, logger, errors | [Core](./docs/core.md) |
+| `@iskra-bun/config-kit` | Typed, Zod-validated environment/config loading | [Config Kit](./docs/config-kit.md) |
 | `@iskra-bun/web-kit` | HTTP server with Hono, Kernel, and 15+ built-in features | [Web Kit](./docs/web-kit.md) |
+| `@iskra-bun/auth-kit` | Transport-agnostic better-auth (config + Drizzle schema), usable outside HTTP | [Auth Kit](./docs/auth-kit.md) |
 | `@iskra-bun/db-kit` | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite) | [DB Kit](./docs/db-kit.md) |
 | `@iskra-bun/db-oracle` | Oracle Database support (via Bridge/Sidecar) | [DB Kit](./docs/db-kit.md) |
 | `@iskra-bun/socket-kit` | Native Bun WebSocket with router and broadcast | [Socket Kit](./docs/socket-kit.md) |
 | `@iskra-bun/kv-kit` | Key-Value store with Redis and in-memory adapters | [KV Kit](./docs/kv-kit.md) |
+| `@iskra-bun/cache-kit` | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit | [Cache Kit](./docs/cache-kit.md) |
 | `@iskra-bun/worker-kit` | Background job queue with BullMQ | [Worker Kit](./docs/worker-kit.md) |
+| `@iskra-bun/mailer-kit` | Transport-agnostic email (SMTP/SendGrid/Mailgun/SES) | [Mailer Kit](./docs/mailer-kit.md) |
+| `@iskra-bun/storage-kit` | File storage (local, S3/MinIO) with streaming | [Storage Kit](./docs/storage-kit.md) |
 | `@iskra-bun/process-kit` | External process management (Python, binaries) | [Process Kit](./docs/process-kit.md) |
+| `@iskra-bun/testing-kit` | Test utilities (createTestApp, mock logger/driver, withTempDir) | [Testing Kit](./docs/testing-kit.md) |
 | `@iskra-bun/desktop-kit` | Desktop app support with Tauri | [Desktop Kit](./docs/desktop-kit.md) |
 | `@iskra-bun/mobile-kit` | Mobile platform support | [Mobile Kit](./docs/mobile-kit.md) |
+| `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](./docs/create-iskra.md) |
 
 ## Quick start
 

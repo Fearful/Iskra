@@ -1,5 +1,5 @@
 import type { StorageFeature } from "../storage";
-import type { BaseStorageAdapter, PutOptions } from "../storage/base";
+import type { BaseStorageAdapter, PutOptions } from "@iskra-bun/storage-kit";
 
 export interface UploadOptions {
     metadata?: Record<string, string>;

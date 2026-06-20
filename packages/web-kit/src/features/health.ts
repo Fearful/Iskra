@@ -6,7 +6,10 @@ export class HealthCheckFeature implements Feature {
     name = "health";
 
     private kernel?: Kernel;
-    private config: Required<Omit<HealthCheckConfig, "checks">> & { checks?: HealthCheckConfig["checks"] };
+    private config: Required<Omit<HealthCheckConfig, "checks" | "readinessChecks">> & {
+        checks?: HealthCheckConfig["checks"];
+    };
+    private readinessChecks: Map<string, () => Promise<boolean>>;
 
     constructor(config: HealthCheckConfig = {}) {
         this.config = {
@@ -16,6 +19,12 @@ export class HealthCheckFeature implements Feature {
             includeDetails: config.includeDetails !== undefined ? config.includeDetails : true,
             checks: config.checks,
         };
+        const initial = config.readinessChecks ?? {};
+        this.readinessChecks = new Map(Object.entries(initial));
+    }
+
+    addReadinessCheck(name: string, check: () => Promise<boolean>): void {
+        this.readinessChecks = new Map([...this.readinessChecks, [name, check]]);
     }
 
     async initialize(kernel: Kernel): Promise<void> {
@@ -80,8 +89,29 @@ export class HealthCheckFeature implements Feature {
     }
 
     private async handleReadinessCheck(c: Context) {
-        // Simplified readiness check
-        return c.json({ status: "ready" });
+        if (this.readinessChecks.size === 0) {
+            return c.json({ status: "ready" });
+        }
+
+        const results: Record<string, boolean> = {};
+        const failed: string[] = [];
+
+        for (const [name, check] of this.readinessChecks) {
+            try {
+                const passed = await check();
+                results[name] = passed;
+                if (!passed) failed.push(name);
+            } catch {
+                results[name] = false;
+                failed.push(name);
+            }
+        }
+
+        if (failed.length > 0) {
+            return c.json({ status: "not ready", checks: results, failed }, 503);
+        }
+
+        return c.json({ status: "ready", checks: results });
     }
 
     private async handleLivenessCheck(c: Context) {

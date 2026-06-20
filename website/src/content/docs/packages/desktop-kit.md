@@ -3,8 +3,8 @@ title: Desktop Kit
 description: Desktop application support with Tauri.
 ---
 
-:::caution[Experimental]
-`@iskra-bun/desktop-kit` is experimental. APIs may change between releases.
+:::caution[Alpha — not yet functional]
+`@iskra-bun/desktop-kit` is an **Alpha placeholder**. The `DesktopDriver` currently only wires up lifecycle logging; the real Tauri API wrappers (windows, IPC, menus) land in **v0.2**. The examples below describe the planned API and are not usable yet.
 :::
 
 Desktop application support with [Tauri](https://tauri.app). It exposes a `DesktopDriver` that registers with the Core and acts as a bridge between your Iskra App's logic and Tauri's native APIs (windows, IPC, menus).

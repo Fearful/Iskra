@@ -18,17 +18,18 @@ export class RedisAdapter implements KVAdapter {
         this.client?.disconnect();
     }
 
-    async get(key: string) {
+    async get<T = unknown>(key: string): Promise<T | undefined> {
         const val = await this.client?.get(key);
+        if (val === null || val === undefined) return undefined;
         try {
-            return val ? JSON.parse(val) : null;
+            return JSON.parse(val) as T;
         } catch {
-            return val;
+            return val as unknown as T;
         }
     }
 
-    async set(key: string, value: any, ttl?: number) {
-        const val = typeof value === 'object' ? JSON.stringify(value) : value;
+    async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
+        const val = typeof value === 'object' ? JSON.stringify(value) : String(value);
         if (ttl) {
             await this.client?.set(key, val, 'EX', ttl);
         } else {

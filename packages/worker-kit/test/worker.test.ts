@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { WorkerManager } from "../src/index";
 import { QueueError } from "../src/errors";
 import { App } from "@iskra-bun/core";
@@ -151,5 +151,88 @@ describe("WorkerManager.mapJobOptions", () => {
             removeOnComplete: undefined,
             removeOnFail: undefined,
         });
+    });
+});
+
+// ─── stop() graceful-shutdown ordering ───────────────────────────────────────
+//
+// These tests inject mock Worker and Queue objects directly into the private
+// fields so no Redis connection is required.  The core invariant: worker.close()
+// must resolve completely before queue.close() is called.
+
+describe("WorkerManager.stop() graceful shutdown", () => {
+    function buildWm() {
+        return new WorkerManager({ connection: "redis://localhost:6379" });
+    }
+
+    function injectMocks(wm: WorkerManager, workerClose: () => Promise<void>, queueClose: () => Promise<void>) {
+        (wm as any).worker = { close: workerClose };
+        (wm as any).queue  = { close: queueClose  };
+    }
+
+    it("closes the worker before the queue", async () => {
+        const order: string[] = [];
+        const wm = buildWm();
+
+        injectMocks(
+            wm,
+            async () => { order.push("worker"); },
+            async () => { order.push("queue");  },
+        );
+
+        await wm.stop();
+
+        expect(order).toEqual(["worker", "queue"]);
+    });
+
+    it("waits for worker.close() to fully resolve before calling queue.close()", async () => {
+        const wm = buildWm();
+        let workerResolved = false;
+        let queueCalledWhileWorkerPending = false;
+
+        injectMocks(
+            wm,
+            () => new Promise<void>((resolve) => {
+                // Resolve asynchronously on the next microtask tick
+                Promise.resolve().then(() => {
+                    workerResolved = true;
+                    resolve();
+                });
+            }),
+            async () => {
+                queueCalledWhileWorkerPending = !workerResolved;
+            },
+        );
+
+        await wm.stop();
+
+        expect(workerResolved).toBe(true);
+        expect(queueCalledWhileWorkerPending).toBe(false);
+    });
+
+    it("still closes the queue when worker.close() throws", async () => {
+        const wm = buildWm();
+        let queueClosed = false;
+
+        // Suppress logger noise for the expected error
+        (wm as any).app = {
+            logger: { info: () => {}, error: () => {} },
+        };
+
+        injectMocks(
+            wm,
+            async () => { throw new Error("worker exploded"); },
+            async () => { queueClosed = true; },
+        );
+
+        // stop() must not propagate the worker error
+        await expect(wm.stop()).resolves.toBeUndefined();
+        expect(queueClosed).toBe(true);
+    });
+
+    it("does nothing when neither worker nor queue are set", async () => {
+        const wm = buildWm();
+        // worker and queue are null by default — stop() must not throw
+        await expect(wm.stop()).resolves.toBeUndefined();
     });
 });

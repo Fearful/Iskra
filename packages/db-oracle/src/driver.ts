@@ -52,6 +52,15 @@ export class OracleDriver implements Driver {
         }
     }
 
+    private rejectAllPending(err: Error) {
+        if (this.pending.size === 0) return;
+        const entries = Array.from(this.pending.values());
+        this.pending.clear();
+        for (const { reject } of entries) {
+            reject(err);
+        }
+    }
+
     async query(sql: string, params: any[] = []) {
         if (!this.proc || !this.proc.stdin) {
             throw new Error('Oracle driver not started');
@@ -96,7 +105,7 @@ export class OracleDriver implements Driver {
                         }
                         if (msg.type === 'fatal') {
                             console.error('Oracle Bridge Fatal Error:', msg.error);
-                            // Reject all pending?
+                            this.rejectAllPending(new Error(`Oracle bridge fatal: ${msg.error}`));
                             continue;
                         }
 
@@ -117,8 +126,10 @@ export class OracleDriver implements Driver {
             }
         } catch (err) {
             console.error('Error reading from Oracle bridge:', err);
+            this.rejectAllPending(new Error('Oracle bridge stream error'));
         } finally {
             reader.releaseLock();
+            this.rejectAllPending(new Error('Oracle bridge process exited'));
         }
     }
 }

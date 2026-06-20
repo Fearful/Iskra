@@ -45,7 +45,7 @@ El `Kernel` es el micro-kernel que orquesta las features web:
 
 | Feature | Descripcion |
 |---------|-------------|
-| `AuthFeature` | Autenticacion con Better Auth (OIDC, email/password) |
+| `AuthFeature` | Autenticacion con Better Auth (OIDC, email/password) — impulsado por [`@iskra-bun/auth-kit`](/packages/auth-kit/) |
 | `CorsFeature` | Control de origenes (CORS) |
 | `CsrfFeature` | Proteccion CSRF con tokens |
 | `RateLimitFeature` | Limitacion de requests (memory o Redis) |
@@ -62,8 +62,38 @@ El `Kernel` es el micro-kernel que orquesta las features web:
 | `RequestIdFeature` | Tracking de request con ID unico |
 | `TracingFeature` | Observabilidad |
 | `UploadFeature` | Subida de archivos |
-| `StorageFeature` | Almacenamiento de archivos (local) |
-| `EmailFeature` | Envio de emails (SMTP, SendGrid) |
+| `StorageFeature` | Almacenamiento de archivos (local) — impulsado por [`@iskra-bun/storage-kit`](/packages/storage-kit/) |
+| `EmailFeature` | Envio de emails (SMTP, SendGrid) — impulsado por [`@iskra-bun/mailer-kit`](/packages/mailer-kit/) |
+
+## Generic de Schema en DbFeature
+
+`DbFeature` acepta un generic de schema opcional para queries tipados via `c.get("db")`. Omitirlo reproduce el comportamiento anterior sin tipos (compatible hacia atras).
+
+```typescript
+import * as schema from './db/schema';
+
+new DbFeature<typeof schema>({ adapter: 'postgres', connection: { connectionString: process.env.DATABASE_URL } })
+
+// En un route handler:
+const users = await c.get('db').query.users.findMany();
+//                                  ^-- tipado segun tu schema
+```
+
+## Readiness Checks en HealthCheckFeature
+
+`/health/ready` ahora ejecuta checks reales en lugar de reportar siempre listo. Registra checks con `addReadinessCheck` o la opcion de configuracion `readinessChecks`:
+
+```typescript
+const health = new HealthCheckFeature();
+
+health.addReadinessCheck('db', async () => {
+    // retorna true = listo, false o excepcion = no listo
+    await db.execute(sql`SELECT 1`);
+    return true;
+});
+```
+
+Si algun check registrado retorna `false` o lanza una excepcion, `/health/ready` responde con **503** e incluye los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
 
 ## Errores HTTP
 
@@ -97,6 +127,8 @@ El Kernel aplica headers de seguridad por defecto:
 - `Permissions-Policy`
 
 Se pueden personalizar via `KernelConfig.security`.
+
+**Notas de hardening de seguridad:** Los tokens CSRF ahora estan firmados criptograficamente (antes no firmados). Los identificadores de API keys ya no incluyen el prefijo de la key en las respuestas para reducir exposicion accidental.
 
 ## Respuestas Estandarizadas
 

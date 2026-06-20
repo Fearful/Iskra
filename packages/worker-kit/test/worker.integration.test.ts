@@ -109,3 +109,84 @@ describe.if(redisUp)('WorkerManager integration (requires Redis)', () => {
         expect(job.data).toEqual({ tag: 'opts' });
     });
 });
+
+// ─── Increment D: repeat / result / dead-letter against real Redis ───────────
+
+describe.if(redisUp)('WorkerManager Increment D integration (requires Redis)', () => {
+    it('awaits a job result via the descriptor', async () => {
+        const app = new App({ name: 'WorkerITResult', logger: { level: 'error' } });
+        const wm = new WorkerManager({
+            connection: REDIS_URL,
+            queueName: `iskra-test-result-${Date.now()}`,
+            concurrency: 1,
+        });
+        wm.register<{ n: number }, number>('double', async (job) => job.data.n * 2);
+        await wm.init(app);
+        await wm.start();
+        try {
+            const descriptor = await wm.enqueue<{ n: number }, number>('double', { n: 21 });
+            const result = await descriptor.result(5000);
+            expect(result).toBe(42);
+        } finally {
+            await wm.stop();
+        }
+    });
+
+    it('schedules a repeatable job and processes at least one occurrence', async () => {
+        const app = new App({ name: 'WorkerITRepeat', logger: { level: 'error' } });
+        const wm = new WorkerManager({
+            connection: REDIS_URL,
+            queueName: `iskra-test-repeat-${Date.now()}`,
+            concurrency: 1,
+        });
+        let count = 0;
+        const fired = new Promise<void>((resolve) => {
+            wm.register('tick', async () => {
+                count += 1;
+                resolve();
+            });
+        });
+        await wm.init(app);
+        await wm.start();
+        try {
+            await wm.schedule('tick', {}, { every: 200 });
+            await Promise.race([
+                fired,
+                new Promise((_r, reject) => setTimeout(() => reject(new Error('repeat never fired')), 5000)),
+            ]);
+            expect(count).toBeGreaterThanOrEqual(1);
+        } finally {
+            await wm.stop();
+        }
+    });
+
+    it('emits worker:dead-letter when a job exhausts its retries', async () => {
+        const app = new App({ name: 'WorkerITDead', logger: { level: 'error' } });
+        const wm = new WorkerManager({
+            connection: REDIS_URL,
+            queueName: `iskra-test-dead-${Date.now()}`,
+            concurrency: 1,
+            deadLetter: true,
+        });
+        const dead = new Promise<any>((resolve) => {
+            app.events.on('worker:dead-letter', (payload: any) => resolve(payload));
+        });
+        wm.register('always.fail', async () => {
+            throw new Error('nope');
+        });
+        await wm.init(app);
+        await wm.start();
+        try {
+            await wm.enqueue('always.fail', { tag: 'dlq' }, { attempts: 1, backoff: { type: 'fixed', delay: 1 } });
+            const payload = await Promise.race([
+                dead,
+                new Promise((_r, reject) => setTimeout(() => reject(new Error('dead-letter never emitted')), 5000)),
+            ]);
+            expect(payload.name).toBe('always.fail');
+            expect(payload.data).toEqual({ tag: 'dlq' });
+            expect(payload.failedReason).toBeDefined();
+        } finally {
+            await wm.stop();
+        }
+    });
+});
