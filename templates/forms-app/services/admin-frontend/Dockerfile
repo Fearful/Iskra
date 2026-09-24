@@ -1,33 +1,36 @@
-# ─── Admin Frontend ───────────────────────────────────────────────────────────
-# Build: docker build -f services/admin-frontend/Dockerfile .
-# Context: templates/forms-app/
+# ─── Admin Frontend ──────────────────────────────────────────────────────────
+# Build from the repository root:
+#   docker build -f templates/forms-app/services/admin-frontend/Dockerfile .
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+# Built with the monorepo's Bun: the app depends on @forms-app/shared through
+# `workspace:*`, which npm cannot install.
+FROM oven/bun:1.1.38 AS builder
 
 WORKDIR /build
-COPY services/admin-frontend/package.json services/admin-frontend/
-COPY packages/shared/package.json packages/shared/
 
-RUN cd services/admin-frontend && npm install
+# The whole workspace, filtered by the root .dockerignore: the lockfile covers
+# every workspace, so copying only some of them fails --frozen-lockfile.
+COPY . .
+RUN bun install --frozen-lockfile
 
-COPY packages/shared/ packages/shared/
-COPY services/admin-frontend/ services/admin-frontend/
-
-RUN cd services/admin-frontend && npm run build
+WORKDIR /build/templates/forms-app/services/admin-frontend
+RUN bun run build
 
 # ─── Stage 2: Serve with nginx ───────────────────────────────────────────────
 FROM nginx:alpine
 
-COPY --from=builder /build/services/admin-frontend/dist /usr/share/nginx/html
+# The app is built with base /admin/ (assets at /admin/assets/...).
+COPY --from=builder /build/templates/forms-app/services/admin-frontend/dist /usr/share/nginx/html/admin
 
-# SPA fallback
-RUN echo 'server { \
-    listen 5173; \
-    root /usr/share/nginx/html; \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# SPA fallback under /admin/
+RUN printf '%s\n' \
+    'server {' \
+    '    listen 5173;' \
+    '    root /usr/share/nginx/html;' \
+    '    location /admin/ {' \
+    '        try_files $uri $uri/ /admin/index.html;' \
+    '    }' \
+    '}' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 5173

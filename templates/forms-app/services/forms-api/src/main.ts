@@ -22,8 +22,9 @@ honoApp.route('/', router);
 const worker = new WorkerManager({
     connection: config.redis.url,
     queueName: QUEUE_NAMES.ANSWERS,
-    // This service only enqueues, does not consume
-    concurrency: 0,
+    // Only enqueues: answer-writer consumes. (concurrency: 0 used to mean 1,
+    // so this service took answer jobs it had no handler for and lost them.)
+    consume: false,
 });
 
 app.register(new KVManager());
@@ -44,9 +45,12 @@ app.register(
 );
 
 async function setup() {
-    const kvDriver = app.context.get('kv');
+    // KVManager's ioredis client: without it these services cannot read or
+    // write the form keys, so fail instead of running without Redis.
+    const redis = app.context.get('kv')?.client;
+    if (!redis) throw new Error('Redis client not available (KVManager with the redis driver)');
 
-    SubmissionService.setRedis(kvDriver?.client);
+    SubmissionService.setRedis(redis);
     SubmissionService.setWorker(worker);
 
     console.log('Forms API services initialized');
@@ -58,4 +62,7 @@ async function main() {
     console.log(`Forms API running on port ${config.web.port} (Redis-only, no Postgres)`);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});

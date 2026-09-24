@@ -5,9 +5,42 @@ import jsonSchemaPlugin from '@forms-app/vite-plugin-jsonschema';
 import { forms, formFields, spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
 import { generateFormHtml } from './html-template.ts';
-import { generateFormRuntime } from './form-runtime.ts';
+import { generateFormRuntime, publicFormBase } from './form-runtime.ts';
 import { config } from '../../app.config.ts';
 import { REDIS_KEYS } from '@forms-app/shared';
+
+/**
+ * Builds a form page (index.html + main.ts in `sourceDir`) into `outputDir`.
+ * `base` is the page's public URL path: the built HTML references its assets
+ * under it (with the default "/" they pointed at /assets/*, which nothing
+ * serves, so published forms loaded without their script and styles).
+ */
+export async function buildFormBundle(opts: {
+    sourceDir: string;
+    outputDir: string;
+    formId: string;
+    validationSchema: any;
+    base: string;
+}): Promise<void> {
+    await build({
+        root: opts.sourceDir,
+        base: opts.base,
+        configFile: false,
+        plugins: [
+            jsonSchemaPlugin({
+                schemas: [{ id: opts.formId, schema: opts.validationSchema }],
+            }),
+        ],
+        build: {
+            outDir: opts.outputDir,
+            emptyOutDir: true,
+            rollupOptions: {
+                input: join(opts.sourceDir, 'index.html'),
+            },
+        },
+        logLevel: 'warn',
+    });
+}
 
 export class PrerenderService {
     private static db: any;
@@ -68,21 +101,12 @@ export class PrerenderService {
         mkdirSync(outputDir, { recursive: true });
 
         // 5. Build with Vite
-        await build({
-            root: tmpDir,
-            plugins: [
-                jsonSchemaPlugin({
-                    schemas: [{ id: formId, schema: validationSchema }],
-                }),
-            ],
-            build: {
-                outDir: outputDir,
-                emptyOutDir: true,
-                rollupOptions: {
-                    input: join(tmpDir, 'index.html'),
-                },
-            },
-            logLevel: 'warn',
+        await buildFormBundle({
+            sourceDir: tmpDir,
+            outputDir,
+            formId,
+            validationSchema,
+            base: publicFormBase(space.slug, form.slug),
         });
 
         // 6. Write form schema to Redis (so forms-api has it immediately)

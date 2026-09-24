@@ -21,6 +21,8 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Creates the tables on the first start of an empty volume.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U forms -d forms_app"]
       interval: 5s
@@ -40,13 +42,14 @@ services:
   # ─── Admin Zone ──────────────────────────────────────────────────────────────
   admin-api:
     build:
-      context: ../../..
+      context: ../..
       dockerfile: templates/forms-app/services/admin-api/Dockerfile
     environment:
       PORT: "4000"
       DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
-      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
-      AUTH_BASE_URL: http://localhost/admin/api
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-auth-secret-change-me-32chars}
+      # Origin only: a path here would move better-auth's routes off /api/auth.
+      AUTH_BASE_URL: http://localhost
       CORS_ORIGINS: http://localhost
       FORM_MANAGER_URL: http://form-manager:4001
     depends_on:
@@ -55,15 +58,15 @@ services:
 
   admin-frontend:
     build:
-      context: .
-      dockerfile: services/admin-frontend/Dockerfile
+      context: ../..
+      dockerfile: templates/forms-app/services/admin-frontend/Dockerfile
     depends_on:
       - admin-api
 
   # ─── Intranet Services ──────────────────────────────────────────────────────
   form-manager:
     build:
-      context: ../../..
+      context: ../..
       dockerfile: templates/forms-app/services/form-manager/Dockerfile
     environment:
       PORT: "4001"
@@ -81,7 +84,7 @@ services:
 
   cron:
     build:
-      context: ../../..
+      context: ../..
       dockerfile: templates/forms-app/services/cron/Dockerfile
     environment:
       PORT: "4002"
@@ -100,7 +103,7 @@ services:
   # ─── Public Zone ─────────────────────────────────────────────────────────────
   forms-api:
     build:
-      context: ../../..
+      context: ../..
       dockerfile: templates/forms-app/services/forms-api/Dockerfile
     environment:
       PORT: "3000"
@@ -119,7 +122,7 @@ services:
   # ─── Answer Processing ──────────────────────────────────────────────────────
   answer-writer:
     build:
-      context: ../../..
+      context: ../..
       dockerfile: templates/forms-app/services/answer-writer/Dockerfile
     environment:
       DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app

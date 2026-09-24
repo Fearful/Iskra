@@ -9,8 +9,14 @@
         "./db": "./src/db/schema.ts",
         "./validation": "./src/validation/index.ts"
     },
+    "scripts": {
+        "db:init-sql": "bun run scripts/init-sql.ts"
+    },
     "dependencies": {
         "drizzle-orm": "^0.45.2",
         "zod": "^3.24.1"
+    },
+    "devDependencies": {
+        "drizzle-kit": "^0.31.11"
     }
 }

@@ -5,30 +5,16 @@
  *
  * The admin API disables public sign-up, so this is how accounts are made.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createBetterAuth } from '@iskra-bun/auth-kit';
 import { config } from '../app.config.ts';
 
-// Better Auth's Postgres tables, matching @iskra-bun/auth-kit's pgSchema.
-export const AUTH_TABLES_DDL = `
-CREATE TABLE IF NOT EXISTS "user" (
-  id text PRIMARY KEY, name text, email text NOT NULL UNIQUE, "emailVerified" boolean NOT NULL,
-  image text, "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL);
-CREATE TABLE IF NOT EXISTS session (
-  id text PRIMARY KEY, "expiresAt" timestamp NOT NULL, token text NOT NULL UNIQUE,
-  "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL, "ipAddress" text, "userAgent" text,
-  "userId" text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE);
-CREATE TABLE IF NOT EXISTS account (
-  id text PRIMARY KEY, "accountId" text NOT NULL, "providerId" text NOT NULL,
-  "userId" text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-  "accessToken" text, "refreshToken" text, "idToken" text,
-  "accessTokenExpiresAt" timestamp, "refreshTokenExpiresAt" timestamp, scope text, password text,
-  "createdAt" timestamp NOT NULL, "updatedAt" timestamp NOT NULL);
-CREATE TABLE IF NOT EXISTS verification (
-  id text PRIMARY KEY, identifier text NOT NULL, value text NOT NULL, "expiresAt" timestamp NOT NULL,
-  "createdAt" timestamp, "updatedAt" timestamp);
-`;
+// Better Auth's Postgres tables (matching @iskra-bun/auth-kit's pgSchema), also
+// applied by docker-compose on the first start of the database.
+export const AUTH_TABLES_DDL = readFileSync(resolve(import.meta.dir, '../../../../db/init/02-auth.sql'), 'utf8');
 
 export async function createAdmin(databaseUrl: string, email: string, password: string, name = 'Admin') {
     const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });

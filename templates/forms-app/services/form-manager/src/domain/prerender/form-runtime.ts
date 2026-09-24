@@ -1,4 +1,15 @@
 /**
+ * Public path prefix of the forms: nginx routes /formularios/* to forms-api,
+ * which serves each form at /<space>/<form>/ and its API at /api/*.
+ */
+export const PUBLIC_FORMS_PATH = '/formularios';
+
+/** Where a form's page (and, under it, its assets) is served publicly. */
+export function publicFormBase(spaceSlug: string, formSlug: string): string {
+    return `${PUBLIC_FORMS_PATH}/${spaceSlug}/${formSlug}/`;
+}
+
+/**
  * Generates the vanilla JS/TS runtime code for a prerendered form.
  * This code is bundled by Vite into the static form page.
  */
@@ -64,7 +75,7 @@ function getFormData() {
 }
 
 async function getCsrfToken() {
-    const res = await fetch('/formularios/api/csrf-token', { credentials: 'include' });
+    const res = await fetch('${PUBLIC_FORMS_PATH}/api/csrf-token', { credentials: 'include' });
     const json = await res.json();
     return json.token;
 }
@@ -103,7 +114,7 @@ form.addEventListener('submit', async (e) => {
             getRecaptchaToken(),
         ]);
 
-        const res = await fetch('/formularios/api/submit/${spaceSlug}/${formSlug}', {
+        const res = await fetch('${PUBLIC_FORMS_PATH}/api/submit/${spaceSlug}/${formSlug}', {
             method: 'POST',
             credentials: 'include',
             headers: {

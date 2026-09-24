@@ -90,6 +90,12 @@ cd templates/forms-app
 docker compose up --build
 ```
 
+En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
+de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
+`02-auth.sql`, las tablas de Better Auth. Si cambias el schema, regenera el SQL con
+`bun run db:init-sql` en `packages/shared` (un test falla si quedo desactualizado) y
+recrea el volumen (`docker compose down -v`).
+
 La app queda accesible en:
 
 - **Admin**: http://localhost/admin/
@@ -107,6 +113,15 @@ DATABASE_URL=postgresql://forms:secret@localhost:5432/forms_app \
 
 Despues inicia sesion en http://localhost/admin/login.
 
+### Envios de formularios y reCAPTCHA
+
+forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que con las claves de
+ejemplo (`your-site-key` / `your-secret-key`) todo envio se rechaza con 403. Para probar
+localmente, registra un par de claves v3 con el dominio `localhost` en
+https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
+`RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
+formulario, asi que re-publicalo despues de cambiarla).
+
 ## Variables de entorno
 
 Copia `.env.example` a `.env`:
@@ -116,7 +131,8 @@ Copia `.env.example` a `.env`:
 | `DB_PASSWORD` | Password de PostgreSQL | `secret` |
 | `DATABASE_URL` | URL de conexion a Postgres | `postgresql://forms:secret@postgres:5432/forms_app` |
 | `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
-| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens) | `dev-secret-change-me` |
+| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens), 32+ caracteres | `dev-only-auth-secret-change-me-32chars` |
+| `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
 | `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
 | `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |
@@ -439,10 +455,14 @@ Cada servicio tiene su propio Dockerfile:
 |----------|-------------------|------|
 | admin-api | UBI9 minimal | Binary compilado con `bun build --compile` |
 | admin-frontend | nginx:alpine | Build de Vite → archivos estaticos servidos por nginx |
-| form-manager | oven/bun:1 | Necesita Vite en runtime, no se puede compilar a binario |
+| form-manager | oven/bun:1.1.38 | Necesita Vite en runtime, no se puede compilar a binario |
 | cron | UBI9 minimal | Binary compilado |
 | forms-api | UBI9 minimal | Binary compilado + volumen para archivos estaticos |
 | answer-writer | UBI9 minimal | Binary compilado, sin puerto expuesto |
+
+Los binarios se compilan con `NODE_ENV=production` (Bun lo fija al compilar), y todas
+las imagenes corren con un UID no root (1001, grupo 0). Detalles en la
+[guia de despliegue](../../docs/despliegue.md).
 
 ```bash
 # Build y levantar todo

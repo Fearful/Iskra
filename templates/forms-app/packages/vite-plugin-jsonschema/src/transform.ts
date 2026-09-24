@@ -135,7 +135,16 @@ function transformProperty(
     return chain;
 }
 
-export function transformJsonSchemaToZod(schema: JsonSchema): string {
+export interface TransformOptions {
+    /**
+     * Append `export type FormData = z.infer<typeof formSchema>` (default true).
+     * Off for the Vite virtual module, which must be plain JavaScript: Vite
+     * does not transpile virtual ids, so Rollup failed to parse the type.
+     */
+    typeExport?: boolean;
+}
+
+export function transformJsonSchemaToZod(schema: JsonSchema, { typeExport = true }: TransformOptions = {}): string {
     const required = new Set(schema.required ?? []);
     const properties = schema.properties ?? {};
 
@@ -144,13 +153,13 @@ export function transformJsonSchemaToZod(schema: JsonSchema): string {
         return `    ${name}: ${zodChain},`;
     });
 
-    return [
+    const lines = [
         "import { z } from 'zod';",
         '',
         'export const formSchema = z.object({',
         ...fields,
         '});',
-        '',
-        'export type FormData = z.infer<typeof formSchema>;',
-    ].join('\n');
+    ];
+    if (typeExport) lines.push('', 'export type FormData = z.infer<typeof formSchema>;');
+    return lines.join('\n');
 }
