@@ -49,7 +49,8 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `connection` | `string \| object` | **required** | Redis URL or `{ host, port, password, db }` |
+| `connection` | `string \| object` | **required** | Redis URL (`redis://user:pass@host:6379/0`; `rediss://` enables TLS) or `{ host, port, username, password, db, tls }` |
+| `consume` | `boolean` | `true` | `false` = producer only: no Worker is created and `enqueue` accepts jobs without a local handler (another process runs them) |
 | `concurrency` | `number` | `1` | Jobs processed in parallel |
 | `queueName` | `string` | `'iskra-jobs'` | Name of the queue in Redis |
 | `defaultJobOptions` | `JobOptions` | `undefined` | Default options for all jobs |
@@ -87,7 +88,7 @@ await worker.enqueue('payment.process', { orderId: 456 }, {
 
 `enqueue` validates input **before** touching Redis, so untrusted input cannot flood the queue or store oversized payloads. Any problem throws `QueueError` and the job never reaches the queue:
 
-- **Unknown handler:** `name` must match a handler already registered with `register`. Otherwise it throws `QueueError` (`No handler registered for job "<name>"`).
+- **Unknown handler:** `name` must match a handler already registered with `register` (except with `consume: false`). Otherwise it throws `QueueError` (`No handler registered for job "<name>"`). If a job no worker can process reaches the queue anyway, it fails as unrecoverable (no retries) and goes through dead-letter handling, instead of being marked completed and lost.
 - **Oversized payload:** `data` is serialized to JSON and rejected if it exceeds the ~1 MB cap (`Job "<name>" payload too large: <bytes> bytes (max 1048576)`). A non-serializable `data` also throws `QueueError`.
 - **Invalid RepeatSpec:** an empty repeat spec, a non-positive `{ every }`, or a blank cron string throw `QueueError`.
 

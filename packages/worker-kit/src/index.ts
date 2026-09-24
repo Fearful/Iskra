@@ -1,5 +1,5 @@
 import type { Driver, App } from '@iskra-bun/core';
-import { Queue, QueueEvents, Worker, type Job as BullJob } from 'bullmq';
+import { Queue, QueueEvents, UnrecoverableError, Worker, type Job as BullJob } from 'bullmq';
 import { QueueError, JobError } from './errors';
 import type {
     WorkerManagerOptions,
@@ -54,6 +54,9 @@ export class WorkerManager implements Driver {
                 context: { queueName: this.options.queueName || 'iskra-jobs' },
             });
         }
+        // Without an 'error' listener BullMQ prints connection errors to the
+        // console; route them through the app logger instead.
+        this.queue.on('error', (err) => this.logConnectionError('queue', err));
     }
 
     /**
@@ -104,6 +107,14 @@ export class WorkerManager implements Driver {
     }
 
     async start() {
+        if (this.options.consume === false) {
+            this.app?.logger.info(
+                { queue: this.options.queueName || 'iskra-jobs' },
+                'WorkerManager started in producer-only mode (consume: false)',
+            );
+            return;
+        }
+
         const connection = this.parseConnection();
 
         this.worker = new Worker(
@@ -111,8 +122,11 @@ export class WorkerManager implements Driver {
             async (job: BullJob) => {
                 const handler = this.handlers.get(job.name);
                 if (!handler) {
-                    this.app?.logger.warn({ jobName: job.name, jobId: job.id }, 'No handler registered for job');
-                    return;
+                    // Returning would mark the job completed and silently drop
+                    // it. Fail it permanently instead (no retries), so it stays
+                    // in the failed set and reaches dead-letter handling.
+                    this.app?.logger.error({ jobName: job.name, jobId: job.id }, 'No handler registered for job');
+                    throw new UnrecoverableError(`No handler registered for job "${job.name}"`);
                 }
 
                 try {
@@ -144,6 +158,8 @@ export class WorkerManager implements Driver {
         this.worker.on('failed', (job, err) => {
             this.onFailed(job, err);
         });
+
+        this.worker.on('error', (err) => this.logConnectionError('worker', err));
 
         this.app?.logger.info({
             queue: this.options.queueName || 'iskra-jobs',
@@ -196,14 +212,24 @@ export class WorkerManager implements Driver {
         this.app?.logger.info('WorkerManager stopped');
     }
 
+    private logConnectionError(source: string, err: Error) {
+        this.app?.logger.error({ err, source }, 'WorkerManager: BullMQ connection error');
+    }
+
+    /**
+     * Turns a redis:// or rediss:// URL into ioredis options, keeping the ACL
+     * username, the percent-decoded password, the db index and TLS (rediss).
+     */
     private parseConnection() {
         if (typeof this.options.connection === 'string') {
             const url = new URL(this.options.connection);
             return {
                 host: url.hostname,
                 port: Number(url.port) || 6379,
-                password: url.password || undefined,
+                username: url.username ? decodeURIComponent(url.username) : undefined,
+                password: url.password ? decodeURIComponent(url.password) : undefined,
                 db: url.pathname ? Number(url.pathname.slice(1)) || 0 : 0,
+                ...(url.protocol === 'rediss:' ? { tls: {} } : {}),
             };
         }
         return this.options.connection;
@@ -244,7 +270,9 @@ export class WorkerManager implements Driver {
      * problema; no muta nada.
      */
     private validateEnqueue(name: string, data: unknown, opts?: JobOptions) {
-        if (!this.handlers.has(name)) {
+        // A consuming instance only accepts jobs it can process itself; a
+        // producer-only instance (consume: false) enqueues for other workers.
+        if (this.options.consume !== false && !this.handlers.has(name)) {
             throw new QueueError(`No handler registered for job "${name}"`, {
                 context: { jobName: name },
             });
@@ -330,7 +358,8 @@ export class WorkerManager implements Driver {
         // a future bump that changes `attemptsMade` reporting will fail those
         // tests loudly rather than silently skip dead-lettering.
         const maxAttempts = job.opts?.attempts ?? 1;
-        if (job.attemptsMade < maxAttempts) return;
+        // An UnrecoverableError (e.g. no handler) is terminal regardless of attempts left.
+        if (job.attemptsMade < maxAttempts && err?.name !== 'UnrecoverableError') return;
 
         const payload: DeadLetterPayload = {
             jobId: job.id,

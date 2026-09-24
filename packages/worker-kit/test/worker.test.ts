@@ -90,11 +90,24 @@ describe("WorkerManager.parseConnection", () => {
         (new WorkerManager({ connection }) as any).parseConnection();
 
     it("parses a full redis URL into connection parts", () => {
+        // The ACL username used to be dropped, so authenticated Redis 6+ users failed.
         expect(parse("redis://user:pass@redis.example.com:6380/2")).toEqual({
             host: "redis.example.com",
             port: 6380,
+            username: "user",
             password: "pass",
             db: 2,
+        });
+    });
+
+    it("percent-decodes credentials and enables TLS for rediss://", () => {
+        expect(parse("rediss://svc%40acct:p%40ss%2Fw0rd@cache.example.com:6380/0")).toEqual({
+            host: "cache.example.com",
+            port: 6380,
+            username: "svc@acct",
+            password: "p@ss/w0rd",
+            db: 0,
+            tls: {},
         });
     });
 
