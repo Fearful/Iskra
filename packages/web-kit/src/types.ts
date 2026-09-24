@@ -10,7 +10,14 @@ export interface Sink {
 
 export interface KernelConfig {
     port?: number;
+    /** Interface to bind. Default "0.0.0.0" (all); use "127.0.0.1" for local only. */
     hostname?: string;
+    /** Largest request body Bun.serve accepts, in bytes (413 above). Default 16 MiB. */
+    maxRequestBodySize?: number;
+    /** Seconds a connection may stay idle before Bun closes it (Bun default: 10). */
+    idleTimeout?: number;
+    /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
+    shutdownGraceMs?: number;
     environment?: "development" | "production" | "test";
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
     /**
@@ -132,6 +139,8 @@ export interface HealthCheckConfig {
     readinessPath?: string;
     livenessPath?: string;
     includeDetails?: boolean;
+    /** Per-check timeout for /health probes, in ms. Default 2000. */
+    checkTimeoutMs?: number;
     checks?: {
         [key: string]: (context?: any) => Promise<{
             status: "ok" | "error";

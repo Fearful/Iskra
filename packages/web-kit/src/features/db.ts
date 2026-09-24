@@ -64,7 +64,9 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
                         user: config.connection.user!,
                         password: config.connection.password!
                     };
-                    this.client = await mysql.createConnection(mysqlConfig as any);
+                    // A pool, not a single connection: one dropped connection must
+                    // not take the app's database access down with it.
+                    this.client = mysql.createPool(mysqlConfig as any);
                     this.db = drizzleMysql<TSchema>(this.client);
                     break;
                 }
@@ -91,6 +93,21 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
             c.set("db", this.db as WebKitDrizzleDb);
             await next();
         });
+    }
+
+    /** One round-trip to the database (used by HealthCheckFeature). */
+    async ping(): Promise<void> {
+        switch (this.config.adapter) {
+            case 'postgres':
+                await this.client`select 1`;
+                break;
+            case 'mysql':
+                await this.client.query('select 1');
+                break;
+            case 'sqlite':
+                this.client.query('select 1').get();
+                break;
+        }
     }
 
     async shutdown(): Promise<void> {

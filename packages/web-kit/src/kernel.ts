@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Context, Next } from "hono";
-import type { Feature, KernelConfig } from "./types";
+import type { Feature, KernelConfig, SecurityHeadersConfig } from "./types";
 
 /**
  * Core microkernel orchestrator that manages features, dependencies, and application lifecycle.
@@ -15,7 +15,10 @@ export class Kernel {
     constructor(config: KernelConfig = {}) {
         this.config = {
             port: 8000,
-            hostname: "localhost",
+            // All interfaces, like Bun.serve itself: "localhost" made the server
+            // unreachable from outside a container. Set "127.0.0.1" to restrict.
+            hostname: "0.0.0.0",
+            maxRequestBodySize: 16 * 1024 * 1024,
             ...config,
         };
         this.app = new Hono();
@@ -58,16 +61,18 @@ export class Kernel {
     }
 
     private applySecurityHeaders(): void {
-        if (!this.config.securityHeaders) {
-            this.config.securityHeaders = {
-                xFrameOptions: "SAMEORIGIN",
-                xContentTypeOptions: true,
-                xXssProtection: true,
-                referrerPolicy: "strict-origin-when-cross-origin",
-            };
-        }
-
-        const headers = this.config.securityHeaders;
+        // User settings are merged over the defaults: passing one option used to
+        // replace the whole object and silently drop the other headers.
+        // X-XSS-Protection is off by default: the legacy auditor it enables is
+        // gone from modern browsers and could itself be abused (OWASP).
+        const headers: SecurityHeadersConfig = {
+            xFrameOptions: "SAMEORIGIN",
+            xContentTypeOptions: true,
+            xXssProtection: false,
+            referrerPolicy: "strict-origin-when-cross-origin",
+            ...this.config.securityHeaders,
+        };
+        this.config.securityHeaders = headers;
 
         this.app.use("*", async (c: Context, next: Next) => {
             await next();
@@ -123,18 +128,6 @@ export class Kernel {
             throw new Error("Cannot register features after initialization");
         }
 
-        if (feature.peerDependencies) {
-            for (const dep of feature.peerDependencies) {
-                try {
-                    import(dep);
-                } catch {
-                    console.warn(
-                        `⚠️  Warning: Feature '${feature.name}' requires peer dependency: ${dep}`,
-                    );
-                }
-            }
-        }
-
         this.features.set(feature.name, feature);
         console.log(`📦 Registered feature: ${feature.name}`);
     }
@@ -155,10 +148,16 @@ export class Kernel {
 
     private async validatePeerDependencies(): Promise<void> {
         for (const [featureName, feature] of this.features) {
-            if (feature.peerDependencies) {
-                for (const dep of feature.peerDependencies) {
-                    // In Node/Bun dynamic import usually works for installed packages
-                    // We can skip hard failure here or make it safer
+            for (const dep of feature.peerDependencies ?? []) {
+                // Awaited: registerFeature() used to fire an un-awaited import()
+                // inside a sync try/catch, so a missing package became an
+                // unhandled rejection that crashed the process.
+                try {
+                    await import(dep);
+                } catch {
+                    console.warn(
+                        `⚠️  Warning: Feature '${featureName}' requires peer dependency: ${dep}`,
+                    );
                 }
             }
         }
@@ -235,6 +234,8 @@ export class Kernel {
             this.server = Bun.serve({
                 port: this.config.port,
                 hostname: this.config.hostname,
+                maxRequestBodySize: this.config.maxRequestBodySize,
+                ...(this.config.idleTimeout !== undefined ? { idleTimeout: this.config.idleTimeout } : {}),
                 fetch: this.app.fetch,
             });
         } else {
@@ -242,19 +243,50 @@ export class Kernel {
         }
     }
 
+    /**
+     * Stops accepting connections, waits for in-flight requests to finish, then
+     * shuts features down in reverse dependency order (the auth feature before
+     * the db it uses). Every feature is shut down even if one fails; the
+     * failures are rethrown together at the end.
+     */
     async shutdown(): Promise<void> {
         console.log("🛑 Shutting down...");
 
         if (this.server) {
-            this.server.stop();
+            const server = this.server;
             this.server = null;
+            // Graceful stop waits for in-flight requests, but it can hang on a
+            // connection that never settles (Bun 1.1 does so after answering a
+            // 413), so force-close whatever is left after the grace period.
+            const graceMs = this.config.shutdownGraceMs ?? 5000;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const drained = await Promise.race([
+                Promise.resolve(server.stop()).then(() => true),
+                new Promise<boolean>((resolve) => {
+                    timer = setTimeout(() => resolve(false), graceMs);
+                }),
+            ]);
+            clearTimeout(timer);
+            if (!drained) {
+                console.warn(`⚠️ Open connections did not drain within ${graceMs}ms; closing them`);
+                // Not awaited: the listener closes immediately, but in that same
+                // Bun 1.1 case the returned promise never settles either.
+                Promise.resolve(server.stop(true)).catch(() => {});
+            }
         }
 
-        const features = Array.from(this.features.values()).reverse();
-        for (const feature of features) {
-            if (feature.shutdown) {
+        const errors: unknown[] = [];
+        for (const feature of this.sortFeaturesByDependencies().reverse()) {
+            if (!feature.shutdown) continue;
+            try {
                 await feature.shutdown();
+            } catch (err) {
+                console.error(`Feature "${feature.name}" failed to shut down:`, err);
+                errors.push(err);
             }
+        }
+        if (errors.length > 0) {
+            throw new AggregateError(errors, `${errors.length} feature(s) failed to shut down`);
         }
         console.log("👋 Server shut down gracefully");
     }

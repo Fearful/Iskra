@@ -2,6 +2,15 @@ import type { Feature, HealthCheckConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context } from "hono";
 
+/** Rejects if `promise` does not settle within `ms` (a stuck probe must not hang /health). */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`health check timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export class HealthCheckFeature implements Feature {
     name = "health";
 
@@ -17,6 +26,7 @@ export class HealthCheckFeature implements Feature {
             readinessPath: config.readinessPath || "/health/ready",
             livenessPath: config.livenessPath || "/health/live",
             includeDetails: config.includeDetails !== undefined ? config.includeDetails : false,
+            checkTimeoutMs: config.checkTimeoutMs ?? 2000,
             checks: config.checks,
         };
         const initial = config.readinessChecks ?? {};
@@ -38,59 +48,78 @@ export class HealthCheckFeature implements Feature {
         console.log("✅ Health check feature initialized");
     }
 
+    /**
+     * Runs the db/cache probes and custom checks on every request and answers
+     * 503 with `status: "error"` when any fails, so a load balancer or
+     * orchestrator can act on it. `includeDetails` only controls whether the
+     * per-check results and feature list are included in the body.
+     */
     private async handleHealthCheck(c: Context) {
+        const checks: Record<string, { status: "ok" | "error" }> = {};
+
+        const dbProbe = this.dbProbe(c);
+        if (dbProbe) checks.db = await this.probe("db", dbProbe);
+
+        const cache = this.kernel?.getFeature<any>("cache")?.client;
+        if (cache && typeof cache.exists === "function") {
+            checks.cache = await this.probe("cache", () => cache.exists("__health_check__"));
+        }
+
+        const customChecks: Record<string, { status: "ok" | "error"; [key: string]: unknown }> = {};
+        for (const [name, check] of Object.entries(this.config.checks ?? {})) {
+            try {
+                customChecks[name] = await withTimeout(check(c), this.config.checkTimeoutMs);
+            } catch (error) {
+                // Log the detail server-side; never serialize the raw error
+                // (it may embed connection strings or other secrets) to the client.
+                console.error(`Health custom check "${name}" failed:`, error);
+                customChecks[name] = { status: "error" };
+            }
+        }
+
+        const healthy =
+            Object.values(checks).every((r) => r.status === "ok") &&
+            Object.values(customChecks).every((r) => r?.status !== "error");
+
         const response: any = {
-            status: "ok",
+            status: healthy ? "ok" : "error",
             timestamp: new Date().toISOString(),
         };
 
         if (this.config.includeDetails && this.kernel) {
             // @ts-expect-error - features is a private kernel field accessed for diagnostics
             response.features = Array.from(this.kernel.features.keys());
-            const featureHealth: any = {};
-
-            const dbFeature = this.kernel.getFeature("db");
-            if (dbFeature) await this.checkFeatureHealth(c, dbFeature, featureHealth, "db", "query", "SELECT 1");
-
-            const cacheFeature = this.kernel.getFeature("cache");
-            if (cacheFeature) await this.checkFeatureHealth(c, cacheFeature, featureHealth, "cache", "exists", "__health_check__");
-
-            if (Object.keys(featureHealth).length > 0) {
-                response.checks = featureHealth;
-            }
-
-            if (this.config.checks) {
-                const customChecks: any = {};
-                for (const [name, check] of Object.entries(this.config.checks)) {
-                    try {
-                        customChecks[name] = await check(c);
-                    } catch (error) {
-                        // Log the detail server-side; never serialize the raw error
-                        // (it may embed connection strings or other secrets) to the client.
-                        console.error(`Health custom check "${name}" failed:`, error);
-                        customChecks[name] = { status: "error" };
-                    }
-                }
-                response.customChecks = customChecks;
-            }
+            if (Object.keys(checks).length > 0) response.checks = checks;
+            if (Object.keys(customChecks).length > 0) response.customChecks = customChecks;
         }
 
-        return c.json(response);
+        return c.json(response, healthy ? 200 : 503);
     }
 
-    private async checkFeatureHealth(c: Context, feature: any, report: any, key: string, method: string, ...args: any[]) {
+    /**
+     * How to probe the registered "db" feature, if at all: DbFeature's ping()
+     * (a real round-trip), or a context value with a query() function. A
+     * Drizzle instance's `db.query` is the relational-query object, not a
+     * function, so the old `db.query("SELECT 1")` probe never ran.
+     */
+    private dbProbe(c: Context): (() => Promise<unknown>) | null {
+        const feature = this.kernel?.getFeature<any>("db");
+        if (!feature) return null;
+        if (typeof feature.ping === "function") return () => feature.ping();
+        const instance = c.get("db" as any) as any;
+        if (instance && typeof instance.query === "function") return () => instance.query("SELECT 1");
+        return null;
+    }
+
+    private async probe(name: string, fn: () => Promise<unknown>): Promise<{ status: "ok" | "error" }> {
         try {
-            // Abstracted check logic
-            const instance = c.get(key as any);
-            if (instance && typeof instance[method] === "function") {
-                await instance[method](...args);
-                report[key] = { status: "ok" };
-            }
+            await withTimeout(fn(), this.config.checkTimeoutMs);
+            return { status: "ok" };
         } catch (e) {
             // Log server-side; return only a generic status so DB/cache error
             // strings (which can carry connection details) never reach the client.
-            console.error(`Health feature check "${key}" failed:`, e);
-            report[key] = { status: "error" };
+            console.error(`Health feature check "${name}" failed:`, e);
+            return { status: "error" };
         }
     }
 

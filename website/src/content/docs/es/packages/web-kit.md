@@ -62,8 +62,19 @@ El `Kernel` es el micro-kernel que orquesta las features web:
 
 - Resuelve dependencias entre features (sort topologico)
 - Detecta dependencias circulares
-- Aplica headers de seguridad automaticamente
+- Aplica headers de seguridad automaticamente (lo que pases en `securityHeaders` se combina con los valores por defecto)
 - Maneja el ciclo de vida (init, start, shutdown)
+
+Defaults del servidor, configurables en `new Kernel({ ... })`:
+
+| Opcion | Default | Que hace |
+| :--- | :--- | :--- |
+| `hostname` | `"0.0.0.0"` | Interfaz donde escucha (todas; `"127.0.0.1"` para solo local) |
+| `maxRequestBodySize` | 16 MiB | Tamano maximo del body; por encima Bun responde 413 |
+| `idleTimeout` | 10 s (Bun) | Segundos que una conexion puede quedar inactiva |
+| `shutdownGraceMs` | 5000 | Cuanto espera `shutdown()` a los requests en curso antes de cerrar las conexiones |
+
+`shutdown()` deja de aceptar conexiones, espera los requests en curso (hasta `shutdownGraceMs`) y apaga las features en orden inverso de dependencias; si alguna falla, sigue con las demas y al final tira un `AggregateError`.
 
 ## Features Disponibles
 
@@ -122,6 +133,8 @@ Si algun check registrado retorna `false` o lanza una excepcion, `/health/ready`
 ### Detalles del endpoint /health
 
 Por defecto `includeDetails` es **`false`** (cambio respecto a versiones previas). El endpoint `/health` sin autenticar ya no expone la lista interna de features ni strings de error crudos: los errores se registran en el servidor y la respuesta es generica (`{ status: "ok", timestamp }`).
+
+Los checks (ping real a la base de `DbFeature`, cache y `checks` propios) corren siempre, cada uno con un timeout (`checkTimeoutMs`, 2 s por defecto). Si alguno falla, `/health` responde **503** con `{ status: "error" }`, para que el balanceador u orquestador pueda actuar.
 
 Para incluir el detalle de features y checks, activa `includeDetails: true`. Como esto revela informacion interna, **gatea el endpoint detras de autenticacion**:
 

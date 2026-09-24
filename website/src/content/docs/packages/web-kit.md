@@ -62,8 +62,19 @@ The `Kernel` is the micro-kernel that orchestrates the web features:
 
 - Resolves dependencies between features (topological sort)
 - Detects circular dependencies
-- Applies security headers automatically
+- Applies security headers automatically (whatever you pass in `securityHeaders` is merged over the defaults)
 - Manages the lifecycle (init, start, shutdown)
+
+Server defaults, configurable in `new Kernel({ ... })`:
+
+| Option | Default | What it does |
+| :--- | :--- | :--- |
+| `hostname` | `"0.0.0.0"` | Interface to bind (all; `"127.0.0.1"` for local only) |
+| `maxRequestBodySize` | 16 MiB | Largest request body; Bun answers 413 above it |
+| `idleTimeout` | 10 s (Bun) | Seconds a connection may stay idle |
+| `shutdownGraceMs` | 5000 | How long `shutdown()` waits for in-flight requests before closing connections |
+
+`shutdown()` stops accepting connections, waits for in-flight requests (up to `shutdownGraceMs`) and shuts features down in reverse dependency order; if one fails it continues with the rest and throws an `AggregateError` at the end.
 
 ## Available Features
 
@@ -122,6 +133,8 @@ When any registered check returns `false` or throws, `/health/ready` responds wi
 ### /health endpoint details
 
 `includeDetails` now defaults to **`false`** (change from previous versions). The unauthenticated `/health` endpoint no longer exposes the internal feature list or raw error strings: errors are logged server-side and the response is generic (`{ status: "ok", timestamp }`).
+
+The checks (a real ping to the `DbFeature` database, the cache, and your own `checks`) always run, each with a timeout (`checkTimeoutMs`, 2 s by default). If any fails, `/health` answers **503** with `{ status: "error" }` so a load balancer or orchestrator can act on it.
 
 To include feature and check details, set `includeDetails: true`. Because this reveals internal information, **gate the endpoint behind authentication**:
 
