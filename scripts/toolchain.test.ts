@@ -37,6 +37,21 @@ describe('toolchain pins', () => {
         expect(pinned.map((f) => relative(ROOT, f))).toEqual([]);
     });
 
+    it('declares the supported runtime in engines', () => {
+        // The suite only runs on the pinned Bun, so that is what the packages
+        // promise. create-iskra is a Node-compatible CLI (npm create iskra).
+        const [major, minor] = BUN_VERSION.split('.');
+        const bunRange = `>=${major}.${minor}.0`;
+        const manifests = [join(ROOT, 'package.json'), ...readdirSync(join(ROOT, 'packages')).map((d) => join(ROOT, 'packages', d, 'package.json'))];
+        const wrong = manifests.flatMap((file) => {
+            const manifest = JSON.parse(readFileSync(file, 'utf8'));
+            if (manifest.private && file !== join(ROOT, 'package.json')) return [];
+            const expected = manifest.name === 'create-iskra' ? { node: '>=18' } : { bun: bunRange };
+            return JSON.stringify(manifest.engines) === JSON.stringify(expected) ? [] : [`${relative(ROOT, file)}: ${JSON.stringify(manifest.engines)}`];
+        });
+        expect(wrong).toEqual([]);
+    });
+
     it('commits text lockfiles only', () => {
         expect(walk(ROOT, (name) => name === 'bun.lockb').map((f) => relative(ROOT, f))).toEqual([]);
     });

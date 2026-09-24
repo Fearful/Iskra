@@ -18,6 +18,9 @@
     },
     "homepage": "https://github.com/fearful/iskra/tree/main/packages/create-iskra#readme",
     "bugs": "https://github.com/fearful/iskra/issues",
+    "engines": {
+        "node": ">=18"
+    },
     "type": "module",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
