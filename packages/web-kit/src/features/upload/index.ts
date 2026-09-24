@@ -78,6 +78,18 @@ export class UploadFeature implements Feature {
         const storage = storageFeature.getAdapter();
         if (!storage) throw new Error("Storage adapter not ready");
 
+        // Bun rejects a body above the Kernel's maxRequestBodySize (16 MiB by
+        // default) with a bare 413 before any route runs, so a larger
+        // maxFileSize would silently never be reachable.
+        const bodyLimit = kernel.getConfig().maxRequestBodySize;
+        if (this.config.exposeRoutes && bodyLimit !== undefined && this.config.maxFileSize + MULTIPART_OVERHEAD_BYTES > bodyLimit) {
+            throw new Error(
+                `UploadFeature: maxFileSize (${this.config.maxFileSize} bytes) plus multipart overhead ` +
+                    `(${MULTIPART_OVERHEAD_BYTES}) exceeds the Kernel's maxRequestBodySize (${bodyLimit}); ` +
+                    `raise maxRequestBodySize in the Kernel/WebPlugin config or lower maxFileSize`,
+            );
+        }
+
         this.helper = new UploadHelper(storage, this.config.projectName);
 
         const app = kernel.getApp();

@@ -304,6 +304,54 @@ describe("Session Feature", () => {
             await kernel.shutdown();
         });
 
+        for (const store of ["memory", "cache"] as const) {
+            it(`a request in flight does not revive a session destroyed meanwhile (${store} store)`, async () => {
+                // Regression: the slow request re-saved the session after the
+                // other request's logout / regenerateSession, which undid the
+                // logout; with the memory store (one shared object) it even
+                // saved the login's userId under the old, attacker-known ID.
+                const { kernel, a } = await app(new Kernel(), store);
+                let release!: () => void;
+                let entered!: () => void;
+                const inHandler = new Promise<void>((r) => (entered = r));
+                a.get("/slow", async (c) => {
+                    c.get("session").seen = true;
+                    entered();
+                    await new Promise<void>((r) => (release = r));
+                    return c.json({ ok: true });
+                });
+                a.get("/visit", (c) => {
+                    c.get("session").cart = ["book"];
+                    return c.json({ ok: true });
+                });
+
+                // Session fixation: the victim's browser carries the attacker's ID.
+                const fixed = cookieOf(await a.request("/visit"));
+                const slow = a.request("/slow", { headers: { Cookie: fixed } });
+                await inHandler;
+                const login = await a.request("/login?regenerate=1", { headers: { Cookie: fixed } });
+                release();
+                await slow;
+
+                const oldMe = (await (await a.request("/me", { headers: { Cookie: fixed } })).json()) as { session: Record<string, unknown> };
+                expect(oldMe.session.userId).toBeUndefined();
+                const newMe = (await (await a.request("/me", { headers: { Cookie: cookieOf(login) } })).json()) as { session: Record<string, unknown> };
+                expect(newMe.session.userId).toBe("u1");
+
+                // Logout in one tab while another request is in flight.
+                const session = cookieOf(await a.request("/login"));
+                const inHandler2 = new Promise<void>((r) => (entered = r));
+                const slow2 = a.request("/slow", { headers: { Cookie: session } });
+                await inHandler2;
+                await a.request("/logout", { headers: { Cookie: session } });
+                release();
+                await slow2;
+                const me = (await (await a.request("/me", { headers: { Cookie: session } })).json()) as { session: Record<string, unknown> };
+                expect(me.session).toEqual({});
+                await kernel.shutdown();
+            });
+        }
+
         it("marks the cookie Secure in production unless overridden", async () => {
             const prod = await app(new Kernel({ environment: "production" }));
             expect((await prod.a.request("/login")).headers.get("Set-Cookie")).toContain("Secure");

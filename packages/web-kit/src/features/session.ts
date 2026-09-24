@@ -18,6 +18,12 @@ interface SessionStore {
 
 // ─── Memory Store ────────────────────────────────────────────────────────────
 
+/**
+ * Keeps a copy of the data and hands out copies (data must be
+ * structured-cloneable, as it already had to be JSON for the other stores):
+ * handing every request the stored object let one request's changes (a login
+ * setting `userId`) reach another request's session and be saved under its ID.
+ */
 class MemorySessionStore implements SessionStore {
     private store = new Map<string, { data: Record<string, any>; expiresAt: number }>();
     private cleanupInterval: ReturnType<typeof setInterval>;
@@ -33,11 +39,11 @@ class MemorySessionStore implements SessionStore {
             this.store.delete(id);
             return null;
         }
-        return entry.data;
+        return structuredClone(entry.data);
     }
 
     async set(id: string, data: Record<string, any>, ttl: number) {
-        this.store.set(id, { data, expiresAt: Date.now() + ttl * 1000 });
+        this.store.set(id, { data: structuredClone(data), expiresAt: Date.now() + ttl * 1000 });
     }
 
     async destroy(id: string) {
@@ -58,16 +64,17 @@ class MemorySessionStore implements SessionStore {
 
 // ─── Cache Store ─────────────────────────────────────────────────────────────
 
+/** Copies in and out for the same reason as MemorySessionStore: the cache's memory adapter keeps references. */
 class CacheSessionStore implements SessionStore {
     constructor(private cache: any) { }
 
     async get(id: string) {
         const data = await this.cache.get(`session:${id}`);
-        return data || null;
+        return data ? structuredClone(data) : null;
     }
 
     async set(id: string, data: Record<string, any>, ttl: number) {
-        await this.cache.set(`session:${id}`, data, ttl);
+        await this.cache.set(`session:${id}`, structuredClone(data), ttl);
     }
 
     async destroy(id: string) {
@@ -341,6 +348,12 @@ export class SessionFeature implements Feature {
             // Save session after response
             const currentSession = c.get("session");
             if (currentSession && Object.keys(currentSession).length > 0) {
+                // A session this request loaded but another request destroyed
+                // meanwhile (a logout, a login's regenerateSession) must stay
+                // gone: re-saving it undid the logout, or revived the ID an
+                // attacker fixed before the victim logged in. The cookie is left
+                // alone, since the other request may have just set a new one.
+                if (persisted && !(await this.store!.get(sessionId))) return;
                 await this.store!.set(sessionId, currentSession, this.ttl);
                 const signed = signValue(sessionId, this.config.secret);
                 setCookie(c, this.cookieName, signed, {

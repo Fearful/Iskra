@@ -9,8 +9,7 @@ import path from "node:path";
 const TEST_DIR = path.join(process.cwd(), "test-upload-hardening-storage");
 afterAll(() => fs.rm(TEST_DIR, { recursive: true, force: true }));
 
-async function setup(authorize: (c: any, action: UploadAction) => boolean, maxFileSize = 1024) {
-    const kernel = new Kernel();
+async function setup(authorize: (c: any, action: UploadAction) => boolean, maxFileSize = 1024, kernel = new Kernel()) {
     kernel.registerFeature(new StorageFeature({ adapter: "local", basePath: TEST_DIR }));
     const upload = new UploadFeature({ projectName: "p", exposeRoutes: true, routePrefix: "/files", maxFileSize, authorize });
     kernel.registerFeature(upload);
@@ -29,6 +28,18 @@ describe("UploadFeature route hardening", () => {
         expect(() => new UploadFeature({ projectName: "p", exposeRoutes: true })).toThrow(/authorize/);
         // Not exposing routes needs no callback.
         expect(() => new UploadFeature({ projectName: "p" })).not.toThrow();
+    });
+
+    it("fails at initialize when maxFileSize cannot fit in the Kernel's body limit", async () => {
+        // Regression: Bun answered a bare 413 for any upload above the Kernel's
+        // 16 MiB default, whatever maxFileSize allowed.
+        const allow = () => true;
+        await expect(setup(allow, 50 * 1024 * 1024)).rejects.toThrow(/maxRequestBodySize/);
+
+        const raised = await setup(allow, 50 * 1024 * 1024, new Kernel({ maxRequestBodySize: 64 * 1024 * 1024 }));
+        await raised.kernel.shutdown();
+        const fits = await setup(allow, 10 * 1024 * 1024);
+        await fits.kernel.shutdown();
     });
 
     it("asks authorize for every action and returns 403 when denied", async () => {

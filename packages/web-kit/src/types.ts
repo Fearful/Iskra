@@ -303,6 +303,11 @@ export type UploadAction = "upload" | "list" | "download" | "delete";
 
 export interface UploadConfig {
     projectName: string;
+    /**
+     * Largest file the upload route accepts, in bytes (default 10 MiB). With
+     * `exposeRoutes` it must fit, plus 64 KiB of multipart overhead, in the
+     * Kernel's `maxRequestBodySize` (16 MiB by default): initialize() fails otherwise.
+     */
     maxFileSize?: number;
     allowedExtensions?: string[];
     exposeRoutes?: boolean;
