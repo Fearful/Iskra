@@ -200,7 +200,7 @@ new AuthFeature({
 
 - The `secret` signs sessions and **must be at least 32 characters**; a shorter or empty one throws at initialization.
 - In `oidc` mode (or when `oidcConfig` is passed) email/password login is disabled; opt back in with `enableEmailPassword: true`. `enableSelfRegistration: false` rejects `/sign-up/email` (accounts are provisioned another way).
-- Auth routes (`{basePath}/*`) are rate-limited per IP by default (20 attempts / 15 min) to throttle credential stuffing.
+- Auth routes (`{basePath}/*`) are rate-limited per IP by default (20 attempts / 15 min) to throttle credential stuffing. Tune it with `rateLimit: { max, windowMs }`, or pass `rateLimit: false` when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
 - The client IP (for this limiter and for `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so `X-Forwarded-For` is used; otherwise the header is ignored, since any client can forge it.
 - Use `requireAuth(kernel)` as middleware to protect routes that require a session.
 

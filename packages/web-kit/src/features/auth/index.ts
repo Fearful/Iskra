@@ -113,7 +113,9 @@ export class AuthFeature implements Feature {
 
         // Per-IP rate limiting on the auth routes by default, throttling
         // credential-stuffing / brute-force against sign-in and sign-up.
-        app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+        if (this.config.rateLimit !== false) {
+            app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+        }
 
         app.use("*", async (c: Context, next: Next) => {
             try {
@@ -141,8 +143,12 @@ export class AuthFeature implements Feature {
     // ─── Auth-route rate limiting ────────────────────────────────────────────
     private authRateLimitHits = new Map<string, { count: number; expiresAt: number }>();
     private authRateLimitLastSweep = 0;
-    private readonly authRateLimitWindowMs = 15 * 60 * 1000;
-    private readonly authRateLimitMax = 20;
+    private get authRateLimitWindowMs(): number {
+        return (this.config.rateLimit || undefined)?.windowMs ?? 15 * 60 * 1000;
+    }
+    private get authRateLimitMax(): number {
+        return (this.config.rateLimit || undefined)?.max ?? 20;
+    }
 
     private authRateLimitMiddleware() {
         return async (c: Context, next: Next) => {

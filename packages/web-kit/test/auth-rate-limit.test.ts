@@ -117,4 +117,20 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
         }
         expect(last).toBe(429);
     });
+
+    it("honors a configured limit, and rateLimit: false disables it", async () => {
+        const build = async (rateLimit: any) => {
+            const kernel = new Kernel();
+            kernel.registerFeature(new FakeDbFeature() as any);
+            kernel.registerFeature(new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso", rateLimit } as any, fakeCreateAuth));
+            await kernel.initialize();
+            kernel.getApp().get("/api/sso/ping", (c) => c.text("ok"));
+            const statuses: number[] = [];
+            for (let i = 0; i < 25; i++) statuses.push((await kernel.getApp().request("/api/sso/ping")).status);
+            return statuses;
+        };
+        const limited = await build({ max: 3 });
+        expect(limited.slice(0, 4)).toEqual([200, 200, 200, 429]);
+        expect((await build(false)).every((s) => s === 200)).toBe(true);
+    });
 });

@@ -185,6 +185,12 @@ export interface AuthConfig {
     basePath?: string; // Default: "/api/sso"
     baseURL?: string; // For better-auth
     trustedOrigins?: string[]; // For better-auth CORS
+    /**
+     * Per-client-IP limit on the auth routes (default 20 requests / 15 min).
+     * Raise it when a backend calls these routes on behalf of many users from
+     * one IP (e.g. through the SDKs), or pass `false` to disable it.
+     */
+    rateLimit?: false | { max?: number; windowMs?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
     authMode?: "oidc" | "email"; // Authentication mode
     /**
