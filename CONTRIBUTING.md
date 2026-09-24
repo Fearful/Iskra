@@ -42,8 +42,28 @@ bun run lint      # ESLint — 0 errors
 bun run typecheck # tsc --noEmit — 0 errors
 ```
 
+`bun run ci` runs all of them plus `bun run build` (the tsup/`.d.ts` build that
+only runs at release time), in the same order as the CI pipeline.
+
 If you only touched one package you can scope `bun test` to it (for example
 `bun test packages/core`), but the full suite must still pass before you submit.
+
+### Integration tests
+
+The Redis, PostgreSQL and MySQL integration suites are skipped unless their
+service is reachable. To run them locally, start the services with the same
+credentials CI uses and export the URLs before `bun test`:
+
+```bash
+docker run -d --name iskra-redis -p 6379:6379 redis:7
+docker run -d --name iskra-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+docker run -d --name iskra-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=mysql -e MYSQL_DATABASE=test mysql:8
+
+export TEST_REDIS_URL=redis://127.0.0.1:6379
+export TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres
+export TEST_MYSQL_URL=mysql://root:mysql@127.0.0.1:3306/test
+bun run ci
+```
 
 ## Project layout
 
