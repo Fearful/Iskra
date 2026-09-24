@@ -24,7 +24,6 @@ describe("Observability Features", () => {
         kernel.registerFeature(emailFeature);
         await kernel.initialize();
 
-        const app = kernel.getApp();
         // getAdapter returns a validating wrapper exposing the EmailAdapter contract.
         const adapter = emailFeature.getAdapter();
         expect(typeof adapter.send).toBe("function");

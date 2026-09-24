@@ -1,4 +1,3 @@
-import type { StorageFeature } from "../storage";
 import type { BaseStorageAdapter, PutOptions } from "@iskra-bun/storage-kit";
 
 // Defense-in-depth: reduce an attacker-controlled filename to a safe basename

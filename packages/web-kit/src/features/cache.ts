@@ -148,7 +148,7 @@ export class CacheFeature implements Feature {
                     password: conn.password,
                     db: conn.db || 0
                 });
-            } catch (err) {
+            } catch {
                 console.warn("⚠️ Redis connection failed, falling back to memory cache");
                 this.client = new MemoryAdapter();
             }

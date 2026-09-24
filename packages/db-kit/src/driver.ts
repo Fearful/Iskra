@@ -1,4 +1,4 @@
-import { type App, type Driver, type AppConfig, DriverError } from '@iskra-bun/core';
+import { type App, type Driver, DriverError } from '@iskra-bun/core';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { drizzle as drizzleMysql, type MySql2Database } from 'drizzle-orm/mysql2';
 import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';

@@ -1,4 +1,4 @@
-import type { App, Context } from '@iskra-bun/core';
+import type { Context } from '@iskra-bun/core';
 import type { ServerWebSocket } from 'bun';
 
 /**

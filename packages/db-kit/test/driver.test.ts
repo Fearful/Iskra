@@ -1,4 +1,4 @@
-import { describe, test, expect, afterAll, afterEach, spyOn } from "bun:test";
+import { describe, test, expect, afterEach, spyOn } from "bun:test";
 import { DbDriver } from "../src/driver";
 import { ConnectionError, QueryError } from "../src/errors";
 import { App, DriverError, IskraError } from "@iskra-bun/core";

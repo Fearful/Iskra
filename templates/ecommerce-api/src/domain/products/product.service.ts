@@ -2,21 +2,36 @@ import { Product, CreateProductInput } from './product.model.ts';
 import { products } from '../../db/schema.ts';
 import { eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import type { Db, Tx } from '../../db/types.ts';
+
+/** A products row as the model: SQL NULLs become absent optional fields. */
+function toProduct(row: typeof products.$inferSelect): Product {
+    return {
+        id: row.id,
+        name: row.name,
+        price: row.price,
+        stock: row.stock,
+        description: row.description ?? undefined,
+        createdAt: row.createdAt ?? undefined,
+        updatedAt: row.updatedAt ?? undefined,
+    };
+}
 
 export class ProductService {
-    private static db: any;
+    private static db: Db;
 
-    static setDb(db: any) {
+    static setDb(db: Db) {
         this.db = db;
     }
 
     static async findAll(): Promise<Product[]> {
-        return this.db.select().from(products).all();
+        return this.db.select().from(products).all().map(toProduct);
     }
 
-    static async findById(id: string, tx?: any): Promise<Product | undefined> {
+    static async findById(id: string, tx?: Tx): Promise<Product | undefined> {
         const executor = tx || this.db;
-        return executor.select().from(products).where(eq(products.id, id)).get();
+        const row = executor.select().from(products).where(eq(products.id, id)).get();
+        return row ? toProduct(row) : undefined;
     }
 
     static async create(input: CreateProductInput): Promise<Product> {
@@ -30,7 +45,7 @@ export class ProductService {
         return product;
     }
 
-    static async checkStock(id: string, quantity: number, tx?: any): Promise<void> {
+    static async checkStock(id: string, quantity: number, tx?: Tx): Promise<void> {
         const product = await this.findById(id, tx);
         if (!product) {
             throw new Error(`Product ${id} not found`);
@@ -40,7 +55,7 @@ export class ProductService {
         }
     }
 
-    static async decreaseStock(id: string, quantity: number, tx?: any): Promise<void> {
+    static async decreaseStock(id: string, quantity: number, tx?: Tx): Promise<void> {
         await this.checkStock(id, quantity, tx);
         const executor = tx || this.db;
         executor.update(products)

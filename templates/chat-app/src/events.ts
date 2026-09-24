@@ -13,25 +13,25 @@
  * sockets suscriptos a esa sala reciben el evento.
  */
 
-import { SocketRouter, type SocketContext } from '@iskra-bun/socket-kit';
+import { SocketRouter, type SocketContext, type SocketData } from '@iskra-bun/socket-kit';
 import type { KVManager } from '@iskra-bun/kv-kit';
 import type { ServerWebSocket } from 'bun';
 import { verifyToken, type Session } from './auth';
 import { addMember, removeMember, listMembers, listRooms, appendMessage, getMessages } from './rooms';
 
 // Sesion asociada a cada socket autenticado.
-const sessions = new WeakMap<ServerWebSocket<any>, Session>();
+const sessions = new WeakMap<ServerWebSocket<SocketData>, Session>();
 
 const roomTopic = (room: string) => `room:${room}`;
 
 const envelope = (event: string, payload: unknown) => JSON.stringify({ event, payload });
 
-export function getSession(ws: ServerWebSocket<any>): Session | undefined {
+export function getSession(ws: ServerWebSocket<SocketData>): Session | undefined {
     return sessions.get(ws);
 }
 
 /** Limpia presencia cuando un socket se desconecta. Llamado desde main.ts. */
-export async function handleDisconnect(kv: KVManager, ws: ServerWebSocket<any>): Promise<void> {
+export async function handleDisconnect(kv: KVManager, ws: ServerWebSocket<SocketData>): Promise<void> {
     const session = sessions.get(ws);
     if (session?.room) {
         const members = await removeMember(kv, session.room, session.username);

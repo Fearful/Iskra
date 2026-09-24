@@ -8,6 +8,10 @@ declare module "hono" {
     }
 }
 
+/** Severity order of LoggerConfig["level"]; a message is written at or above the configured one. */
+const LEVELS = ["trace", "debug", "info", "warning", "error", "fatal"] as const;
+type Level = (typeof LEVELS)[number];
+
 // Simple Logger implementation to avoid heavy dependency unless necessary
 class SimpleLogger {
     constructor(private config: LoggerConfig) { }
@@ -19,15 +23,17 @@ class SimpleLogger {
         if (this.shouldLog("error")) console.error(`[ERROR] ${message}`, ...args);
     }
     warn(message: string, ...args: any[]) {
-        if (this.shouldLog("warn")) console.warn(`[WARN] ${message}`, ...args);
+        if (this.shouldLog("warning")) console.warn(`[WARN] ${message}`, ...args);
     }
     debug(message: string, ...args: any[]) {
         if (this.shouldLog("debug")) console.debug(`[DEBUG] ${message}`, ...args);
     }
 
-    private shouldLog(level: string) {
-        // Basic level check (can be improved)
-        return true;
+    /** Without a configured level everything is written, as before `level` was honored. */
+    private shouldLog(level: Level) {
+        const min = this.config.level;
+        if (!min) return true;
+        return LEVELS.indexOf(level) >= LEVELS.indexOf(min);
     }
 }
 

@@ -18,6 +18,12 @@ function loadSdk(): S3Sdk {
     return (sdk ??= require("@aws-sdk/client-s3") as S3Sdk);
 }
 
+/** An SDK error for a missing object: its `name`, or a bare 404 (HEAD has no error body). */
+function isMissing(err: unknown, name: string): boolean {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } } | null;
+    return e?.name === name || e?.$metadata?.httpStatusCode === 404;
+}
+
 export class S3StorageAdapter extends BaseStorageAdapter {
     private client: S3Client;
     private bucket: string;
@@ -51,8 +57,8 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         try {
             await this.client.send(new this.sdk.HeadBucketCommand({ Bucket: this.bucket }));
             this.connected = true;
-        } catch (err: any) {
-            throw new Error(`Failed to connect to S3 bucket "${this.bucket}": ${err.message}`);
+        } catch (err) {
+            throw new Error(`Failed to connect to S3 bucket "${this.bucket}": ${err instanceof Error ? err.message : String(err)}`);
         }
     }
 
@@ -107,8 +113,8 @@ export class S3StorageAdapter extends BaseStorageAdapter {
 
             if (!response.Body) return null;
             return new Uint8Array(await response.Body.transformToByteArray());
-        } catch (err: any) {
-            if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
+        } catch (err) {
+            if (isMissing(err, "NoSuchKey")) {
                 return null;
             }
             throw err;
@@ -126,8 +132,8 @@ export class S3StorageAdapter extends BaseStorageAdapter {
 
             if (!response.Body) return null;
 
-            if (typeof (response.Body as any).transformToWebStream === "function") {
-                return (response.Body as any).transformToWebStream();
+            if (typeof response.Body.transformToWebStream === "function") {
+                return response.Body.transformToWebStream() as ReadableStream;
             }
 
             // Fallback: buffer then wrap in a ReadableStream
@@ -138,8 +144,8 @@ export class S3StorageAdapter extends BaseStorageAdapter {
                     controller.close();
                 },
             });
-        } catch (err: any) {
-            if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
+        } catch (err) {
+            if (isMissing(err, "NoSuchKey")) {
                 return null;
             }
             throw err;
@@ -160,8 +166,8 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         try {
             await this.client.send(new this.sdk.HeadObjectCommand({ Bucket: this.bucket, Key: key }));
             return true;
-        } catch (err: any) {
-            if (err.name === "NotFound" || err.$metadata?.httpStatusCode === 404) {
+        } catch (err) {
+            if (isMissing(err, "NotFound")) {
                 return false;
             }
             throw err;

@@ -4,8 +4,8 @@ import { existsSync } from 'fs';
 import { resolve } from 'path';
 
 type PendingEntry = {
-    resolve: (val: any) => void;
-    reject: (err: any) => void;
+    resolve: (val: unknown) => void;
+    reject: (err: unknown) => void;
     timer: ReturnType<typeof setTimeout> | null;
 };
 
@@ -148,7 +148,7 @@ export class OracleDriver implements Driver {
         }
     }
 
-    async query(sql: string, params: any[] = []) {
+    async query(sql: string, params: unknown[] = []) {
         if (!this.proc || !this.proc.stdin) {
             throw new Error('Oracle driver not started');
         }

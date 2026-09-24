@@ -1,8 +1,6 @@
-import type { Hono, Context } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
 import type { App } from '@iskra-bun/core';
-import type { Driver } from '@iskra-bun/core';
 
 export interface RouteOptions<B = any, Q = any> {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';

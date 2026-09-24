@@ -1,7 +1,6 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { WorkerManager } from "../src/index";
 import { QueueError } from "../src/errors";
-import { App } from "@iskra-bun/core";
 
 // Note: These tests verify the WorkerManager API and error handling.
 // Full BullMQ integration tests require a running Redis instance.

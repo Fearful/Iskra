@@ -2,11 +2,12 @@ import { Order, CreateOrderInput } from './order.model.ts';
 import { orders, orderItems, products } from '../../db/schema.ts';
 import { eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import type { Db } from '../../db/types.ts';
 
 export class OrderService {
-    private static db: any;
+    private static db: Db;
 
-    static setDb(db: any) {
+    static setDb(db: Db) {
         this.db = db;
     }
 
@@ -21,7 +22,7 @@ export class OrderService {
      * added up before checking (each line alone used to pass).
      */
     static async create(input: CreateOrderInput): Promise<Order> {
-        return this.db.transaction((tx: any) => {
+        return this.db.transaction((tx) => {
             const quantities = new Map<string, number>();
             for (const item of input.items) {
                 quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
@@ -81,16 +82,19 @@ export class OrderService {
 
     static async findAll(): Promise<Order[]> {
         if (!this.db) return [];
-        const allOrders = await this.db.select().from(orders).all();
-
-        // Populate items
-        for (const order of allOrders) {
-            const items = await this.db.select().from(orderItems).where(eq(orderItems.orderId, order.id)).all();
-            order.items = items.map((i: any) => ({
-                productId: i.productId,
-                quantity: i.quantity
-            }));
-        }
-        return allOrders;
+        return this.db.select().from(orders).all().map((row) => ({
+            id: row.id,
+            userId: row.userId,
+            total: row.total,
+            // Only create() writes it, with one of the model's statuses.
+            status: row.status as Order['status'],
+            createdAt: row.createdAt ?? undefined,
+            items: this.db
+                .select()
+                .from(orderItems)
+                .where(eq(orderItems.orderId, row.id))
+                .all()
+                .map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        }));
     }
 }

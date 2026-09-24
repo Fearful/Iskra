@@ -2,6 +2,9 @@ import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from "../t
 import { MailService } from "@sendgrid/mail";
 import { checkEmail, checkHeaders, cleanName } from "../headers";
 
+/** The mail object MailService.send() takes (typed by @sendgrid/helpers, not a direct dependency). */
+type SendGridMail = Extract<Parameters<MailService["send"]>[0], { from: unknown }>;
+
 export class SendGridEmailAdapter implements EmailAdapter {
     /**
      * A client per adapter: the package's default export is a process-wide
@@ -25,8 +28,8 @@ export class SendGridEmailAdapter implements EmailAdapter {
             subject: message.subject,
             text: message.text,
             html: message.html,
-            cc: message.cc as any,
-            bcc: message.bcc as any,
+            cc: message.cc,
+            bcc: message.bcc,
             replyTo: message.replyTo,
             attachments: message.attachments?.map(a => ({
                 filename: a.filename,
@@ -37,7 +40,9 @@ export class SendGridEmailAdapter implements EmailAdapter {
                 disposition: "attachment"
             })),
             headers: checkHeaders(message.headers),
-        } as any;
+            // SendGrid's type wants text or html statically present; here both
+            // are optional, and SendGrid's API rejects a mail with neither.
+        } as SendGridMail;
 
         const [response] = await this.client.send(msg);
         return { messageId: response.headers["x-message-id"] as string, success: true };

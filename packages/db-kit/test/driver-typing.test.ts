@@ -18,13 +18,14 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
  * behavior.
  */
 
+// Only its type is used: these tests check what the schema type infers.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const users = sqliteTable("users", {
     id: integer("id").primaryKey(),
     name: text("name").notNull(),
 });
 
-const schema = { users };
-type Schema = typeof schema;
+type Schema = { users: typeof users };
 
 type Expect<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -34,11 +35,10 @@ type PgMember<TS extends Record<string, unknown>> = Extract<IskraDrizzleDb<TS>, 
 
 describe("DbDriver typing", () => {
     test("a typed schema flows through to driver.db.query", () => {
-        const driver = new DbDriver<Schema>();
         // `db` is declared `IskraDrizzleDb<TSchema> | undefined` (it is only
         // assigned in start()), so strip the not-yet-started `undefined` before
         // asserting the schema-flow type.
-        type Db = NonNullable<typeof driver.db>;
+        type Db = NonNullable<DbDriver<Schema>["db"]>;
         // The instantiated db is the same union IskraDrizzleDb<Schema> exposes.
         type _dbIsUnion = Expect<Equal<Db, IskraDrizzleDb<Schema>>>;
         const _assertUnion: _dbIsUnion = true;
@@ -52,8 +52,7 @@ describe("DbDriver typing", () => {
     });
 
     test("default DbDriver reproduces the historical untyped (no relations) behavior", () => {
-        const driver = new DbDriver();
-        type Db = NonNullable<typeof driver.db>;
+        type Db = NonNullable<DbDriver["db"]>;
         type _defaultUnion = Expect<Equal<Db, IskraDrizzleDb<Record<string, never>>>>;
         const _assertDefault: _defaultUnion = true;
 

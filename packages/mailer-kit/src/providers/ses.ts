@@ -55,7 +55,7 @@ export class SesEmailAdapter implements EmailAdapter {
         // variable so TypeScript does not try to resolve the module at compile
         // time (it is a real runtime dependency, declared in package.json).
         const sdkModule = "@aws-sdk/client-sesv2";
-        const mod: any = await import(sdkModule);
+        const mod = (await import(sdkModule)) as Record<string, unknown>;
         const SESv2Client = mod.SESv2Client as new (cfg: { region?: string }) => SesClient;
         const SendEmailCommand = mod.SendEmailCommand as new (input: unknown) => SesCommand;
 

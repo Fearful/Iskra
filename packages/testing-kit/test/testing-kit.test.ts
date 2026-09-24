@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { existsSync } from 'node:fs';
 import {
     createTestApp,

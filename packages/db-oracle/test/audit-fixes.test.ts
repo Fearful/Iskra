@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
+import { describe, test, expect, afterEach, spyOn } from "bun:test";
 import { OracleDriver } from "../src/driver";
 import { App } from "@iskra-bun/core";
 

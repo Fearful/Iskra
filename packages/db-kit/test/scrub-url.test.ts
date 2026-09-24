@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, spyOn } from 'bun:test';
+import { describe, test, expect, spyOn } from 'bun:test';
 import { scrubUrl } from '../src/driver';
 import { scrubCredentials } from '../src/migrations';
 import { App } from '@iskra-bun/core';
@@ -102,15 +102,12 @@ describe('DbDriver mysql branch uses createPool', () => {
             end: async () => {},
         };
 
-        const origCreatePool = mysql2Default.createPool.bind(mysql2Default);
-        const origCreateConnection = mysql2Default.createConnection.bind(mysql2Default);
-
-        const poolSpy = spyOn(mysql2Default, 'createPool').mockImplementation((...args: any[]) => {
+        const poolSpy = spyOn(mysql2Default, 'createPool').mockImplementation(() => {
             poolCalled = true;
             return fakePool as any;
         });
 
-        const connSpy = spyOn(mysql2Default, 'createConnection').mockImplementation((...args: any[]) => {
+        const connSpy = spyOn(mysql2Default, 'createConnection').mockImplementation(() => {
             connCalled = true;
             throw new Error('createConnection must not be called for mysql branch');
         });

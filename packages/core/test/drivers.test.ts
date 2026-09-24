@@ -58,7 +58,7 @@ describe('App Drivers', () => {
         // Let's verify current behavior.
         try {
             await app.stop();
-        } catch (e) {
+        } catch {
             // expected to throw
         }
 

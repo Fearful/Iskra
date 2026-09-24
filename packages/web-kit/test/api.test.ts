@@ -57,7 +57,6 @@ describe("API Features", () => {
         }));
         await kernel.initialize();
 
-        const app = kernel.getApp();
         const upload = kernel.getFeature("upload");
         expect(upload).toBeDefined();
 

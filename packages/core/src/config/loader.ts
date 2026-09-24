@@ -1,5 +1,5 @@
 import { loadConfig } from 'c12';
-import { AppConfigSchema, type AppConfigOutput } from './schema';
+import { AppConfigSchema } from './schema';
 import type { AppConfig } from '../types';
 
 export async function loadAppConfig(cwd: string = process.cwd()): Promise<AppConfig> {

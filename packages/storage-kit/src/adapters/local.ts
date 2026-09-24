@@ -56,8 +56,8 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
         try {
             return await fs.readFile(fullPath);
-        } catch (error: any) {
-            if (error.code === "ENOENT") return null;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
             throw error;
         }
     }
@@ -81,8 +81,8 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
         try {
             await fs.unlink(fullPath);
-        } catch (error: any) {
-            if (error.code !== "ENOENT") throw error;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
     }
 
@@ -145,8 +145,8 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
                         });
                     }
                 }
-            } catch (e: any) {
-                if (e.code !== "ENOENT") throw e;
+            } catch (e) {
+                if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
             }
         };
 

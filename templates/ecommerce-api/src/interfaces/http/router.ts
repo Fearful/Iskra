@@ -36,8 +36,8 @@ app.post('/orders', zValidator('json', CreateOrderSchema), async (c) => {
     try {
         const order = await OrderService.create(input);
         return c.json(order, 201);
-    } catch (e: any) {
-        return c.json({ error: e.message }, 400);
+    } catch (e) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
 });
 

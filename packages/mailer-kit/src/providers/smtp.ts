@@ -48,7 +48,7 @@ export class SmtpEmailAdapter implements EmailAdapter {
             headers: checkHeaders(message.headers),
         });
 
-        return { messageId: (info as any).messageId, success: true };
+        return { messageId: info.messageId, success: true };
     }
 
     async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {

@@ -13,7 +13,7 @@
  */
 import type { OtelConfig } from './types';
 
-let sdkInstance: any = null;
+let sdkInstance: { shutdown(): Promise<void> } | null = null;
 
 /** Optional OTel package specifiers, indirected so tsc does not resolve them statically. */
 const OTEL_MODULES = {
@@ -84,7 +84,7 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
             ...config.resourceAttributes,
         });
 
-        const instrumentationOverrides: Record<string, any> = {
+        const instrumentationOverrides: Record<string, unknown> = {
             '@opentelemetry/instrumentation-fs': { enabled: false },
             ...config.instrumentations,
         };
@@ -101,9 +101,10 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
 
         sdk.start();
         sdkInstance = sdk;
-    } catch (err: any) {
+    } catch (err) {
         // Provide a clear error when OTel packages are not installed
-        if (err?.code === 'ERR_MODULE_NOT_FOUND' || err?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find')) {
+        const e = err as { code?: string; message?: string } | null;
+        if (e?.code === 'ERR_MODULE_NOT_FOUND' || e?.code === 'MODULE_NOT_FOUND' || e?.message?.includes('Cannot find')) {
             throw new Error(
                 `[iskra/otel] OpenTelemetry packages are not installed. ` +
                 `Install them with: bun add @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node ` +

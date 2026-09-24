@@ -1,4 +1,4 @@
-import { IskraError, ErrorCodes, type ErrorCode } from '@iskra-bun/core';
+import { IskraError, ErrorCodes } from '@iskra-bun/core';
 
 // ─── Connection Error ────────────────────────────────────────────────────────
 

@@ -501,7 +501,7 @@ export class ProcessManager implements Driver {
     }
 
     // Send data to process stdin
-    async send(name: string, data: any) {
+    async send(name: string, data: unknown) {
         const procInfo = this.processes.get(name);
         if (!procInfo) {
             this.app?.logger.warn(`Cannot send message to non-existent process: ${name}`);

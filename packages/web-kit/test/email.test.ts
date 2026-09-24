@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Kernel } from "../src/kernel";
-import { EmailFeature, type EmailAdapter } from "../src/features/email";
+import { EmailFeature } from "../src/features/email";
 
 describe("Email Feature", () => {
     it("should initialize with mock provider", async () => {

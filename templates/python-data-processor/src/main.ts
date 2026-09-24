@@ -15,12 +15,12 @@ app.register(pm);
 // ─── Request-Response IPC ────────────────────────────────────────────────────
 
 const pendingRequests = new Map<string, {
-    resolve: (value: any) => void;
-    reject: (reason: any) => void;
+    resolve: (value: unknown) => void;
+    reject: (reason: unknown) => void;
     timeout: ReturnType<typeof setTimeout>;
 }>();
 
-function sendToProcess(processName: string, data: any, timeoutMs = 30000): Promise<any> {
+function sendToProcess(processName: string, data: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
     return new Promise((resolve, reject) => {
         const requestId = crypto.randomUUID();
 
@@ -70,8 +70,8 @@ router.post('/process', async (c) => {
     try {
         const result = await sendToProcess('processor', body);
         return c.json({ success: true, result });
-    } catch (err: any) {
-        return c.json({ success: false, error: err.message }, 500);
+    } catch (err) {
+        return c.json({ success: false, error: err instanceof Error ? err.message : String(err) }, 500);
     }
 });
 
