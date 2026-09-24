@@ -71,7 +71,7 @@ const data = await cache.remember('dashboard:stats', 60, async () => {
 const data2 = await cache.wrap('dashboard:stats', 60, () => db.query('...'));
 ```
 
-The fallback is called **exactly once** per cache miss — never on a hit.
+The fallback is called **exactly once** per cache miss — never on a hit. An error it throws reaches the caller as is (same class, `status` or `code`), and nothing is cached.
 
 ## Namespacing
 
@@ -100,6 +100,8 @@ await cache.invalidateTag('items');
 await cache.invalidateTag('featured');
 // banner deleted
 ```
+
+Each tag keeps an index of its keys in the backing store. Updates to it are serialized within a process, but instances sharing a Redis store can still race on it, so a key tagged at the same moment on another instance may survive an `invalidateTag()`. The index has no TTL: it is only removed by `invalidateTag()`, so a tag that is never invalidated keeps growing with every key tagged with it.
 
 ## Using with RedisAdapter (production)
 

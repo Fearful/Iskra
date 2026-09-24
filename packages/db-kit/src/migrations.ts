@@ -1,16 +1,24 @@
 import { type App } from '@iskra-bun/core';
 import { MigrationError } from './errors';
+import { SENSITIVE_URL_PARAM } from './secrets';
 
 /**
- * Redacta credenciales `//user:pass@host` embebidas en texto arbitrario (p. ej.
- * el stderr de drizzle-kit, que suele imprimir la cadena de conexión completa al
- * fallar). A diferencia de `scrubUrl`, opera sobre texto libre y no requiere que
- * el contenido sea una URL parseable, dejando intacto el resto del diagnóstico.
+ * Redacta credenciales `//user:pass@host` y parámetros secretos (`authToken`,
+ * `password`...) embebidos en texto arbitrario (p. ej. el stderr de drizzle-kit,
+ * que suele imprimir la cadena de conexión completa al fallar). A diferencia de
+ * `scrubUrl`, opera sobre texto libre y no requiere que el contenido sea una
+ * URL parseable, dejando intacto el resto del diagnóstico. Una contraseña con
+ * `@` o `/` sin codificar también se redacta: se toma hasta el último `@`.
  *
  * e.g. "... postgres://user:pass@host:5432/db" → "... postgres://***:***@host:5432/db"
  */
 export function scrubCredentials(text: string): string {
-    return text.replace(/(\/\/)[^/\s:@]+:[^/\s@]+@/g, '$1***:***@');
+    return text
+        .replace(/(\/\/)(?:[^\s'"`@]*@)+/g, '$1***:***@')
+        .replace(
+            new RegExp(`([?&][^=\\s&'"\`]*(?:${SENSITIVE_URL_PARAM.source})[^=\\s&'"\`]*=)[^&\\s'"\`]*`, 'gi'),
+            '$1***',
+        );
 }
 
 export interface MigrationConfig {

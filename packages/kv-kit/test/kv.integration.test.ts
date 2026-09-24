@@ -45,16 +45,16 @@ describe.if(redisUp)('RedisAdapter (requires Redis)', () => {
     const prefix = `kvtest:${Date.now()}:`;
     let adapter: RedisAdapter;
 
-    beforeAll(() => {
+    beforeAll(async () => {
         adapter = new RedisAdapter(redisOptions());
-        adapter.connect();
+        await adapter.connect();
     });
 
     afterAll(async () => {
         for (const k of ['obj', 'str', 'h', 'd', 'ttl']) {
             await adapter.del(prefix + k);
         }
-        adapter.disconnect();
+        await adapter.disconnect();
     });
 
     it('round-trips an object through JSON serialization', async () => {
@@ -163,7 +163,7 @@ describe.if(redisUp)('Redis connection settings (requires Redis)', () => {
 
     it('accepts a plain URL string', async () => {
         const adapter = new RedisAdapter(urlDb7);
-        adapter.connect();
+        await adapter.connect();
         try {
             await adapter.set(key, 1);
             expect(await inDb(7)).toBe('1');
@@ -175,7 +175,7 @@ describe.if(redisUp)('Redis connection settings (requires Redis)', () => {
 
     it('supports fractional TTLs (Redis EX only takes whole seconds)', async () => {
         const adapter = new RedisAdapter(urlDb7);
-        adapter.connect();
+        await adapter.connect();
         try {
             await adapter.set(key, 'short', 0.2);
             await adapter.mset([[`${key}:b`, 'short']], 0.2);

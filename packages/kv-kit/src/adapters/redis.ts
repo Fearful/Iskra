@@ -1,4 +1,5 @@
 import type { KVAdapter } from '../types';
+import { checkTtl } from '../ttl';
 import Redis from 'ioredis';
 import type { RedisOptions } from 'ioredis';
 
@@ -32,6 +33,15 @@ function decode<T>(raw: string): T | undefined {
  */
 export type RedisAdapterOptions = string | (RedisOptions & { url?: string });
 
+export interface RedisAdapterHooks {
+    /**
+     * Receives the client's `error` events (a dropped connection, each failed
+     * reconnect). Without it they are ignored; ioredis printed them to the
+     * console, outside the app's logger.
+     */
+    onError?: (error: Error) => void;
+}
+
 /** `EX` for whole seconds; `PX` for fractional TTLs, which Redis `EX` rejects. */
 function ttlArgs(ttl: number): ['EX', number] | ['PX', number] {
     return Number.isInteger(ttl) ? ['EX', ttl] : ['PX', Math.max(1, Math.round(ttl * 1000))];
@@ -41,22 +51,41 @@ export class RedisAdapter implements KVAdapter {
     id = 'redis';
     private client: Redis | null = null;
     private readonly options: RedisAdapterOptions;
+    private readonly hooks: RedisAdapterHooks;
 
-    constructor(options: RedisAdapterOptions) {
+    constructor(options: RedisAdapterOptions, hooks: RedisAdapterHooks = {}) {
         this.options = options;
+        this.hooks = hooks;
     }
 
-    connect() {
+    /**
+     * Connects and waits for Redis to answer: an unreachable server or a wrong
+     * password fails here (and so the app's start) instead of on the first
+     * command. Once connected, a dropped connection is retried by ioredis.
+     */
+    async connect() {
         // ioredis only parses a URL passed as its own argument: an object with
         // a `url` key was ignored and it silently connected to localhost:6379.
+        let client: Redis;
         if (typeof this.options === 'string') {
-            this.client = new Redis(this.options);
+            client = new Redis(this.options, { lazyConnect: true });
         } else if (this.options.url) {
             const { url, ...rest } = this.options;
-            this.client = new Redis(url, rest);
+            client = new Redis(url, { ...rest, lazyConnect: true });
         } else {
-            this.client = new Redis(this.options);
+            client = new Redis({ ...this.options, lazyConnect: true });
         }
+        client.on('error', (error: Error) => this.hooks.onError?.(error));
+        try {
+            await client.connect();
+        } catch (error) {
+            client.disconnect();
+            // The message, not the URL: it may carry the password.
+            throw new Error(`Could not connect to Redis: ${error instanceof Error ? error.message : String(error)}`, {
+                cause: error,
+            });
+        }
+        this.client = client;
     }
 
     async disconnect() {
@@ -90,8 +119,9 @@ export class RedisAdapter implements KVAdapter {
 
     async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
         const val = encode(value);
-        if (ttl) {
-            await this.redis.set(key, val, ...(ttlArgs(ttl) as ['EX', number]));
+        const seconds = checkTtl(ttl);
+        if (seconds !== undefined) {
+            await this.redis.set(key, val, ...(ttlArgs(seconds) as ['EX', number]));
         } else {
             await this.redis.set(key, val);
         }
@@ -122,13 +152,14 @@ export class RedisAdapter implements KVAdapter {
         entries: Array<[string, T]>,
         ttl?: number
     ): Promise<void> {
+        const seconds = checkTtl(ttl);
         if (entries.length === 0) return;
         const pipeline = this.redis.pipeline();
 
         for (const [key, value] of entries) {
             const val = encode(value);
-            if (ttl) {
-                pipeline.set(key, val, ...(ttlArgs(ttl) as ['EX', number]));
+            if (seconds !== undefined) {
+                pipeline.set(key, val, ...(ttlArgs(seconds) as ['EX', number]));
             } else {
                 pipeline.set(key, val);
             }

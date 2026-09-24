@@ -61,6 +61,8 @@ const app = new App({
 });
 ```
 
+`app.start()` espera a que Redis responda, así que un servidor inalcanzable o una contraseña incorrecta hacen fallar el arranque en vez del primer comando. Una vez conectado, ioredis reintenta si se cae la conexión, y sus errores de conexión van al logger de la app (`warn`).
+
 ## API
 
 ```typescript
@@ -114,7 +116,7 @@ Una clave inexistente resuelve a `undefined` (no `null`). Anteriormente el adapt
 
 ## Codec de Valores en Redis
 
-El adaptador de Redis usa un único codec consistente para cada escritura y lectura: los valores se serializan con `JSON.stringify` al escribir y se parsean con `JSON.parse` al leer. Esto preserva los tipos de JavaScript, igual que el adaptador de memoria:
+El adaptador de Redis usa un único codec consistente para cada escritura y lectura: los valores se serializan con `JSON.stringify` al escribir y se parsean con `JSON.parse` al leer. Strings, números, booleanos, y objetos y arrays planos de ellos conservan su tipo:
 
 ```typescript
 await kv.set('numerica', '123'); // string
@@ -128,6 +130,8 @@ typeof (await kv.get('contador')); // 'number'
 ```
 
 `undefined` se trata de forma explícita (se almacena como el literal JSON `null` y se decodifica de vuelta a `undefined`), por lo que nunca se corrompe en la cadena `"undefined"`. Valores escritos fuera del adaptador que no sean JSON válido se devuelven tal cual (como cadena).
+
+Lo que JSON no puede representar **no** vuelve igual, a diferencia del adaptador de memoria, que guarda el valor mismo: un `Date` vuelve como string ISO, un `Map` o `Set` como `{}`, `undefined` dentro de un array como `null`, y `null` como `undefined`. Esos valores hay que convertirlos a mano (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
 
 ## Namespace
 
@@ -164,7 +168,9 @@ await kv.mdel(['clave:a', 'clave:b', 'clave:c']);
 
 ## TTL y el Adaptador de Memoria
 
-El adaptador en memoria gestiona los temporizadores de expiración sin fugas: sobrescribir una clave con una nueva llamada a `set` cancela cualquier temporizador previo antes de programar uno nuevo, por lo que un temporizador obsoleto nunca puede eliminar un valor recién escrito.
+Un TTL es una cantidad de segundos; `0` (o ninguno) significa sin expiración, y un TTL negativo o no finito se rechaza con un `RangeError`.
+
+El adaptador en memoria gestiona los temporizadores de expiración sin fugas: sobrescribir una clave con una nueva llamada a `set` cancela cualquier temporizador previo antes de programar uno nuevo, por lo que un temporizador obsoleto nunca puede eliminar un valor recién escrito. Se admiten TTLs más largos que el límite de `setTimeout` (unos 24,8 días).
 
 ## Variables de Entorno
 

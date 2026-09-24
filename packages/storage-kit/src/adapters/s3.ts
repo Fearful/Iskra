@@ -20,7 +20,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         super();
         const conn = config.connection || {};
 
-        if (conn.endpoint?.startsWith("http://") && conn.useSSL !== false) {
+        if (conn.endpoint && /^http:\/\//i.test(conn.endpoint.trim()) && conn.useSSL !== false) {
             throw new Error(
                 "Refusing plaintext S3 endpoint; set useSSL:false to override"
             );
@@ -164,12 +164,15 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         this.ensureConnected();
         const files: StorageFile[] = [];
         let continuationToken: string | undefined;
+        // A folder, as with the local adapter: "acme" must not also match
+        // "acme-internal/" (sanitizePath drops the trailing slash).
+        const folder = prefix ? this.sanitizePath(prefix) : "";
 
         do {
             const response = await this.client.send(
                 new ListObjectsV2Command({
                     Bucket: this.bucket,
-                    Prefix: prefix ? this.sanitizePath(prefix) : undefined,
+                    Prefix: folder ? `${folder}/` : undefined,
                     ContinuationToken: continuationToken,
                 })
             );
@@ -209,7 +212,9 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         await this.client.send(
             new CopyObjectCommand({
                 Bucket: this.bucket,
-                CopySource: `${this.bucket}/${sourceKey}`,
+                // URL-encoded, as S3 requires: "100%25 done.txt" or "café.txt"
+                // otherwise copy the wrong object or fail.
+                CopySource: `${this.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
                 Key: destKey,
             })
         );

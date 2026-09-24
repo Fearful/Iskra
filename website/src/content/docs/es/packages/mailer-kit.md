@@ -83,7 +83,7 @@ const mailer = await createEmailAdapter({
 
 #### Cabeceras personalizadas (allowlist)
 
-Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permiten nombres de una lista blanca y el resto se rechaza lanzando un error (proteccion contra inyeccion de cabeceras). Ademas, todo lo que venga despues de un CR o LF en el valor se descarta para evitar inyeccion.
+Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permiten nombres de una lista blanca y el resto se rechaza lanzando un error (proteccion contra inyeccion de cabeceras). Ademas, todo lo que venga despues de un CR o LF en el valor se descarta para evitar inyeccion. La misma lista se aplica a SMTP y SendGrid; las dos cabeceras `X-Mailgun-*` solo a Mailgun.
 
 Cabeceras permitidas:
 
@@ -125,6 +125,8 @@ const mailer = await createEmailAdapter({
 });
 ```
 
+El adaptador de SES todavia no soporta `attachments` ni `headers`: un mensaje con alguno de ellos se rechaza con un error en vez de enviarse sin ellos.
+
 ## API
 
 ```typescript
@@ -141,6 +143,8 @@ await mailer.send({
 ```
 
 Todos los adaptadores devuelven `{ messageId, success }`.
+
+Todos los adaptadores ponen entre comillas (o codifican, si no es ASCII) el nombre visible de `from`, asi que no puede agregar otra direccion, y rechazan un email con espacios, `<>`, comas o comillas. Un `content` de adjunto de tipo string es texto; para archivos binarios pasa un `Uint8Array`.
 
 ### Plantillas (no soportadas todavia)
 

@@ -78,7 +78,7 @@ const stream = await storage.getStream(path);  // null if not found
 // Check existence
 const exists = await storage.exists(path);
 
-// List files (recursive)
+// List the files in a folder and its subfolders
 const files = await storage.list(prefix?);
 
 // Generate URL (pre-signed for S3/MinIO)

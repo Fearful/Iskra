@@ -72,7 +72,7 @@ const data = await cache.remember('dashboard:stats', 60, async () => {
 const data2 = await cache.wrap('dashboard:stats', 60, () => db.query('...'));
 ```
 
-El fallback se llama **exactamente una vez** por cache miss — nunca en un hit.
+El fallback se llama **exactamente una vez** por cache miss — nunca en un hit. Un error que lance llega tal cual a quien llama (misma clase, `status` o `code`), y no se guarda nada.
 
 ## Namespacing
 
@@ -101,6 +101,8 @@ await cache.invalidateTag('items');
 await cache.invalidateTag('featured');
 // banner eliminado
 ```
+
+Cada etiqueta guarda un índice de sus claves en el almacenamiento. Sus actualizaciones se serializan dentro de un proceso, pero instancias que comparten un Redis todavía pueden pisarse, así que una clave etiquetada en el mismo momento en otra instancia puede sobrevivir a un `invalidateTag()`. El índice no tiene TTL: solo lo borra `invalidateTag()`, así que una etiqueta que nunca se invalida crece con cada clave que la usa.
 
 ## Uso con RedisAdapter (producción)
 

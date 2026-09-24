@@ -83,7 +83,7 @@ const mailer = await createEmailAdapter({
 
 #### Custom headers (allowlist)
 
-Headers passed in `headers` are not forwarded blindly: only an allowlist of names is permitted, and any other name is rejected with an error (header-injection protection). On top of that, anything after a CR or LF in the value is dropped to prevent injection.
+Headers passed in `headers` are not forwarded blindly: only an allowlist of names is permitted, and any other name is rejected with an error (header-injection protection). On top of that, anything after a CR or LF in the value is dropped to prevent injection. The same allowlist applies to SMTP and SendGrid; the two `X-Mailgun-*` headers only to Mailgun.
 
 Allowed headers:
 
@@ -125,6 +125,8 @@ const mailer = await createEmailAdapter({
 });
 ```
 
+The SES adapter does not support `attachments` or `headers` yet: a message with either is rejected with an error instead of being sent without them.
+
 ## API
 
 ```typescript
@@ -141,6 +143,8 @@ await mailer.send({
 ```
 
 All adapters return `{ messageId, success }`.
+
+The `from` display name is quoted (or encoded, when it is not ASCII) by every adapter, so it cannot add another address, and an email address with spaces, brackets, commas or quotes is rejected. A string attachment `content` is text; pass a `Uint8Array` for binary files.
 
 ### Templates (not supported yet)
 

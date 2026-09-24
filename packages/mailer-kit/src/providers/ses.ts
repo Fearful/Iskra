@@ -1,4 +1,5 @@
 import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from "../types";
+import { formatAddress } from "../headers";
 
 /**
  * Minimal structural shape of the value returned by
@@ -67,6 +68,14 @@ export class SesEmailAdapter implements EmailAdapter {
     async send(message: EmailMessage): Promise<{ messageId: string; success: boolean }> {
         const from = message.from || this.defaultFrom;
         if (!from) throw new Error("From address required");
+        // Simple content has no place for them: they used to be dropped while
+        // the send reported success.
+        if (message.attachments?.length) {
+            throw new Error("Attachments are not supported by the ses adapter yet");
+        }
+        if (message.headers && Object.keys(message.headers).length > 0) {
+            throw new Error("Custom headers are not supported by the ses adapter yet");
+        }
 
         const { client, command } = await this.resolveSdk();
 
@@ -79,7 +88,7 @@ export class SesEmailAdapter implements EmailAdapter {
         if (message.html) body.Html = { Data: message.html, Charset: "UTF-8" };
 
         const input = {
-            FromEmailAddress: from.name ? `${from.name} <${from.email}>` : from.email,
+            FromEmailAddress: formatAddress(from),
             Destination: {
                 ToAddresses: toAddresses,
                 ...(ccAddresses ? { CcAddresses: ccAddresses } : {}),

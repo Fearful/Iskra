@@ -6,7 +6,9 @@ import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import postgres from 'postgres';
 import mysql from 'mysql2/promise';
 import { sql } from 'drizzle-orm';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { ConnectionError, MigrationError, QueryError } from './errors';
+import { SENSITIVE_URL_PARAM } from './secrets';
 
 /**
  * Observability callback invoked for every SQL statement Drizzle executes.
@@ -38,16 +40,21 @@ export type IskraDrizzleDb<TSchema extends Record<string, unknown> = Record<stri
     | LibSQLDatabase<TSchema>;
 
 /**
- * Redact username and password from a database URL so it is safe to log.
+ * Redact the username, password and secret query parameters (`authToken`,
+ * `password`, `sslpassword`...) from a database URL so it is safe to log.
  * Returns the scrubbed URL string, or undefined if parsing fails.
  *
  * e.g. postgres://user:pass@host:5432/db → postgres://***:***@host:5432/db
+ *      libsql://db.turso.io?authToken=eyJ… → libsql://db.turso.io?authToken=***
  */
 export function scrubUrl(url: string): string | undefined {
     try {
         const parsed = new URL(url);
         if (parsed.username) parsed.username = '***';
         if (parsed.password) parsed.password = '***';
+        for (const key of [...new Set(parsed.searchParams.keys())]) {
+            if (SENSITIVE_URL_PARAM.test(key)) parsed.searchParams.set(key, '***');
+        }
         return parsed.toString();
     } catch {
         return undefined;
@@ -67,6 +74,9 @@ interface DbClient {
 export class DbDriver<TSchema extends Record<string, unknown> = Record<string, never>> implements Driver {
     name = 'db';
     private client: DbClient | undefined;
+    /** Serializes transactions on the single bun:sqlite connection. */
+    private sqliteTxQueue: Promise<unknown> = Promise.resolve();
+    private readonly inSqliteTx = new AsyncLocalStorage<true>();
     public db: IskraDrizzleDb<TSchema> | undefined;
 
     private app: App | undefined;
@@ -228,7 +238,11 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
      * `db.transaction`. Callers receive the transaction-scoped db handle instead
      * of reaching into the raw `db`. The dialect union means `tx` is typed as
      * {@link IskraDrizzleTx}; narrow by dialect if you need dialect-specific APIs.
-     * Failures are wrapped in {@link QueryError} (Drizzle rolls back on throw).
+     * Failures are wrapped in {@link QueryError}; the transaction is rolled back.
+     *
+     * With `sqlite`, transactions run one at a time on the single connection,
+     * and a query made outside `tx` while one is open is part of it. A nested
+     * `transaction()` call is rejected: it would wait for itself.
      */
     async transaction<R>(fn: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R> {
         if (!this.db) {
@@ -237,6 +251,7 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
             });
         }
         try {
+            if (this.app?.config.db?.driver === 'sqlite') return await this.sqliteTransaction(fn);
             // The dialect-specific `transaction` overloads do not unify across the
             // union, so we route through the runtime method with a faithful cast
             // of the public handle types.
@@ -250,6 +265,39 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
                 context: { driver: this.app?.config.db?.driver },
             });
         }
+    }
+
+    /**
+     * Drizzle's bun-sqlite `transaction()` is synchronous: it commits as soon
+     * as the callback returns its promise, so an async callback that threw
+     * afterwards never rolled back. The transaction is opened and closed here
+     * around the awaited callback instead.
+     */
+    private async sqliteTransaction<R>(fn: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R> {
+        if (this.inSqliteTx.getStore()) {
+            throw new QueryError('Nested transaction() calls are not supported with sqlite', {
+                context: { driver: 'sqlite' },
+            });
+        }
+        const db = this.db as BunSQLiteDatabase<TSchema>;
+        const run = () =>
+            this.inSqliteTx.run(true, async () => {
+                // A transaction handle (tx.rollback(), tx.query.*) bound to the
+                // connection; the empty native transaction it comes from is done.
+                const tx = db.transaction((t) => t);
+                db.run(sql`begin`);
+                try {
+                    const result = await fn(tx as unknown as IskraDrizzleTx<TSchema>);
+                    db.run(sql`commit`);
+                    return result;
+                } catch (error) {
+                    db.run(sql`rollback`);
+                    throw error;
+                }
+            });
+        const result = this.sqliteTxQueue.then(run, run);
+        this.sqliteTxQueue = result.catch(() => undefined);
+        return result;
     }
 
     /**

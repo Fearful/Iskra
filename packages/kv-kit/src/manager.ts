@@ -33,7 +33,9 @@ export class KVManager implements Driver, KVAdapter {
 
         if (config?.driver === 'redis') {
             app.logger.info('Initializing KV with Redis');
-            this.adapter = new RedisAdapter(config.connection ?? {});
+            this.adapter = new RedisAdapter(config.connection ?? {}, {
+                onError: (err) => app.logger.warn({ err }, 'KV Redis connection error'),
+            });
         } else if (!config?.driver || config.driver === 'memory') {
             app.logger.info('Initializing KV with Memory');
             this.adapter = new MemoryAdapter();
