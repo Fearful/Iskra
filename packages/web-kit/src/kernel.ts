@@ -209,6 +209,10 @@ export class Kernel {
         return this.app;
     }
 
+    getConfig(): Readonly<KernelConfig> {
+        return this.config;
+    }
+
     getFeature<T extends Feature>(name: string): T | undefined {
         return this.features.get(name) as T;
     }

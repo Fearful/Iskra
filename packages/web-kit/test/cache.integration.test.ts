@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { Kernel } from "../src/kernel";
 import { CacheFeature } from "../src/features/cache";
+import Redis from "ioredis";
 
 // Exercises the Redis cache adapter against a real Redis. Skipped when no Redis
 // is reachable so the unit suite (memory adapter) stays infra-free.
@@ -87,5 +88,24 @@ describe.if(redisUp)("CacheFeature with the Redis adapter (requires Redis)", () 
         await cache.client.delete(prefix + "counter");
         expect(await cache.client.increment!(prefix + "counter")).toBe(1);
         expect(await cache.client.increment!(prefix + "counter")).toBe(2);
+    });
+
+    it("incrementWithTtl always leaves the counter with an expiry", async () => {
+        const key = prefix + "rl";
+        await cache.client.delete(key);
+        expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(1);
+        expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(2);
+        const redis = new Redis(REDIS_URL);
+        try {
+            expect(await redis.pttl(key)).toBeGreaterThan(0);
+
+            // Regression: a counter left without a TTL (the old GET-then-INCR race)
+            // must regain one instead of blocking the client forever.
+            await redis.set(key, "7");
+            expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(8);
+            expect(await redis.pttl(key)).toBeGreaterThan(0);
+        } finally {
+            redis.disconnect();
+        }
     });
 });

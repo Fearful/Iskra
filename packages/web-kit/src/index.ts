@@ -3,6 +3,7 @@ export * from "./kernel";
 export * from "./driver";
 export * from "./server";
 export * from "./router";
+export * from "./client-ip";
 
 // Features
 export * from "./features/cors";

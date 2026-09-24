@@ -1,6 +1,7 @@
 import type { AuthConfig, Feature, Kernel } from "../../types";
 import type { Context, Hono, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { getClientIp } from "../../client-ip";
 import { type Auth, createBetterAuth } from "@iskra-bun/auth-kit";
 import { z } from "@hono/zod-openapi";
 import type { DbFeature } from "../db";
@@ -138,15 +139,23 @@ export class AuthFeature implements Feature {
 
     // ─── Auth-route rate limiting ────────────────────────────────────────────
     private authRateLimitHits = new Map<string, { count: number; expiresAt: number }>();
+    private authRateLimitLastSweep = 0;
     private readonly authRateLimitWindowMs = 15 * 60 * 1000;
     private readonly authRateLimitMax = 20;
 
     private authRateLimitMiddleware() {
         return async (c: Context, next: Next) => {
-            const ip = c.req.header("x-forwarded-for")
-                || c.req.header("x-real-ip")
-                || "unknown";
+            // Socket address unless the kernel is configured with `trustProxy`:
+            // a raw X-Forwarded-For is client-controlled and would let an
+            // attacker rotate it to bypass the limit (and grow this map).
+            const ip = getClientIp(c, this.kernel?.getConfig().trustProxy) ?? "unknown";
             const now = Date.now();
+            if (now - this.authRateLimitLastSweep >= this.authRateLimitWindowMs) {
+                this.authRateLimitLastSweep = now;
+                for (const [key, hit] of this.authRateLimitHits) {
+                    if (now > hit.expiresAt) this.authRateLimitHits.delete(key);
+                }
+            }
             const entry = this.authRateLimitHits.get(ip);
 
             const next_entry = !entry || now > entry.expiresAt

@@ -2,6 +2,7 @@ import type { Feature, RateLimitConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { getClientIp, type TrustProxy } from "../client-ip";
 
 interface RateLimitStore {
     get(key: string): Promise<number | null>;
@@ -56,17 +57,15 @@ class CacheStoreWrapper implements RateLimitStore {
     }
 
     async increment(key: string, ttl: number): Promise<number> {
+        // Atomic increment that also guarantees an expiry (Redis: one Lua call).
+        // A separate GET + INCR lets the key expire in between, and INCR then
+        // recreates it without a TTL — blocking that client forever.
+        if (this.cache.incrementWithTtl) return await this.cache.incrementWithTtl(key, ttl);
+
+        // Fallback for custom adapters: not atomic, but every write carries a TTL.
         const ttlSeconds = Math.ceil(ttl / 1000);
         const current = await this.cache.get(key);
-        if (current === null) {
-            await this.cache.set(key, 1, ttlSeconds);
-            return 1;
-        }
-        // Use atomic increment if available (Redis INCR)
-        if (this.cache.increment) return await this.cache.increment(key);
-
-        // Fallback: increment and re-set with TTL
-        const newVal = Number(current) + 1;
+        const newVal = current === null ? 1 : Number(current) + 1;
         await this.cache.set(key, newVal, ttlSeconds);
         return newVal;
     }
@@ -81,6 +80,8 @@ export class RateLimitFeature implements Feature {
     };
     private store?: RateLimitStore;
     private cleanupInterval?: ReturnType<typeof setInterval>;
+    private trustProxy?: TrustProxy;
+    private warnedUnknownClient = false;
 
     constructor(config: RateLimitConfig = {}) {
         this.config = {
@@ -95,6 +96,8 @@ export class RateLimitFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.trustProxy = kernel.getConfig().trustProxy;
+
         if (this.config.store === "cache") {
             const cacheFeature = kernel.getFeature("cache") as any;
             if (cacheFeature?.client) {
@@ -164,7 +167,16 @@ export class RateLimitFeature implements Feature {
     }
 
     private defaultKeyGenerator(c: Context): string {
-        return c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+        const ip = getClientIp(c, this.trustProxy);
+        if (ip) return ip;
+        if (!this.warnedUnknownClient) {
+            this.warnedUnknownClient = true;
+            console.warn(
+                "⚠️ rate-limit: client IP unavailable (not served by Bun.serve?); all such requests share one bucket. " +
+                    "Pass a keyGenerator to identify clients.",
+            );
+        }
+        return "unknown";
     }
 
     async shutdown() {

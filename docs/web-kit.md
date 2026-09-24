@@ -182,6 +182,7 @@ new AuthFeature({
 
 - El `secret` se usa para firmar las sesiones y **debe tener al menos 32 caracteres**; uno mas corto o vacio lanza un error al inicializar.
 - Las rutas de auth (`{basePath}/*`) tienen rate limiting por IP por defecto (20 intentos / 15 min) para frenar credential stuffing.
+- La IP del cliente (para este limitador y para `RateLimitFeature`) es la del socket. Si la app corre detras de un proxy (nginx, load balancer), configura `new Kernel({ trustProxy: 1 })` con la cantidad de proxies para usar `X-Forwarded-For`; sin eso el header se ignora, porque cualquier cliente puede falsificarlo.
 - Usa `requireAuth(kernel)` como middleware para proteger rutas que requieren sesion.
 
 ## Respuestas Estandarizadas

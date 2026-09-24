@@ -1,3 +1,4 @@
+import type { TrustProxy } from "./client-ip";
 import type { Kernel } from "./kernel";
 
 export type { Kernel };
@@ -12,6 +13,12 @@ export interface KernelConfig {
     hostname?: string;
     environment?: "development" | "production" | "test";
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
+    /**
+     * Number of reverse proxies in front of the app (`true` = 1). Only then are
+     * `X-Forwarded-For` / `X-Real-IP` used to identify clients (rate limiting);
+     * by default the socket address is used. See `getClientIp`.
+     */
+    trustProxy?: TrustProxy;
 }
 
 export interface SecurityHeadersConfig {

@@ -37,7 +37,7 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
     });
 
     it("throttles repeated requests to auth routes from the same IP (429)", async () => {
-        const kernel = new Kernel();
+        const kernel = new Kernel({ trustProxy: true });
         kernel.registerFeature(new FakeDbFeature() as any);
         const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
         kernel.registerFeature(auth);
@@ -59,8 +59,8 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
         expect(last).toBe(429);
     });
 
-    it("does not throttle a different IP", async () => {
-        const kernel = new Kernel();
+    it("does not throttle a different IP (behind a trusted proxy)", async () => {
+        const kernel = new Kernel({ trustProxy: true });
         kernel.registerFeature(new FakeDbFeature() as any);
         const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
         kernel.registerFeature(auth);
@@ -95,5 +95,26 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
             last = (await app.request("/public", { headers })).status;
         }
         expect(last).toBe(200);
+    });
+
+    it("cannot be bypassed by rotating X-Forwarded-For without trustProxy", async () => {
+        // Regression: the limiter keyed on the raw header, so a new value per
+        // request gave the attacker a fresh budget every time.
+        const kernel = new Kernel();
+        kernel.registerFeature(new FakeDbFeature() as any);
+        const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
+        kernel.registerFeature(auth);
+        await kernel.initialize();
+
+        const app = kernel.getApp();
+        app.get("/api/sso/ping", (c) => c.text("ok"));
+
+        const socket = { requestIP: () => ({ address: "203.0.113.9", family: "IPv4", port: 40000 }) };
+        let last = 200;
+        for (let i = 0; i < 25; i++) {
+            const headers = { "x-forwarded-for": `10.1.0.${i}` };
+            last = (await app.request("/api/sso/ping", { headers }, socket)).status;
+        }
+        expect(last).toBe(429);
     });
 });
