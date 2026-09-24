@@ -45,7 +45,9 @@ await app.start();
 
 El proceso corre en background de forma continua. Si `restartOnCrash: true`, se reinicia automaticamente cuando falla (codigo de salida distinto de 0 o muerto por una senal); una salida limpia con codigo 0 no se reinicia.
 
-Cada proceso se lanza en su propio grupo de procesos, asi que `kill()` y `stop()` envian las senales a todo el arbol: los hijos de un wrapper (`sh -c`, `npm run`, un script) tambien terminan. Un `kill()` mientras el proceso espera su backoff de reinicio cancela ese reinicio.
+Cada proceso se lanza en su propio grupo de procesos, asi que `kill()` y `stop()` envian las senales a todo el arbol: los hijos de un wrapper (`sh -c`, `npm run`, un script) tambien terminan. Esperan a que no quede ningun proceso del grupo, y le envian SIGKILL al grupo si algo sigue vivo pasado el timeout (un nieto que ignora SIGTERM, por ejemplo). Cuando un proceso falla, lo que dejo corriendo en su grupo se termina antes de reiniciarlo. Un `kill()` mientras el proceso espera su backoff de reinicio cancela ese reinicio.
+
+Si un proceso no se puede lanzar (no existe su comando, por ejemplo), `spawn()` falla. En `app.start()` no hace fallar la app: se informa con `process:spawn-error` y, con `restartOnCrash`, se reintenta con el backoff de reinicio, igual que un reinicio que no lo puede lanzar; cada intento fallido cuenta para `maxRestarts`.
 
 ### `oneshot`
 
@@ -73,7 +75,8 @@ El ProcessManager emite estos eventos en el bus de la App:
 - `process:message` — mensaje JSON parseado del stdout del proceso
 - `process:log` — lineas de log no-JSON del proceso (tambien la ultima, aunque no termine en salto de linea)
 - `process:error` — cada linea que el proceso escribe en stderr (modo `stdio`)
-- `process:exit` — cuando termina cualquier proceso: `{ name, exitCode, signal }` (`exitCode` es `null` si lo mato una senal)
+- `process:exit` — cuando un proceso termina por su cuenta (no despues de `kill()` o `stop()`): `{ name, exitCode, signal }` (`exitCode` es `null` si lo mato una senal)
+- `process:spawn-error` — cuando un proceso no se pudo lanzar en `app.start()` o en un reinicio: `{ name, error }`
 - `process:max-restarts` — cuando se supera `maxRestarts`
 
 ## Gestion de Procesos en Tiempo de Ejecucion

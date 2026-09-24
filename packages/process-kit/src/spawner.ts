@@ -1,6 +1,7 @@
 import type { App, Driver, ProcessConfig } from '@iskra-bun/core';
 import type { FileSink } from 'bun';
 import { Subprocess } from 'bun';
+import { readdirSync, readFileSync } from 'node:fs';
 
 interface RunningProcess {
     process: Subprocess;
@@ -14,6 +15,42 @@ interface RunningProcess {
 
 /** Longest stdout/stderr line kept in memory before it is emitted truncated. */
 const MAX_LINE_LENGTH = 1024 * 1024;
+/** How often terminate() re-checks whether the process group is gone. */
+const GROUP_POLL_MS = 25;
+
+/**
+ * Whether any live (non-zombie) process is left in process group `pgid`. On
+ * Linux /proc is read, because a signal-0 probe also succeeds for zombies,
+ * which a container's PID 1 may never reap; elsewhere the probe is used.
+ */
+function groupAlive(pgid: number | undefined): boolean {
+    if (!pgid || process.platform === 'win32') return false;
+    try {
+        process.kill(-pgid, 0);
+    } catch {
+        return false; // no process at all in the group
+    }
+    if (process.platform === 'linux') {
+        try {
+            for (const entry of readdirSync('/proc')) {
+                if (!/^\d+$/.test(entry)) continue;
+                let stat: string;
+                try {
+                    stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+                } catch {
+                    continue; // exited while scanning
+                }
+                // "pid (comm) state ppid pgrp ...": comm may contain spaces/parens.
+                const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+                if (Number(fields[2]) === pgid && fields[0] !== 'Z' && fields[0] !== 'X') return true;
+            }
+            return false;
+        } catch {
+            // no /proc: trust the probe
+        }
+    }
+    return true;
+}
 
 export class ProcessManager implements Driver {
     name = 'ProcessManager';
@@ -41,7 +78,19 @@ export class ProcessManager implements Driver {
         this.app.logger.info(`Starting ${Object.keys(processConfigs).length} processes...`);
 
         for (const [name, config] of Object.entries(processConfigs)) {
-            this.spawnProcess(name, config);
+            try {
+                this.spawnProcess(name, config);
+            } catch (err) {
+                // A process that cannot be spawned (missing binary, say) does
+                // not fail the app: it is reported, and retried if supervised.
+                this.spawnFailed(name, err, {
+                    config,
+                    name,
+                    restarts: 0,
+                    startedAt: Date.now(),
+                    currentBackoffMs: config.restartBackoff?.initialMs ?? 1000,
+                });
+            }
         }
     }
 
@@ -49,7 +98,8 @@ export class ProcessManager implements Driver {
      * Spawn and register a new process at runtime. Reuses the existing internal
      * spawn logic and respects the process mode (stdio/daemon/oneshot).
      *
-     * @throws {Error} if a process with the given name is already registered.
+     * @throws {Error} if a process with the given name is already registered,
+     *   or if it cannot be spawned (e.g. the command does not exist).
      */
     async spawn(name: string, config: ProcessConfig): Promise<void> {
         if (this.processes.has(name) || this.restartTimers.has(name)) {
@@ -119,40 +169,52 @@ export class ProcessManager implements Driver {
     }
 
     /**
-     * Send SIGTERM, escalate to SIGKILL after `gracefulTimeoutMs`, and wait up to
-     * `gracefulTimeoutMs * 2` for the process to exit. After the race settles, if
-     * the process is still alive it is surfaced as an orphan via `app.logger.error`
-     * so a hung shutdown is observable instead of silently succeeding.
+     * Send SIGTERM to the process group, escalate to SIGKILL after
+     * `gracefulTimeoutMs`, and wait up to another `gracefulTimeoutMs` for the
+     * group to be gone. The whole group counts, not just the direct child: a
+     * wrapper that exits on SIGTERM used to leave a grandchild that ignores it
+     * running for good. A group still alive after that is reported as an
+     * orphan via `app.logger.error`.
      */
     private async terminate(name: string, proc: Subprocess, gracefulTimeoutMs: number): Promise<void> {
-        let exited = false;
+        let exited = proc.exitCode != null || proc.signalCode != null;
         proc.exited.then(() => { exited = true; }, () => { exited = true; });
+        const pid = (proc as { pid?: number }).pid;
+        const gone = () => exited && !groupAlive(pid);
 
         this.sendSignal(proc, 'SIGTERM');
+        if (await this.waitUntil(gone, gracefulTimeoutMs)) return;
 
-        const deadline = gracefulTimeoutMs * 2;
-        const forceKillTimer = setTimeout(() => {
-            if (!exited) {
-                this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
-                this.sendSignal(proc);
-            }
-        }, gracefulTimeoutMs);
+        this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
+        this.sendSignal(proc);
+        if (await this.waitUntil(gone, gracefulTimeoutMs)) return;
 
-        try {
-            await Promise.race([
-                proc.exited,
-                new Promise<void>(r => setTimeout(r, deadline)),
-            ]);
-        } finally {
-            clearTimeout(forceKillTimer);
+        this.app?.logger.error(
+            { name },
+            `Process ${name} survived SIGTERM and SIGKILL and is now an orphan; manual cleanup may be required`,
+        );
+    }
+
+    /** Polls `condition` until it holds or `timeoutMs` passes; leaves no timer behind. */
+    private async waitUntil(condition: () => boolean, timeoutMs: number): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        while (!condition()) {
+            if (Date.now() >= deadline) return false;
+            await Bun.sleep(Math.min(GROUP_POLL_MS, Math.max(0, deadline - Date.now())));
         }
+        return true;
+    }
 
-        if (!exited) {
-            this.app?.logger.error(
-                { name },
-                `Process ${name} survived SIGTERM and SIGKILL and is now an orphan; manual cleanup may be required`,
-            );
-        }
+    /**
+     * After a crash, terminates what is left of the dead instance's process
+     * group (children of a wrapper that died), so a restart does not run next
+     * to them (holding the same port, say) and they are not leaked.
+     */
+    private reapGroup(name: string, proc: Subprocess, gracefulTimeoutMs = 5000) {
+        const pid = (proc as { pid?: number }).pid;
+        if (!groupAlive(pid)) return;
+        this.app?.logger.warn(`Process ${name} crashed and left children behind; terminating them`);
+        void this.terminate(`${name} (leftover children)`, proc, gracefulTimeoutMs);
     }
 
     private async readStdOut(name: string, stream: ReadableStream) {
@@ -211,7 +273,7 @@ export class ProcessManager implements Driver {
      *   restart with `min(currentMs * factor, maxMs)`.
      * - If the process was stable (uptime > restartCooldown), the backoff resets to initialMs.
      */
-    private computeBackoffMs(procInfo: RunningProcess): number {
+    private computeBackoffMs(procInfo: Omit<RunningProcess, 'process'>): number {
         const backoffCfg = procInfo.config.restartBackoff;
         if (!backoffCfg) {
             return 1000;
@@ -260,6 +322,7 @@ export class ProcessManager implements Driver {
         // Remove from map so we don't try to kill it again on stop()
         this.processes.delete(name);
         this.app?.emit('process:exit', { name, exitCode, signal });
+        if (crashed) this.reapGroup(name, procInfo.process);
 
         // oneshot processes run to completion once and are never restarted
         if (procInfo.config.mode === 'oneshot') {
@@ -268,28 +331,52 @@ export class ProcessManager implements Driver {
 
         // A clean exit (code 0) is intentional, not a crash.
         if (procInfo.config.restartOnCrash && crashed) {
-            const maxRestarts = procInfo.config.maxRestarts ?? 10;
-            const cooldown = procInfo.config.restartCooldown ?? 60000;
-            const uptime = Date.now() - procInfo.startedAt;
+            this.scheduleRestart(name, procInfo);
+        }
+    }
 
-            // If the process ran longer than the cooldown, consider it stable and reset the counter
-            const restarts = uptime > cooldown ? 1 : procInfo.restarts + 1;
+    /** Schedules the next restart of a crashed process (or of one that failed to spawn). */
+    private scheduleRestart(name: string, procInfo: Omit<RunningProcess, 'process'>) {
+        const maxRestarts = procInfo.config.maxRestarts ?? 10;
+        const cooldown = procInfo.config.restartCooldown ?? 60000;
+        const uptime = Date.now() - procInfo.startedAt;
 
-            if (restarts > maxRestarts) {
-                this.app?.logger.error(`Process ${name} exceeded max restarts (${maxRestarts}). Not restarting.`);
-                this.app?.emit('process:max-restarts', { name, restarts: procInfo.restarts, maxRestarts });
-                return;
-            }
+        // If the process ran longer than the cooldown, consider it stable and reset the counter
+        const restarts = uptime > cooldown ? 1 : procInfo.restarts + 1;
 
-            const delayMs = this.computeBackoffMs(procInfo);
+        if (restarts > maxRestarts) {
+            this.app?.logger.error(`Process ${name} exceeded max restarts (${maxRestarts}). Not restarting.`);
+            this.app?.emit('process:max-restarts', { name, restarts: procInfo.restarts, maxRestarts });
+            return;
+        }
 
-            this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts}) in ${delayMs}ms`);
+        const delayMs = this.computeBackoffMs(procInfo);
 
-            const timer = setTimeout(() => {
-                this.restartTimers.delete(name);
+        this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts}) in ${delayMs}ms`);
+
+        const timer = setTimeout(() => {
+            this.restartTimers.delete(name);
+            try {
                 this.spawnProcess(name, procInfo.config, restarts, delayMs);
-            }, delayMs);
-            this.restartTimers.set(name, timer);
+            } catch (err) {
+                // e.g. the binary is briefly missing mid-deploy: a failed
+                // respawn counts as a crash instead of ending supervision.
+                this.spawnFailed(name, err, {
+                    ...procInfo,
+                    restarts,
+                    startedAt: Date.now(),
+                    currentBackoffMs: delayMs,
+                });
+            }
+        }, delayMs);
+        this.restartTimers.set(name, timer);
+    }
+
+    /** Reports a process that could not be spawned; a supervised one is retried. */
+    private spawnFailed(name: string, error: unknown, procInfo: Omit<RunningProcess, 'process'>) {
+        this.app?.emit('process:spawn-error', { name, error });
+        if (procInfo.config.restartOnCrash && procInfo.config.mode !== 'oneshot') {
+            this.scheduleRestart(name, procInfo);
         }
     }
 
@@ -333,6 +420,8 @@ export class ProcessManager implements Driver {
 
         } catch (err) {
             this.app.logger.error({ err }, `Failed to spawn process: ${name}`);
+            // spawn() rejects with it; start() and restarts report and retry.
+            throw err;
         }
     }
 
@@ -385,10 +474,15 @@ export class ProcessManager implements Driver {
         try {
             // If data is object, stringify it and add newline
             const message = typeof data === 'string' ? data : JSON.stringify(data);
-            stdin.write(message + '\n');
+            // On a pipe, write()/flush() can return promises that reject with
+            // EPIPE once the child is gone: unhandled, they crashed the app.
+            const onError = (err: unknown) => this.app?.logger.error({ err }, `Failed to write to process ${name}`);
+            const written: unknown = stdin.write(message + '\n');
+            if (written instanceof Promise) written.catch(onError);
             // flush is optional on the FileSink surface — call it only if present.
             if (typeof stdin.flush === 'function') {
-                stdin.flush();
+                const flushed: unknown = stdin.flush();
+                if (flushed instanceof Promise) flushed.catch(onError);
             }
         } catch (err) {
             this.app?.logger.error({ err }, `Failed to write to process ${name}`);
