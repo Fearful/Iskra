@@ -10,31 +10,23 @@ describe('App Drivers', () => {
         const d1: Driver = {
             name: 'D1',
             init: () => { sequence.push('init:D1') },
-            start: () => { sequence.push('start:D1') }
+            start: async () => {
+                await new Promise(r => setTimeout(r, 10));
+                sequence.push('start:D1')
+            }
         };
         const d2: Driver = {
             name: 'D2',
             init: () => { sequence.push('init:D2') },
-            start: async () => {
-                await new Promise(r => setTimeout(r, 10));
-                sequence.push('start:D2')
-            }
+            start: () => { sequence.push('start:D2') }
         };
 
         app.register(d1).register(d2);
         await app.start();
 
-        // init runs first for all, then start runs in parallel usually, 
-        // OR start runs individually? Let's check app.ts implementation.
-        // It says: await Promise.all(this.drivers.map(d => ...)) for start.
-        // It says: Loop for init.
-
-        expect(sequence).toContain('init:D1');
-        expect(sequence).toContain('init:D2');
-        // Since start is Promise.all, order of completion depends on async.
-        // D1 is sync, D2 is async. D1 should finish first usually, but check implementation assumption.
-        expect(sequence).toContain('start:D1');
-        expect(sequence).toContain('start:D2');
+        // init runs for every driver, then drivers start one at a time in
+        // registration order: D2 waits for D1's slower async start.
+        expect(sequence).toEqual(['init:D1', 'init:D2', 'start:D1', 'start:D2']);
     });
 
     it('should gracefully handle driver start failure', async () => {
@@ -48,7 +40,7 @@ describe('App Drivers', () => {
         app.register(failingDriver);
 
         // Currently app.start() awaits Promise.all, so it should throw
-        expect(app.start()).rejects.toThrow('Failed to start path');
+        await expect(app.start()).rejects.toThrow('Failed to start path');
     });
 
     it('should continue stopping other drivers if one fails to stop', async () => {

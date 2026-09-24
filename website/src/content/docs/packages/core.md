@@ -38,9 +38,13 @@ await app.start();
 
 1. **`new App(config?)`** — Creates the instance. If you don't pass a config, it is loaded automatically with c12.
 2. **`app.register(driver)`** — Registers a driver (does not initialize it yet).
-3. **`app.use(plugin)`** — Installs a plugin immediately.
-4. **`app.start()`** — Calls `init()` on every driver, then `start()`.
-5. **`app.stop()`** — Calls `stop()` on every driver. If one fails, it throws a `LifecycleError`.
+3. **`app.use(plugin)`** — Installs a plugin immediately (if `install` is async, `start()` waits for it and propagates its error).
+4. **`app.start()`** — Calls `init()` on every driver, then `start()` one at a time in registration order. If a driver fails to start, the ones already started are stopped in reverse order and the error is rethrown.
+5. **`app.stop()`** — Calls `stop()` in reverse start order (the web server before the database), continues past failures, and then throws a `LifecycleError` with all of them. OpenTelemetry is always shut down.
+
+#### Shutdown on signals
+
+After `start()`, `SIGTERM` and `SIGINT` run `app.stop()` and exit with code 0 (or 1 if it fails or exceeds `shutdownTimeoutMs`, 10 s by default). A second signal forces exit. Configure with `shutdownSignals` (a list of signals, or `false` to disable); it is off under `NODE_ENV=test`.
 
 ### Context (DI)
 

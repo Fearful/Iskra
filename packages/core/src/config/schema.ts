@@ -26,6 +26,8 @@ export const AppConfigSchema = z.object({
         resourceAttributes: z.record(z.string()).optional(),
         instrumentations: z.record(z.object({ enabled: z.boolean().optional() })).optional(),
     }).passthrough().optional(),
+    shutdownSignals: z.union([z.array(z.string()), z.literal(false)]).optional(),
+    shutdownTimeoutMs: z.number().positive().optional(),
     processes: z.record(z.object({
         command: z.string(),
         args: z.array(z.string()).optional(),
