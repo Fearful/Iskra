@@ -9,7 +9,9 @@
 #
 #   2. If there are NO pending changesets (i.e. the version PR was just
 #      merged), it runs the `release` script — which builds every package
-#      to `dist/` and then `changeset publish`es each public package to npm
+#      to `dist/`, rewrites `workspace:` dependency ranges to real versions
+#      (scripts/pin-workspace-deps.ts; npm publish does not understand the
+#      protocol), and then `changeset publish`es each public package to npm
 #      with provenance, and creates the matching GitHub Releases.
 #
 # Versions and changelogs are therefore never hand-edited; they flow from the
@@ -61,7 +63,7 @@ jobs:
         uses: changesets/action@v1
         with:
           version: bun run version # `changeset version` — bumps + writes CHANGELOGs
-          publish: bun run release # `bun run build && changeset publish`
+          publish: bun run release # build, pin workspace deps, `changeset publish`
           commit: "chore: version packages"
           title: "chore: version packages"
         env:

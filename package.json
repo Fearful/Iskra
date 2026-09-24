@@ -12,7 +12,7 @@
         "test": "bun test",
         "build": "bun run scripts/build-packages.ts",
         "version": "changeset version",
-        "release": "bun run build && changeset publish",
+        "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
         "typecheck": "tsc --noEmit",
         "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
         "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
