@@ -88,16 +88,32 @@ export class RedisAdapter implements KVAdapter {
         this.client = client;
     }
 
+    /** Longest wait for QUIT before the connection is closed anyway. */
+    protected quitTimeoutMs = 2000;
+
+    /**
+     * Closes the connection. When connected, QUIT lets pending replies arrive
+     * (in-flight writes are not dropped), for at most `quitTimeoutMs`. When the
+     * connection is down, ioredis would queue QUIT behind the offline queue and
+     * resolve only after its reconnect attempts run out (about 10 s by default,
+     * never with `maxRetriesPerRequest: null`), eating the app's shutdown
+     * timeout: the client is closed at once instead.
+     */
     async disconnect() {
         const client = this.client;
         this.client = null;
         if (!client) return;
-        // QUIT waits for pending replies, so in-flight writes are not dropped.
-        if (typeof client.quit === 'function') {
-            await client.quit().catch(() => client.disconnect());
-        } else {
+        if (typeof client.quit !== 'function' || client.status !== 'ready') {
             client.disconnect();
+            return;
         }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<'timeout'>((resolve) => {
+            timer = setTimeout(() => resolve('timeout'), this.quitTimeoutMs);
+        });
+        const outcome = await Promise.race([client.quit().then(() => 'quit' as const, () => 'error' as const), timedOut]);
+        clearTimeout(timer);
+        if (outcome !== 'quit') client.disconnect();
     }
 
     /** The ioredis client once connected (null before connect() and after disconnect()). */

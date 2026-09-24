@@ -16,6 +16,8 @@ export class App {
     /** Drivers whose start() succeeded, in start order; null until start() runs. */
     private startedDrivers: Driver[] | null = null;
     private pendingInstalls: PromiseLike<void>[] = [];
+    /** The shutdown in progress, shared by concurrent stop() calls. */
+    private stopping: Promise<void> | null = null;
     private signalHandler?: (signal: NodeJS.Signals) => void;
     private signals: NodeJS.Signals[] = [];
     public context: Map<string, any> = new Map();
@@ -123,10 +125,20 @@ export class App {
     /**
      * Stops drivers in reverse start order (the web server before the DB it
      * uses), continuing past failures, and always flushes OpenTelemetry.
+     *
+     * A call made while a stop is in progress (e.g. an app's own signal
+     * handler next to the App's) gets that same stop: it resolves only once
+     * every driver has stopped, instead of right away with nothing left to do.
      */
-    async stop() {
+    stop(): Promise<void> {
+        this.stopping ??= this.stopOnce().finally(() => {
+            this.stopping = null;
+        });
+        return this.stopping;
+    }
+
+    private async stopOnce() {
         this.logger.info('Stopping app...');
-        this.removeSignalHandlers();
         const toStop = [...(this.startedDrivers ?? this.drivers)].reverse();
         this.startedDrivers = [];
 
@@ -136,6 +148,9 @@ export class App {
         } finally {
             // Shutdown OTel SDK after drivers (flush pending spans/metrics)
             await shutdownOtel();
+            // Removed only now: while the drivers stop, a second signal must
+            // still reach the handler (forced exit) instead of the default action.
+            this.removeSignalHandlers();
         }
 
         if (failures.length > 0) {

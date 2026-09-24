@@ -44,7 +44,7 @@ await app.start();
 
 #### Apagado por senales
 
-Despues de `start()`, `SIGTERM` y `SIGINT` ejecutan `app.stop()` y terminan el proceso con codigo 0 (o 1 si falla o supera `shutdownTimeoutMs`, 10 s por defecto). Una segunda senal fuerza la salida. Configurable con `shutdownSignals` (lista de senales, o `false` para desactivarlo); bajo `NODE_ENV=test` viene desactivado.
+Despues de `start()`, `SIGTERM` y `SIGINT` ejecutan `app.stop()` y terminan el proceso con codigo 0 (o 1 si falla o supera `shutdownTimeoutMs`, 10 s por defecto). Una segunda senal mientras se detiene fuerza la salida con codigo 1. Las llamadas simultaneas a `app.stop()` (por ejemplo un handler de senales propio junto al del App) comparten un mismo stop: cada una resuelve cuando todos los drivers se detuvieron. Configurable con `shutdownSignals` (lista de senales, o `false` para desactivarlo); bajo `NODE_ENV=test` viene desactivado.
 
 ### Contexto (DI)
 

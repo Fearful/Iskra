@@ -44,7 +44,7 @@ await app.start();
 
 #### Shutdown on signals
 
-After `start()`, `SIGTERM` and `SIGINT` run `app.stop()` and exit with code 0 (or 1 if it fails or exceeds `shutdownTimeoutMs`, 10 s by default). A second signal forces exit. Configure with `shutdownSignals` (a list of signals, or `false` to disable); it is off under `NODE_ENV=test`.
+After `start()`, `SIGTERM` and `SIGINT` run `app.stop()` and exit with code 0 (or 1 if it fails or exceeds `shutdownTimeoutMs`, 10 s by default). A second signal while it stops forces exit with code 1. Concurrent `app.stop()` calls (say, your own signal handler next to the App's) share one stop: each resolves once every driver has stopped. Configure with `shutdownSignals` (a list of signals, or `false` to disable); it is off under `NODE_ENV=test`.
 
 ### Context (DI)
 

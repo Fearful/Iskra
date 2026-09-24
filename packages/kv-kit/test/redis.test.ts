@@ -128,6 +128,39 @@ describe("RedisAdapter", () => {
         expect(fake.disconnected).toBe(true);
     });
 
+    it("disconnect() stops waiting for QUIT after quitTimeoutMs", async () => {
+        const quitting = Object.assign(fake, {
+            status: "ready",
+            quit: () => new Promise<never>(() => {}), // a QUIT that never answers
+        });
+        (adapter as unknown as { quitTimeoutMs: number }).quitTimeoutMs = 50;
+        const started = Date.now();
+        await adapter.disconnect();
+        expect(Date.now() - started).toBeLessThan(1000);
+        expect(quitting.disconnected).toBe(true);
+    });
+
+    it("disconnect() closes a client with Redis down at once, with commands pending", async () => {
+        // Regression: QUIT was queued behind the offline queue, so disconnect()
+        // (and KVManager.stop()) took ~10 s of reconnect attempts to return.
+        const { default: Redis } = await import("ioredis");
+        const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+        const port = probe.port;
+        probe.stop(true); // nothing listens on `port` any more
+        const client = new Redis({ host: "127.0.0.1", port, lazyConnect: true });
+        client.on("error", () => {});
+        client.connect().catch(() => {});
+        const pending = client.get("k").catch((e: Error) => e);
+        const real = new RedisAdapter({});
+        (real as unknown as { client: unknown }).client = client;
+
+        const started = Date.now();
+        await real.disconnect();
+        expect(Date.now() - started).toBeLessThan(1000);
+        expect(await pending).toBeInstanceOf(Error);
+        expect(client.status).toBe("end");
+    });
+
     it("serializes a number value via JSON and parses it back as a number", async () => {
         // JSON.stringify(42) === "42"; JSON.parse("42") yields the number 42.
         await adapter.set<number>("count", 42);

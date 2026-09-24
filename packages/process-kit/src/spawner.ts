@@ -52,6 +52,11 @@ function groupAlive(pgid: number | undefined): boolean {
     return true;
 }
 
+/** Whether an exit (null code when killed by a signal) counts as a crash. */
+function crashedExit(exitCode: number | null, signal: string | null): boolean {
+    return signal !== null || exitCode !== 0;
+}
+
 export class ProcessManager implements Driver {
     name = 'ProcessManager';
     private app: App | null = null;
@@ -59,6 +64,22 @@ export class ProcessManager implements Driver {
     /** Restarts waiting out their backoff delay, so kill()/stop() can cancel them. */
     private restartTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
     private stopping = false;
+    /**
+     * Process groups this manager started that may still have members,
+     * including ones being terminated (no longer in `processes`).
+     */
+    private liveGroups = new Set<number>();
+    /** SIGKILLs every tracked group when the parent exits; see trackGroup(). */
+    private readonly killGroupsOnExit = () => {
+        for (const pgid of this.liveGroups) {
+            try {
+                process.kill(-pgid, 'SIGKILL');
+            } catch {
+                Bun.spawnSync(['kill', '-KILL', '--', `-${pgid}`], { stdout: 'ignore', stderr: 'ignore' });
+            }
+        }
+        this.liveGroups.clear();
+    };
 
     init(app: App) {
         this.app = app;
@@ -183,11 +204,11 @@ export class ProcessManager implements Driver {
         const gone = () => exited && !groupAlive(pid);
 
         this.sendSignal(proc, 'SIGTERM');
-        if (await this.waitUntil(gone, gracefulTimeoutMs)) return;
+        if (await this.waitUntil(gone, gracefulTimeoutMs)) return this.untrackGroup(pid);
 
         this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
         this.sendSignal(proc);
-        if (await this.waitUntil(gone, gracefulTimeoutMs)) return;
+        if (await this.waitUntil(gone, gracefulTimeoutMs)) return this.untrackGroup(pid);
 
         this.app?.logger.error(
             { name },
@@ -212,7 +233,7 @@ export class ProcessManager implements Driver {
      */
     private reapGroup(name: string, proc: Subprocess, gracefulTimeoutMs = 5000) {
         const pid = (proc as { pid?: number }).pid;
-        if (!groupAlive(pid)) return;
+        if (!groupAlive(pid)) return this.untrackGroup(pid);
         this.app?.logger.warn(`Process ${name} crashed and left children behind; terminating them`);
         void this.terminate(`${name} (leftover children)`, proc, gracefulTimeoutMs);
     }
@@ -313,9 +334,14 @@ export class ProcessManager implements Driver {
         const procInfo = this.processes.get(name);
         if (!procInfo) return;
         if (proc && procInfo.process !== proc) return;
+        // A clean exit that left nothing behind needs no cleanup on exit.
+        if (!crashedExit(exitCode, signal)) {
+            const pid = (procInfo.process as { pid?: number }).pid;
+            if (!groupAlive(pid)) this.untrackGroup(pid);
+        }
 
         const how = signal ? `signal ${signal}` : `code ${exitCode}`;
-        const crashed = signal !== null || exitCode !== 0;
+        const crashed = crashedExit(exitCode, signal);
         if (crashed) this.app?.logger.warn(`Process ${name} exited with ${how}`);
         else this.app?.logger.info(`Process ${name} exited with ${how}`);
 
@@ -404,6 +430,7 @@ export class ProcessManager implements Driver {
                 }
             );
 
+            this.trackGroup(proc.pid);
             this.processes.set(name, {
                 process: proc,
                 config,
@@ -453,6 +480,24 @@ export class ProcessManager implements Driver {
             // normal end-of-stream (`done: true`) that exits the loop above.
             this.app?.logger.debug({ err, name }, `stderr reader for process ${name} failed`);
         }
+    }
+
+    /**
+     * Children run in their own process group, so neither the terminal's
+     * Ctrl-C nor the parent's death reaches them. When the app exits before
+     * stop() has finished with them (the App's shutdownTimeoutMs or a second
+     * signal call process.exit), the 'exit' listener SIGKILLs every group
+     * still tracked: 'exit' listeners run synchronously on process.exit().
+     */
+    private trackGroup(pgid: number | undefined) {
+        if (!pgid || process.platform === 'win32') return;
+        if (this.liveGroups.size === 0) process.on('exit', this.killGroupsOnExit);
+        this.liveGroups.add(pgid);
+    }
+
+    private untrackGroup(pgid: number | undefined) {
+        if (!pgid || !this.liveGroups.delete(pgid)) return;
+        if (this.liveGroups.size === 0) process.off('exit', this.killGroupsOnExit);
     }
 
     // Send data to process stdin
