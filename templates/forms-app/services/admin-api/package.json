@@ -5,10 +5,12 @@
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",
-        "start": "bun run src/main.ts"
+        "start": "bun run src/main.ts",
+        "create-admin": "bun run src/scripts/create-admin.ts"
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/auth-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "@iskra-bun/db-kit": "workspace:*",
         "@forms-app/shared": "workspace:*",

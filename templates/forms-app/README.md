@@ -95,6 +95,18 @@ La app queda accesible en:
 - **Admin**: http://localhost/admin/
 - **Formularios publicos**: http://localhost/formularios/{spaceSlug}/{formSlug}
 
+### Crear el primer admin
+
+El admin-api no permite registrarse publicamente: todas sus rutas requieren sesion y las cuentas se crean por linea de comandos. El script crea tambien las tablas de Better Auth (`user`, `session`, `account`, `verification`) si no existen:
+
+```bash
+cd services/admin-api
+DATABASE_URL=postgresql://forms:secret@localhost:5432/forms_app \
+  bun run create-admin admin@example.com 'una-contrasena-larga'
+```
+
+Despues inicia sesion en http://localhost/admin/login.
+
 ## Variables de entorno
 
 Copia `.env.example` a `.env`:
@@ -226,17 +238,17 @@ PostgreSQL 16 con Drizzle ORM. Cuatro tablas principales:
 | `form_fields` | Campos individuales: tipo (text/number/email/select/checkbox/radio/textarea/date), label, posicion, validaciones, opciones, mensaje de error custom. |
 | `answers` | Respuestas enviadas: datos (JSONB), hash del IP (SHA256 con salt diario), score de reCAPTCHA. |
 
-Las tablas de Better Auth (user, session, account, verification) se crean automaticamente por el AuthFeature.
+Las tablas de Better Auth (user, session, account, verification) las crea `bun run create-admin` (ver [Crear el primer admin](#crear-el-primer-admin)).
 
 ## Endpoints
 
 ### admin-api (puerto 4000) — via nginx `/admin/api/`
 
-Todos los endpoints excepto auth requieren sesion autenticada.
+Todos los endpoints excepto auth requieren sesion autenticada (401 sin sesion). El registro publico (`/api/auth/sign-up/email`) esta deshabilitado; las cuentas se crean con `bun run create-admin`.
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| `POST` | `/api/auth/*` | Rutas de Better Auth (login, registro, sesion) |
+| `POST` | `/api/auth/*` | Rutas de Better Auth (login, logout, sesion) |
 | `GET` | `/api/spaces` | Listar espacios |
 | `POST` | `/api/spaces` | Crear espacio |
 | `GET` | `/api/spaces/:id` | Obtener espacio |

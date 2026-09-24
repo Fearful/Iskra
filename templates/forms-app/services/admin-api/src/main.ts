@@ -1,5 +1,5 @@
 import { App } from '@iskra-bun/core';
-import { WebPlugin, CorsFeature, HealthCheckFeature, AuthFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, CorsFeature, HealthCheckFeature, AuthFeature, DbFeature } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { config } from './app.config.ts';
 import router from './interfaces/http/router.ts';
@@ -25,9 +25,16 @@ app.register(
                 credentials: true,
             }),
             new HealthCheckFeature({ path: '/health' }),
+            // AuthFeature stores users/sessions through the web-kit DbFeature.
+            new DbFeature({ adapter: 'postgres', connection: { connectionString: config.db.url } }),
             new AuthFeature({
                 secret: config.auth.secret,
                 baseURL: config.auth.baseURL,
+                basePath: config.auth.basePath,
+                trustedOrigins: config.cors.origins.split(','),
+                // Admin accounts are created with `bun run create-admin`, never
+                // through a public sign-up endpoint.
+                enableSelfRegistration: false,
             }),
         ],
     }),

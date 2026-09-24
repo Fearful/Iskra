@@ -11,6 +11,7 @@ export const AppConfigSchema = z.object({
     auth: z.object({
         secret: z.string(),
         baseURL: z.string().default('http://localhost:4000'),
+        basePath: z.string().default('/api/auth'),
     }),
     cors: z.object({
         origins: z.string().default('http://localhost'),
@@ -31,6 +32,7 @@ export const config: AppConfig = AppConfigSchema.parse({
     auth: {
         secret: process.env.AUTH_SECRET || 'dev-secret-change-me-min-32-characters-long',
         baseURL: process.env.AUTH_BASE_URL || 'http://localhost:4000',
+        basePath: '/api/auth',
     },
     cors: {
         origins: process.env.CORS_ORIGINS || 'http://localhost',
