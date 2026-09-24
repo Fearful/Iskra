@@ -1,6 +1,9 @@
 from __future__ import annotations
-from pathlib import Path
-from typing import Any, Dict, Optional, Type, TypeVar
+import asyncio
+import http.cookiejar
+import weakref
+from typing import Any, Collection, Dict, Mapping, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -8,132 +11,192 @@ from iskra_client.config import IskraConfig
 from iskra_client.exceptions import IskraException
 from iskra_client.responses import IskraResponse
 
-T = TypeVar("T")
+
+def _cookieless_jar() -> http.cookiejar.CookieJar:
+    # An IskraClient is typically shared by every request of a backend. If it
+    # stored the Set-Cookie of a sign-in, the next caller would act as that
+    # user, so it stores none: sessions are bound explicitly with
+    # IskraClient.with_session().
+    return http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
 
 
-class HttpClientWrapper:
+def _origin_of(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+class _Transport:
+    """The httpx clients shared by an IskraClient and its session-bound views."""
+
     def __init__(self, config: IskraConfig) -> None:
-        self._config = config
         headers: Dict[str, str] = {**config.headers}
         if config.api_key:
             headers["X-API-Key"] = config.api_key
-
-        self._client = httpx.Client(
-            base_url=config.base_url.rstrip("/"),
-            headers=headers,
-            timeout=config.timeout,
+        self._options: Dict[str, Any] = {
+            "base_url": config.base_url.rstrip("/"),
+            "headers": headers,
+            "timeout": config.timeout,
+        }
+        self.sync = httpx.Client(cookies=_cookieless_jar(), **self._options)
+        # One AsyncClient per event loop: its pooled connections belong to the
+        # loop that opened them, and frameworks such as Django's async_to_sync
+        # (or test clients) run each call in a new loop.
+        self._async: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient]" = (
+            weakref.WeakKeyDictionary()
         )
-        self._async_client: Optional[httpx.AsyncClient] = None
+
+    @property
+    def async_client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        client = self._async.get(loop)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(cookies=_cookieless_jar(), **self._options)
+            self._async[loop] = client
+        return client
+
+    def close(self) -> None:
+        self.sync.close()
+
+    async def aclose(self) -> None:
+        self.sync.close()
+        client = self._async.pop(asyncio.get_running_loop(), None)
+        if client is not None and not client.is_closed:
+            await client.aclose()
+
+
+class HttpClientWrapper:
+    def __init__(
+        self,
+        config: IskraConfig,
+        transport: Optional[_Transport] = None,
+        extra_headers: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        self._config = config
+        self._transport = transport or _Transport(config)
+        self._extra_headers: Dict[str, str] = dict(extra_headers or {})
+
+    @property
+    def config(self) -> IskraConfig:
+        return self._config
+
+    @property
+    def cookie(self) -> Optional[str]:
+        """The session cookie this wrapper is bound to, if any."""
+        return self._extra_headers.get("Cookie")
+
+    def bind_cookie(self, cookie: str) -> HttpClientWrapper:
+        """A wrapper sharing this one's connections that authenticates as the
+        session in `cookie` (a Cookie header value)."""
+        headers = {
+            **self._extra_headers,
+            "Cookie": cookie,
+            "Origin": self._config.origin or _origin_of(self._config.base_url),
+        }
+        return HttpClientWrapper(self._config, self._transport, headers)
 
     # ── Sync methods ─────────────────────────────────────────────────────
 
-    def get(self, path: str) -> IskraResponse:
-        resp = self._client.get(path)
-        return self._handle(resp)
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: Optional[Mapping[str, Any]] = None,
+        files: Any = None,
+        ok_statuses: Collection[int] = (),
+    ) -> httpx.Response:
+        """Sends a request and returns the raw response, raising the matching
+        IskraException for a 4xx/5xx status not listed in `ok_statuses`."""
+        resp = self._transport.sync.request(
+            method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+        )
+        return self._check(resp, ok_statuses)
+
+    def get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
+        return self._handle(self.request("GET", path, params=params))
 
     def post(self, path: str, json: Any = None) -> IskraResponse:
-        resp = self._client.post(path, json=json)
-        return self._handle(resp)
+        return self._handle(self.request("POST", path, json=json))
 
     def put(self, path: str, json: Any = None) -> IskraResponse:
-        resp = self._client.put(path, json=json)
-        return self._handle(resp)
+        return self._handle(self.request("PUT", path, json=json))
 
     def delete(self, path: str) -> IskraResponse:
-        resp = self._client.delete(path)
-        return self._handle(resp)
+        return self._handle(self.request("DELETE", path))
 
     def get_bytes(self, path: str) -> bytes:
-        resp = self._client.get(path)
-        if resp.status_code >= 400:
-            self._handle_error(resp)
-        return resp.content
-
-    def upload_file(self, path: str, file_path: Path, file_name: str) -> IskraResponse:
-        with open(file_path, "rb") as f:
-            files = {"file": (file_name, f, "application/octet-stream")}
-            resp = self._client.post(path, files=files)
-        return self._handle(resp)
+        return self.request("GET", path).content
 
     # ── Async methods ────────────────────────────────────────────────────
 
-    def _get_async_client(self) -> httpx.AsyncClient:
-        if self._async_client is None or self._async_client.is_closed:
-            headers: Dict[str, str] = {**self._config.headers}
-            if self._config.api_key:
-                headers["X-API-Key"] = self._config.api_key
-            self._async_client = httpx.AsyncClient(
-                base_url=self._config.base_url.rstrip("/"),
-                headers=headers,
-                timeout=self._config.timeout,
-            )
-        return self._async_client
+    async def async_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: Optional[Mapping[str, Any]] = None,
+        files: Any = None,
+        ok_statuses: Collection[int] = (),
+    ) -> httpx.Response:
+        resp = await self._transport.async_client.request(
+            method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+        )
+        return self._check(resp, ok_statuses)
 
-    async def async_get(self, path: str) -> IskraResponse:
-        resp = await self._get_async_client().get(path)
-        return self._handle(resp)
+    async def async_get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
+        return self._handle(await self.async_request("GET", path, params=params))
 
     async def async_post(self, path: str, json: Any = None) -> IskraResponse:
-        resp = await self._get_async_client().post(path, json=json)
-        return self._handle(resp)
+        return self._handle(await self.async_request("POST", path, json=json))
 
     async def async_put(self, path: str, json: Any = None) -> IskraResponse:
-        resp = await self._get_async_client().put(path, json=json)
-        return self._handle(resp)
+        return self._handle(await self.async_request("PUT", path, json=json))
 
     async def async_delete(self, path: str) -> IskraResponse:
-        resp = await self._get_async_client().delete(path)
-        return self._handle(resp)
+        return self._handle(await self.async_request("DELETE", path))
 
     async def async_get_bytes(self, path: str) -> bytes:
-        resp = await self._get_async_client().get(path)
-        if resp.status_code >= 400:
-            self._handle_error(resp)
-        return resp.content
-
-    async def async_upload_file(self, path: str, file_path: Path, file_name: str) -> IskraResponse:
-        with open(file_path, "rb") as f:
-            files = {"file": (file_name, f, "application/octet-stream")}
-            resp = await self._get_async_client().post(path, files=files)
-        return self._handle(resp)
+        return (await self.async_request("GET", path)).content
 
     # ── Response handling ────────────────────────────────────────────────
 
-    def _handle(self, resp: httpx.Response) -> IskraResponse:
-        if resp.status_code >= 400:
-            self._handle_error(resp)
+    @staticmethod
+    def _check(resp: httpx.Response, ok_statuses: Collection[int]) -> httpx.Response:
+        if resp.status_code >= 400 and resp.status_code not in ok_statuses:
+            raise IskraException.from_error_response(resp.status_code, parse_body(resp))
+        return resp
 
-        if not resp.content:
-            return IskraResponse(success=True)
-
-        body = resp.json()
-
+    @staticmethod
+    def _handle(resp: httpx.Response) -> IskraResponse:
+        body = parse_body(resp)
         if isinstance(body, dict) and "success" in body:
-            return IskraResponse.from_dict(body)
-
-        return IskraResponse(success=True, data=body)
-
-    def _handle_error(self, resp: httpx.Response) -> None:
-        try:
-            body = resp.json()
-            raise IskraException.from_error_response(resp.status_code, body)
-        except IskraException:
-            raise
-        except Exception:
-            raise IskraException(
-                message=f"HTTP {resp.status_code}: {resp.text}",
-                status_code=resp.status_code,
-            )
+            return IskraResponse.from_dict(body, status_code=resp.status_code)
+        return IskraResponse(success=True, data=body, status_code=resp.status_code)
 
     # ── Cleanup ──────────────────────────────────────────────────────────
 
     def close(self) -> None:
-        self._client.close()
-        if self._async_client and not self._async_client.is_closed:
-            # For sync cleanup of async client, best-effort
-            pass
+        self._transport.close()
 
     async def aclose(self) -> None:
-        self._client.close()
-        if self._async_client and not self._async_client.is_closed:
-            await self._async_client.aclose()
+        await self._transport.aclose()
+
+
+def parse_body(resp: httpx.Response) -> Any:
+    """JSON when the response is JSON, its text otherwise, None when empty."""
+    if not resp.content:
+        return None
+    if "json" in resp.headers.get("content-type", ""):
+        try:
+            return resp.json()
+        except ValueError:
+            pass
+    return resp.text
+
+
+def _clean(params: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    if params is None:
+        return None
+    return {k: v for k, v in params.items() if v is not None}

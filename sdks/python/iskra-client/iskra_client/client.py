@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
-from iskra_client.auth.client import AuthClient
+from iskra_client.auth.client import AuthClient, SessionLike, session_cookie
 from iskra_client.config import IskraConfig
 from iskra_client.health.client import HealthClient
 from iskra_client.http_client import HttpClientWrapper
@@ -17,18 +17,39 @@ class IskraClient:
         timeout: float = 30.0,
         headers: Optional[dict] = None,
         auth_base_path: str = "/api/sso",
+        origin: Optional[str] = None,
+        storage_route_prefix: str = "/upload",
     ) -> None:
-        self._config = IskraConfig(
+        config = IskraConfig(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout,
             headers=headers or {},
             auth_base_path=auth_base_path,
+            origin=origin,
+            storage_route_prefix=storage_route_prefix,
         )
-        self._http = HttpClientWrapper(self._config)
-        self._auth = AuthClient(self._http, self._config.auth_base_path)
-        self._health = HealthClient(self._http)
-        self._storage = StorageClient(self._http)
+        self._init(HttpClientWrapper(config), owns_transport=True)
+
+    def _init(self, http: HttpClientWrapper, owns_transport: bool) -> None:
+        self._config = http.config
+        self._http = http
+        self._owns_transport = owns_transport
+        self._auth = AuthClient(http, self._config.auth_base_path)
+        self._health = HealthClient(http)
+        self._storage = StorageClient(http, self._config.storage_route_prefix)
+
+    def with_session(self, session: SessionLike) -> IskraClient:
+        """A client that makes every request as the user of `session` (a
+        Session from sign_in/sign_up, or its `cookie` string).
+
+        It shares this client's connections; closing it is a no-op, close the
+        client it came from. The client itself never stores cookies, so one
+        instance can safely serve every user of a backend.
+        """
+        view = IskraClient.__new__(IskraClient)
+        view._init(self._http.bind_cookie(session_cookie(session)), owns_transport=False)
+        return view
 
     # ── Sub-clients ──────────────────────────────────────────────────────
 
@@ -50,8 +71,8 @@ class IskraClient:
 
     # ── Generic sync methods ─────────────────────────────────────────────
 
-    def get(self, path: str) -> IskraResponse:
-        return self._http.get(path)
+    def get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
+        return self._http.get(path, params=params)
 
     def post(self, path: str, json: Any = None) -> IskraResponse:
         return self._http.post(path, json=json)
@@ -64,8 +85,8 @@ class IskraClient:
 
     # ── Generic async methods ────────────────────────────────────────────
 
-    async def async_get(self, path: str) -> IskraResponse:
-        return await self._http.async_get(path)
+    async def async_get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
+        return await self._http.async_get(path, params=params)
 
     async def async_post(self, path: str, json: Any = None) -> IskraResponse:
         return await self._http.async_post(path, json=json)
@@ -79,10 +100,12 @@ class IskraClient:
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     def close(self) -> None:
-        self._http.close()
+        if self._owns_transport:
+            self._http.close()
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        if self._owns_transport:
+            await self._http.aclose()
 
     def __enter__(self) -> IskraClient:
         return self

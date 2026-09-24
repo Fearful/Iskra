@@ -15,8 +15,10 @@
         "version": "changeset version && bun run packages/create-iskra/scripts/sync.ts",
         "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
         "typecheck": "tsc --noEmit",
-        "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
-        "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
+        "contract:server": "bun run sdks/contract/server.ts",
+        "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",
+        "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
+        "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
         "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
         "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
     },

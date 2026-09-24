@@ -72,6 +72,25 @@ export TEST_MYSQL_URL=mysql://root:mysql@127.0.0.1:3306/test
 bun run ci
 ```
 
+### SDK contract tests
+
+The Python and Java SDKs are tested against a real Iskra service:
+`sdks/contract/server.ts` (auth on in-memory SQLite, health, uploads, typical
+success/error responses). `bun test` only checks that it boots; the SDK suites
+start it themselves and need `bun` on `PATH` (or `BUN=/path/to/bun`):
+
+```bash
+# Python (3.9+)
+cd sdks/python/iskra-client
+python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+pytest                                   # or `bun run test:sdk:python` from the root
+
+# Run the server by hand (prints ISKRA_CONTRACT_READY {"port":...,"baseUrl":...})
+bun run contract:server
+```
+
+Changing a response shape of web-kit or auth-kit? Run these suites too.
+
 ## Project layout
 
 The repository is a Bun workspace monorepo:
