@@ -341,11 +341,13 @@ export class AuthFeature implements Feature {
         const ip = getClientIp(c, this.kernel?.getConfig().trustProxy);
         if (ip) headers.set(CLIENT_IP_HEADER, ip);
         else headers.delete(CLIENT_IP_HEADER);
-        const hasBody = raw.method !== "GET" && raw.method !== "HEAD";
+        // Only a request that had one gets a body: an empty one made
+        // better-auth answer 415 to a body-less POST such as sign-out.
+        const body = raw.body !== null ? await c.req.arrayBuffer() : null;
         return new Request(raw.url, {
             method: raw.method,
             headers,
-            body: hasBody ? await c.req.arrayBuffer() : undefined,
+            body: body && body.byteLength > 0 ? body : undefined,
             signal: raw.signal,
         });
     }

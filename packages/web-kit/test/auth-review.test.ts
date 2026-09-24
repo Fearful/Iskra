@@ -82,3 +82,21 @@ describe("AuthFeature in production", () => {
         expect(cookie).toContain("Secure");
     });
 });
+
+describe("AuthFeature request forwarding", () => {
+    it("forwards a body-less POST (sign-out) without an empty body", async () => {
+        process.env.NODE_ENV = "development";
+        const kernel = new Kernel();
+        const db = new DbFeature({ adapter: "sqlite", connection: { database: ":memory:" } });
+        kernel.registerFeature(db);
+        kernel.registerFeature(new AuthFeature({ secret: SECRET, basePath: "/api/sso", baseURL: "http://localhost:3000" } as any));
+        await kernel.initialize();
+        (db.db as unknown as { $client: { exec(sql: string): void } }).$client.exec(DDL);
+        const res = await kernel.getApp().request("/api/sso/sign-out", {
+            method: "POST",
+            headers: { origin: "http://localhost:3000" },
+        });
+        // An empty ArrayBuffer body made better-auth answer 415.
+        expect(res.status).not.toBe(415);
+    });
+});
