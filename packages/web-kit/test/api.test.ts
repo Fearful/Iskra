@@ -52,7 +52,8 @@ describe("API Features", () => {
         kernel.registerFeature(new StorageFeature({ adapter: "local" }));
         kernel.registerFeature(new UploadFeature({
             projectName: "test-project",
-            exposeRoutes: true
+            exposeRoutes: true,
+            authorize: () => true
         }));
         await kernel.initialize();
 

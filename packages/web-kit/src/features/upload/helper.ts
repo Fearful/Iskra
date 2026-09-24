@@ -1,6 +1,16 @@
 import type { StorageFeature } from "../storage";
 import type { BaseStorageAdapter, PutOptions } from "@iskra-bun/storage-kit";
 
+// Defense-in-depth: reduce an attacker-controlled filename to a safe basename
+// and strip it to an allowlisted charset so traversal segments ("../",
+// "..\\", absolute paths) can never escape the project base path. storage-kit's
+// sanitizePath remains the primary control; this is a second, independent gate.
+export function safeBasename(filename: string): string {
+    const base = filename.split(/[\\/]/).pop() || "";
+    const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "");
+    return cleaned.length > 0 ? cleaned : "file";
+}
+
 export interface UploadOptions {
     metadata?: Record<string, string>;
     contentType?: string;
@@ -22,16 +32,6 @@ export class UploadHelper {
 
     getBasePath(): string {
         return this.basePath;
-    }
-
-    // Defense-in-depth: reduce an attacker-controlled filename to a safe basename
-    // and strip it to an allowlisted charset so traversal segments ("../",
-    // "..\\", absolute paths) can never escape the project base path. storage-kit's
-    // sanitizePath remains the primary control; this is a second, independent gate.
-    private safeBasename(filename: string): string {
-        const base = filename.split(/[\\/]/).pop() || "";
-        const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "");
-        return cleaned.length > 0 ? cleaned : "file";
     }
 
     private buildPath(filename: string, subfolder?: string): string {
@@ -70,7 +70,7 @@ export class UploadHelper {
 
         const data = new Uint8Array(await file.arrayBuffer());
         const opts = { ...options, contentType: options?.contentType || file.type };
-        const safeName = this.safeBasename(file.name);
+        const safeName = safeBasename(file.name);
         return this.upload(safeName, data, subfolder, opts);
     }
 

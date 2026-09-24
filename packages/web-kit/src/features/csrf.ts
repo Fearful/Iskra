@@ -8,6 +8,8 @@ import { createHmac, timingSafeEqual, randomUUID } from "crypto";
 declare module "hono" {
     interface ContextVariableMap {
         csrfToken: string;
+        /** Checks the request's header/body token against the cookie token (used by requireCsrf). */
+        verifyCsrf: () => Promise<boolean>;
     }
 }
 
@@ -91,6 +93,8 @@ export class CsrfFeature implements Feature {
         }
 
         c.set("csrfToken", token);
+        const cookieToken = token;
+        c.set("verifyCsrf", () => this.validateToken(c, cookieToken));
 
         if (this.config.ignoreMethods.includes(method)) {
             await next();
@@ -132,9 +136,17 @@ export class CsrfFeature implements Feature {
     }
 }
 
+/**
+ * Requires a valid CSRF token on this route, whatever its method — use it on
+ * routes whose method is in `ignoreMethods` but still change state. Fails
+ * closed when CsrfFeature is not registered.
+ */
 export function requireCsrf() {
     return async (c: Context, next: Next) => {
-        if (!c.get("csrfToken")) throw new HTTPException(403, { message: "CSRF token required" });
+        // Previously this only checked that c.get("csrfToken") existed, which the
+        // middleware always sets, so it guarded nothing.
+        const verify = c.get("verifyCsrf");
+        if (!verify || !(await verify())) throw new HTTPException(403, { message: "Invalid CSRF token" });
         await next();
     };
 }

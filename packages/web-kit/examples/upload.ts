@@ -22,6 +22,9 @@ async function example4_BuiltInRoutes() {
         new UploadFeature({
             projectName: "media",
             exposeRoutes: true, // Enable built-in routes
+            // Required with exposeRoutes. With AuthFeature, e.g. only signed-in users:
+            // authorize: (c) => Boolean(c.get("user")),
+            authorize: () => true, // public on purpose (demo)
             // routePrefix: "/media", // Custom prefix
             // maxFileSize: 10 * 1024 * 1024, // 10MB
             // allowedExtensions: [".jpg", ".png", ".gif", ".mp4"],

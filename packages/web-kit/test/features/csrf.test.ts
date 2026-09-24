@@ -233,21 +233,22 @@ describe("CsrfFeature with SessionFeature across two requests", () => {
 });
 
 describe("requireCsrf middleware", () => {
-    it("throws 403 when no csrfToken is set on the context", async () => {
+    it("throws 403 when CsrfFeature is not registered", async () => {
         const app = new Hono();
         app.post("/guarded", requireCsrf(), (c) => c.json({ ok: true }));
         const res = await app.request("/guarded", { method: "POST" });
         expect(res.status).toBe(403);
     });
 
-    it("passes through when a csrfToken is present on the context", async () => {
-        const app = new Hono();
-        app.use("*", async (c, next) => {
-            c.set("csrfToken", "present");
-            await next();
-        });
-        app.post("/guarded", requireCsrf(), (c) => c.json({ ok: true }));
-        const res = await app.request("/guarded", { method: "POST" });
-        expect(res.status).toBe(200);
+    it("validates the token even on a method the middleware ignores", async () => {
+        // Regression: requireCsrf only checked that a token was on the context,
+        // which the middleware always sets, so it guarded nothing.
+        const app = await appWithCsrf();
+        app.get("/state-changing-get", requireCsrf(), (c) => c.json({ ok: true }));
+        const { token, cookie } = await issueToken(app);
+
+        expect((await app.request("/state-changing-get", { headers: { cookie } })).status).toBe(403);
+        const ok = await app.request("/state-changing-get", { headers: { cookie, "X-CSRF-Token": token } });
+        expect(ok.status).toBe(200);
     });
 });

@@ -278,10 +278,18 @@ export interface OpenAPIConfig {
     securitySchemes?: Record<string, any>;
 }
 
+export type UploadAction = "upload" | "list" | "download" | "delete";
+
 export interface UploadConfig {
     projectName: string;
     maxFileSize?: number;
     allowedExtensions?: string[];
     exposeRoutes?: boolean;
     routePrefix?: string;
+    /**
+     * Required with `exposeRoutes`: whether the request may perform `action` on
+     * the built-in upload routes (e.g. check `c.get("user")`). Pass
+     * `() => true` to make them public on purpose.
+     */
+    authorize?: (c: any, action: UploadAction) => boolean | Promise<boolean>;
 }
