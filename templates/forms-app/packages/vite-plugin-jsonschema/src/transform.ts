@@ -30,8 +30,20 @@ interface JsonSchema {
     errorMessage?: Record<string, string>;
 }
 
+/** Escapes text for a single-quoted JS string literal in the generated module. */
 function escapeString(str: string): string {
-    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    return str
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+
+/** An object key for the generated module: bare when it is an identifier, quoted otherwise. */
+function propertyKey(name: string): string {
+    return /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
 }
 
 function interpolateMessage(msg: string, values: Record<string, unknown>): string {
@@ -86,7 +98,9 @@ function transformProperty(
                     const msg = msgs.pattern
                         ? `, '${escapeString(msgs.pattern)}'`
                         : '';
-                    chain += `.regex(/${prop.pattern}/${msg})`;
+                    // new RegExp(<string literal>): spliced into a /literal/, a "/" in the
+                    // pattern ended the regex and the rest ran as code.
+                    chain += `.regex(new RegExp(${JSON.stringify(prop.pattern)})${msg})`;
                 }
                 break;
             }
@@ -150,7 +164,7 @@ export function transformJsonSchemaToZod(schema: JsonSchema, { typeExport = true
 
     const fields = Object.entries(properties).map(([name, prop]) => {
         const zodChain = transformProperty(name, prop, required.has(name));
-        return `    ${name}: ${zodChain},`;
+        return `    ${propertyKey(name)}: ${zodChain},`;
     });
 
     const lines = [

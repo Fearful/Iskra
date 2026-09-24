@@ -108,7 +108,7 @@ describe("transformJsonSchemaToZod", () => {
             properties: { code: { type: "string", pattern: "^[A-Z]+$", errorMessage: { pattern: "caps only" } } },
             required: ["code"],
         });
-        expect(code).toContain(".regex(/^[A-Z]+$/, 'caps only')");
+        expect(code).toContain(`.regex(new RegExp("^[A-Z]+$"), 'caps only')`);
     });
 
     it("escapes single quotes and newlines in messages", () => {
