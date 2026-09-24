@@ -1,6 +1,7 @@
 {
     "name": "job-worker",
     "version": "0.1.0",
+    "private": true,
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",

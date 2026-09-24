@@ -57,9 +57,10 @@ bumps the recorded dependency range of its dependents by a **patch** by default
 
 ## What gets published
 
-Only the ten `@iskra-bun/*` packages are published (`access: "public"`). The
-example apps and templates are listed in `.changeset/config.json`'s `ignore`
-array and are never versioned or published.
+Only the packages under `packages/` are published (`access: "public"`). The
+example apps and templates are marked `"private": true` — which is what makes
+`changeset publish` skip them — and are also listed in `.changeset/config.json`'s
+`ignore` array so they are never versioned.
 
 Each published package ships a compiled `dist/` (ESM JS + `.d.ts`, built with
 [tsup](https://tsup.egoist.dev/)). The `exports` map resolves to `dist/` for
