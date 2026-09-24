@@ -85,6 +85,7 @@
         }
     },
     "devDependencies": {
+        "@opentelemetry/resources": "^2.11.0",
         "@types/node": "^22.10.2"
     }
 }

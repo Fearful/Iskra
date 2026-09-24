@@ -32,6 +32,23 @@ function importOptional(specifier: string): Promise<any> {
 }
 
 /**
+ * Builds a Resource with whichever API the installed `@opentelemetry/resources`
+ * provides: 2.x only exports `resourceFromAttributes()` (`Resource` is a type
+ * there, so `new Resource()` throws), 1.x exports the `Resource` class.
+ */
+export function createResource(resources: any, attributes: Record<string, string>): any {
+    if (typeof resources?.resourceFromAttributes === 'function') {
+        return resources.resourceFromAttributes(attributes);
+    }
+    if (typeof resources?.Resource === 'function') {
+        return new resources.Resource(attributes);
+    }
+    throw new Error(
+        '[iskra/otel] Unsupported @opentelemetry/resources: it exports neither resourceFromAttributes() nor Resource',
+    );
+}
+
+/**
  * Initialize the OpenTelemetry NodeSDK with OTLP exporters.
  * Must be called before any drivers start so auto-instrumentation can patch libraries.
  */
@@ -45,7 +62,7 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
             { OTLPTraceExporter },
             { OTLPMetricExporter },
             { PeriodicExportingMetricReader },
-            { Resource },
+            resources,
             semconv,
         ] = await Promise.all([
             importOptional(OTEL_MODULES.sdkNode),
@@ -60,9 +77,9 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
         const serviceName = config.serviceName || appName;
         const endpoint = config.endpoint || 'http://localhost:4318';
 
-        const resource = new Resource({
-            [semconv.ATTR_SERVICE_NAME]: serviceName,
-            [semconv.ATTR_SERVICE_VERSION]: config.serviceVersion || '0.1.0',
+        const resource = createResource(resources, {
+            [semconv.ATTR_SERVICE_NAME ?? 'service.name']: serviceName,
+            [semconv.ATTR_SERVICE_VERSION ?? 'service.version']: config.serviceVersion || '0.1.0',
             'deployment.environment': config.environment || process.env.NODE_ENV || 'development',
             ...config.resourceAttributes,
         });
