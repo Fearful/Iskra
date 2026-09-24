@@ -22,4 +22,6 @@ app.on('process:log', ({ payload }) => {
     process.stdout.write(`child ${payload.text}\n`);
 });
 await app.start();
+// After start(): the App's signal handlers are installed only then.
+process.stdout.write('ready\n');
 setInterval(() => {}, 1000); // keep the process alive like a server would

@@ -25,24 +25,29 @@ describe('ProcessManager – forced exit of the parent', () => {
             });
             const reader = proc.stdout.getReader();
             let out = '';
-            let match: RegExpMatchArray | null = null;
-            while (!(match = out.match(/child pid=(\d+)\n/))) {
+            // Both the child's pid and the App's "ready" (signal handlers
+            // installed): a SIGTERM before that takes the default action.
+            while (!/child pid=\d+\n/.test(out) || !out.includes('ready\n')) {
                 const { value, done } = await reader.read();
                 if (done) break;
                 out += new TextDecoder().decode(value);
             }
-            const childPid = Number(match?.[1]);
-            expect(childPid).toBeGreaterThan(0);
-            expect(alive(childPid)).toBe(true);
+            const childPid = Number(out.match(/child pid=(\d+)\n/)?.[1]);
+            try {
+                expect(childPid).toBeGreaterThan(0);
+                expect(alive(childPid)).toBe(true);
 
-            proc.kill('SIGTERM');
-            expect(await proc.exited).toBe(1); // forced: shutdownTimeoutMs elapsed
+                proc.kill('SIGTERM');
+                expect(await proc.exited).toBe(1); // forced: shutdownTimeoutMs elapsed
 
-            const deadline = Date.now() + 2000;
-            while (alive(childPid) && Date.now() < deadline) await Bun.sleep(25);
-            const survived = alive(childPid);
-            if (survived) process.kill(-childPid, 'SIGKILL'); // don't leak it from the test
-            expect(survived).toBe(false);
+                const deadline = Date.now() + 2000;
+                while (alive(childPid) && Date.now() < deadline) await Bun.sleep(25);
+                expect(alive(childPid)).toBe(false);
+            } finally {
+                proc.kill('SIGKILL');
+                // Never leak the stubborn child from the test, whatever failed.
+                if (childPid > 0 && alive(childPid)) process.kill(-childPid, 'SIGKILL');
+            }
         },
         20_000,
     );
