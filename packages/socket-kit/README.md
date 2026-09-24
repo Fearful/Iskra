@@ -24,7 +24,7 @@ Define rutas de mensajes con el `SocketRouter` y emite a topics con broadcast; v
 
 ## Documentacion
 
-Guia completa: [docs/socket-kit.md](../../docs/socket-kit.md)
+Guia completa: [@iskra-bun/socket-kit](https://iskra-docs.fly.dev/es/packages/socket-kit/)
 
 ## Licencia
 

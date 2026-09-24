@@ -103,11 +103,24 @@ The repository is a Bun workspace monorepo:
 | `packages/`   | The kits — the framework's modular building blocks (`@iskra-bun/core`, `@iskra-bun/web-kit`, `@iskra-bun/db-kit`, etc.). |
 | `templates/`  | Ready-to-use example apps that show how the kits fit together (e.g. `simple-server`, `chat-app`, `full-stack-app`). |
 | `sdks/`       | Client SDKs for other languages (`java`, `python`) that integrate with Iskra over HTTP. |
-| `docs/`       | Architecture and per-kit documentation. |
+| `website/`    | The documentation site (Astro + Starlight): the only copy of the docs. |
 
 > **Experimental kits:** `desktop-kit`, `mobile-kit`, and `db-oracle` are
 > experimental. Their APIs may change without notice — contributions are welcome,
 > but expect rougher edges than the stable kits.
+
+## Documentation
+
+The docs live only in the site's sources: `website/src/content/docs/` (English)
+and `website/src/content/docs/es/` (Spanish, same file names). Change a page and
+its translation in the same PR; `bun test` fails if a page exists in only one
+language or if a README links to the removed `docs/*.md` copies. READMEs link to
+the published site (`https://iskra-docs.fly.dev/...`): the package READMEs ship
+to npm, where relative links break.
+
+```bash
+cd website && bun install && bun run dev   # preview at http://localhost:4321
+```
 
 ## Changesets
 

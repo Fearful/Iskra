@@ -1,44 +1,21 @@
-# Iskra Framework — Documentacion
+# Documentación de Iskra
 
-Bienvenido a la documentacion de Iskra, un framework modular basado en Bun para construir aplicaciones de alto rendimiento con arquitectura hexagonal.
+La documentación vive en un solo lugar: el sitio **https://iskra-docs.fly.dev**
+([en español](https://iskra-docs.fly.dev/es/)). Sus fuentes están en
+[`website/src/content/docs/`](../website/src/content/docs/) (inglés) y
+[`website/src/content/docs/es/`](../website/src/content/docs/es/) (español).
 
-## Indice
+Este directorio tenía una copia en español que se desincronizaba del sitio; los
+enlaces viejos apuntan ahora a:
 
-| Documento | Descripcion |
-|-----------|-------------|
-| [Arquitectura](./arquitectura.md) | Arquitectura hexagonal, capas, patrones de diseno |
-| [Core](./core.md) | Clase `App`, ciclo de vida, eventos, DI, logger |
-| [Web Kit](./web-kit.md) | Servidor HTTP con Hono, Kernel, Features |
-| [DB Kit](./db-kit.md) | Base de datos con Drizzle ORM, drivers, migraciones |
-| [Socket Kit](./socket-kit.md) | WebSocket nativo de Bun, router, broadcast |
-| [KV Kit](./kv-kit.md) | Key-Value store con Redis y memoria |
-| [Worker Kit](./worker-kit.md) | Cola de jobs con BullMQ |
-| [Process Kit](./process-kit.md) | Gestion de procesos externos (Python, binarios) |
-| [Configuracion](./configuracion.md) | Sistema de config con c12, Zod, variables de entorno |
-| [Despliegue](./despliegue.md) | Docker, CI/CD con GitHub Actions, ambientes |
-| [Migraciones](./migraciones.md) | Sistema de migraciones con Drizzle Kit |
-| [SDKs](./sdks.md) | Clientes para otros lenguajes (Java, Python, Go) |
+| Antes | Ahora |
+|-------|-------|
+| `docs/arquitectura.md` | [Arquitectura](https://iskra-docs.fly.dev/es/concepts/architecture/) |
+| `docs/configuracion.md` | [Configuración](https://iskra-docs.fly.dev/es/configuration/) |
+| `docs/despliegue.md` | [Despliegue](https://iskra-docs.fly.dev/es/guides/deployment/) |
+| `docs/migraciones.md` | [Migraciones](https://iskra-docs.fly.dev/es/guides/migrations/) |
+| `docs/sdks.md` | [SDKs](https://iskra-docs.fly.dev/es/guides/sdks/) |
+| `docs/<paquete>.md` (`core.md`, `web-kit.md`, ...) | La página del paquete, p. ej. [core](https://iskra-docs.fly.dev/es/packages/core/) |
 
-## Inicio Rapido
-
-```bash
-# Clonar el repo
-git clone <tu-repo> iskra-app
-cd iskra-app
-
-# Instalar dependencias
-bun install
-
-# Correr los tests
-bun test
-
-# Iniciar un template de ejemplo
-cd templates/starter-app
-bun run src/main.ts
-```
-
-## Requisitos
-
-- **Bun** v1.0 o superior
-- **Node.js** v18+ (para algunas dependencias nativas)
-- **Redis** (para worker-kit y kv-kit con adapter redis)
+Para cambiar la documentación, editá la página en inglés y su traducción en
+`es/` en el mismo PR (ver [CONTRIBUTING.md](../CONTRIBUTING.md#documentation)).

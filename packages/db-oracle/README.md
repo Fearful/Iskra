@@ -35,7 +35,7 @@ Experimental. Implementacion via puente/sidecar (protocolo request/response JSON
 
 ## Documentacion
 
-Guia completa: [docs/db-kit.md](../../docs/db-kit.md)
+Guia completa: [@iskra-bun/db-kit](https://iskra-docs.fly.dev/es/packages/db-kit/)
 
 ## Licencia
 

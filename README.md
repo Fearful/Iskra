@@ -10,37 +10,37 @@
 
 **Every large system starts small. Iskra is that initial spark — focused on keeping your code tidy while everything else evolves.**
 
-Iskra is a modular framework for building modern, high-performance applications with [Bun](https://bun.sh). It follows a [hexagonal architecture](./docs/arquitectura.md) (Ports and Adapters) that decouples your business logic from infrastructure, letting you swap drivers without touching your domain code.
+Iskra is a modular framework for building modern, high-performance applications with [Bun](https://bun.sh). It follows a [hexagonal architecture](https://iskra-docs.fly.dev/concepts/architecture/) (Ports and Adapters) that decouples your business logic from infrastructure, letting you swap drivers without touching your domain code.
 
 ## Key concepts
 
-- **Core** — The heart of the framework. Handles [dependency injection, the event bus, and the application lifecycle](./docs/core.md).
+- **Core** — The heart of the framework. Handles [dependency injection, the event bus, and the application lifecycle](https://iskra-docs.fly.dev/packages/core/).
 - **Kits** — Modular packages that add specific capabilities. Each one registers itself as a Driver or Plugin on the Core.
 - **Drivers** — Adapters that connect the Core to external systems (Hono for HTTP, Drizzle for DB, BullMQ for jobs, etc.).
 
-For a deeper look at the layers, interfaces, and design patterns, see the [architecture documentation](./docs/arquitectura.md).
+For a deeper look at the layers, interfaces, and design patterns, see the [architecture documentation](https://iskra-docs.fly.dev/concepts/architecture/).
 
 ## Packages
 
 | Package | Description | Docs |
 | :--- | :--- | :--- |
-| `@iskra-bun/core` | Framework core: App, DI, events, logger, errors | [Core](./docs/core.md) |
-| `@iskra-bun/config-kit` | Typed, Zod-validated environment/config loading | [Config Kit](./docs/config-kit.md) |
-| `@iskra-bun/web-kit` | HTTP server with Hono, Kernel, and 15+ built-in features | [Web Kit](./docs/web-kit.md) |
-| `@iskra-bun/auth-kit` | Transport-agnostic better-auth (config + Drizzle schema), usable outside HTTP | [Auth Kit](./docs/auth-kit.md) |
-| `@iskra-bun/db-kit` | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite) | [DB Kit](./docs/db-kit.md) |
-| `@iskra-bun/db-oracle` | Oracle Database support (via Bridge/Sidecar) | [DB Kit](./docs/db-kit.md) |
-| `@iskra-bun/socket-kit` | Native Bun WebSocket with router and broadcast | [Socket Kit](./docs/socket-kit.md) |
-| `@iskra-bun/kv-kit` | Key-Value store with Redis and in-memory adapters | [KV Kit](./docs/kv-kit.md) |
-| `@iskra-bun/cache-kit` | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit | [Cache Kit](./docs/cache-kit.md) |
-| `@iskra-bun/worker-kit` | Background job queue with BullMQ | [Worker Kit](./docs/worker-kit.md) |
-| `@iskra-bun/mailer-kit` | Transport-agnostic email (SMTP/SendGrid/Mailgun/SES) | [Mailer Kit](./docs/mailer-kit.md) |
-| `@iskra-bun/storage-kit` | File storage (local, S3/MinIO) with streaming | [Storage Kit](./docs/storage-kit.md) |
-| `@iskra-bun/process-kit` | External process management (Python, binaries) | [Process Kit](./docs/process-kit.md) |
-| `@iskra-bun/testing-kit` | Test utilities (createTestApp, mock logger/driver, withTempDir) | [Testing Kit](./docs/testing-kit.md) |
-| `@iskra-bun/desktop-kit` | Experimental placeholder for Tauri desktop apps (no Tauri integration yet) | [Desktop Kit](./docs/desktop-kit.md) |
-| `@iskra-bun/mobile-kit` | Experimental placeholder for mobile apps (no platform integration yet) | [Mobile Kit](./docs/mobile-kit.md) |
-| `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](./docs/create-iskra.md) |
+| `@iskra-bun/core` | Framework core: App, DI, events, logger, errors | [Core](https://iskra-docs.fly.dev/packages/core/) |
+| `@iskra-bun/config-kit` | Typed, Zod-validated environment/config loading | [Config Kit](https://iskra-docs.fly.dev/packages/config-kit/) |
+| `@iskra-bun/web-kit` | HTTP server with Hono, Kernel, and 15+ built-in features | [Web Kit](https://iskra-docs.fly.dev/packages/web-kit/) |
+| `@iskra-bun/auth-kit` | Transport-agnostic better-auth (config + Drizzle schema), usable outside HTTP | [Auth Kit](https://iskra-docs.fly.dev/packages/auth-kit/) |
+| `@iskra-bun/db-kit` | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite) | [DB Kit](https://iskra-docs.fly.dev/packages/db-kit/) |
+| `@iskra-bun/db-oracle` | Oracle Database support (via Bridge/Sidecar) | [DB Kit](https://iskra-docs.fly.dev/packages/db-kit/) |
+| `@iskra-bun/socket-kit` | Native Bun WebSocket with router and broadcast | [Socket Kit](https://iskra-docs.fly.dev/packages/socket-kit/) |
+| `@iskra-bun/kv-kit` | Key-Value store with Redis and in-memory adapters | [KV Kit](https://iskra-docs.fly.dev/packages/kv-kit/) |
+| `@iskra-bun/cache-kit` | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit | [Cache Kit](https://iskra-docs.fly.dev/packages/cache-kit/) |
+| `@iskra-bun/worker-kit` | Background job queue with BullMQ | [Worker Kit](https://iskra-docs.fly.dev/packages/worker-kit/) |
+| `@iskra-bun/mailer-kit` | Transport-agnostic email (SMTP/SendGrid/Mailgun/SES) | [Mailer Kit](https://iskra-docs.fly.dev/packages/mailer-kit/) |
+| `@iskra-bun/storage-kit` | File storage (local, S3/MinIO) with streaming | [Storage Kit](https://iskra-docs.fly.dev/packages/storage-kit/) |
+| `@iskra-bun/process-kit` | External process management (Python, binaries) | [Process Kit](https://iskra-docs.fly.dev/packages/process-kit/) |
+| `@iskra-bun/testing-kit` | Test utilities (createTestApp, mock logger/driver, withTempDir) | [Testing Kit](https://iskra-docs.fly.dev/packages/testing-kit/) |
+| `@iskra-bun/desktop-kit` | Experimental placeholder for Tauri desktop apps (no Tauri integration yet) | [Desktop Kit](https://iskra-docs.fly.dev/packages/desktop-kit/) |
+| `@iskra-bun/mobile-kit` | Experimental placeholder for mobile apps (no platform integration yet) | [Mobile Kit](https://iskra-docs.fly.dev/packages/mobile-kit/) |
+| `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](https://iskra-docs.fly.dev/packages/create-iskra/) |
 
 ## Quick start
 
@@ -108,18 +108,18 @@ Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**
 
 | Document | What it covers |
 | :--- | :--- |
-| [Architecture](./docs/arquitectura.md) | Hexagonal architecture, layers, design patterns |
-| [Core](./docs/core.md) | App class, lifecycle, DI, logger, events, errors |
-| [Web Kit](./docs/web-kit.md) | HTTP server, Kernel, features (auth, CORS, CSRF, rate limit, etc.) |
-| [DB Kit](./docs/db-kit.md) | Drizzle ORM, supported drivers, schemas |
-| [Socket Kit](./docs/socket-kit.md) | WebSocket, router, broadcast, message protocol |
-| [KV Kit](./docs/kv-kit.md) | Key-Value store, Redis and in-memory adapters |
-| [Worker Kit](./docs/worker-kit.md) | Job queue, BullMQ, handlers, retries |
-| [Process Kit](./docs/process-kit.md) | External processes, daemon/oneshot/stdio modes |
-| [Configuration](./docs/configuracion.md) | Config system with c12, Zod, environment variables |
-| [Migrations](./docs/migraciones.md) | Migration system with Drizzle Kit |
-| [Deployment](./docs/despliegue.md) | Docker, CI/CD, environments |
-| [SDKs](./docs/sdks.md) | Clients for Java and Python (Go/.NET planned) |
+| [Architecture](https://iskra-docs.fly.dev/concepts/architecture/) | Hexagonal architecture, layers, design patterns |
+| [Core](https://iskra-docs.fly.dev/packages/core/) | App class, lifecycle, DI, logger, events, errors |
+| [Web Kit](https://iskra-docs.fly.dev/packages/web-kit/) | HTTP server, Kernel, features (auth, CORS, CSRF, rate limit, etc.) |
+| [DB Kit](https://iskra-docs.fly.dev/packages/db-kit/) | Drizzle ORM, supported drivers, schemas |
+| [Socket Kit](https://iskra-docs.fly.dev/packages/socket-kit/) | WebSocket, router, broadcast, message protocol |
+| [KV Kit](https://iskra-docs.fly.dev/packages/kv-kit/) | Key-Value store, Redis and in-memory adapters |
+| [Worker Kit](https://iskra-docs.fly.dev/packages/worker-kit/) | Job queue, BullMQ, handlers, retries |
+| [Process Kit](https://iskra-docs.fly.dev/packages/process-kit/) | External processes, daemon/oneshot/stdio modes |
+| [Configuration](https://iskra-docs.fly.dev/configuration/) | Config system with c12, Zod, environment variables |
+| [Migrations](https://iskra-docs.fly.dev/guides/migrations/) | Migration system with Drizzle Kit |
+| [Deployment](https://iskra-docs.fly.dev/guides/deployment/) | Docker, CI/CD, environments |
+| [SDKs](https://iskra-docs.fly.dev/guides/sdks/) | Clients for Java and Python (Go/.NET planned) |
 
 ## SDKs for other languages
 
@@ -129,7 +129,7 @@ Iskra exposes its services over HTTP and provides client SDKs to integrate from 
 - **Python** — `iskra-client` (sync and async)
 - **Go** and **.NET** — planned (see the [roadmap](./ROADMAP.md))
 
-More details in the [SDK documentation](./docs/sdks.md).
+More details in the [SDK documentation](https://iskra-docs.fly.dev/guides/sdks/).
 
 ## Testing
 

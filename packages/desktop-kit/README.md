@@ -26,7 +26,7 @@ await app.start()
 
 ## Documentacion
 
-Guia completa: [docs/desktop-kit.md](../../docs/desktop-kit.md) · Ejemplo: [templates/desktop-app](../../templates/desktop-app/)
+Guia completa: [@iskra-bun/desktop-kit](https://iskra-docs.fly.dev/es/packages/desktop-kit/) · Ejemplo: [templates/desktop-app](../../templates/desktop-app/)
 
 ## Licencia
 

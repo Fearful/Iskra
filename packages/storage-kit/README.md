@@ -25,7 +25,7 @@ Cambia `adapter: 's3'` o `adapter: 'minio'` para usar almacenamiento de objetos;
 
 ## Documentacion
 
-Guia completa: [docs/storage-kit.md](../../docs/storage-kit.md)
+Guia completa: [@iskra-bun/storage-kit](https://iskra-docs.fly.dev/es/packages/storage-kit/)
 
 ## Licencia
 

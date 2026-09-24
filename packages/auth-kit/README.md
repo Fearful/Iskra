@@ -28,7 +28,7 @@ El esquema Drizzle (`pgSchema`, `mysqlSchema`, `sqliteSchema`) y los tipos (`Use
 
 ## Documentacion
 
-Guia completa: [docs/auth-kit.md](../../docs/auth-kit.md)
+Guia completa: [@iskra-bun/auth-kit](https://iskra-docs.fly.dev/es/packages/auth-kit/)
 
 ## Licencia
 

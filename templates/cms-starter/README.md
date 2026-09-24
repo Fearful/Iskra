@@ -6,9 +6,9 @@ slugs con validacion** (Zod). Persistencia real con Drizzle ORM via `@iskra-bun/
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos SQLite con Drizzle ORM
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQLite con Drizzle ORM
 
 ## Inicio rapido
 
@@ -109,7 +109,7 @@ src/
 ## Despliegue
 
 Incluye un `Dockerfile` con build multi-stage. Mas detalles en la
-[guia de despliegue](../../docs/despliegue.md).
+[guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
 docker build -t cms-starter .

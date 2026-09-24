@@ -24,7 +24,7 @@ Las features se activan a traves de la configuracion del Kernel; revisa la guia 
 
 ## Documentacion
 
-Guia completa: [docs/web-kit.md](../../docs/web-kit.md)
+Guia completa: [@iskra-bun/web-kit](https://iskra-docs.fly.dev/es/packages/web-kit/)
 
 ## Licencia
 

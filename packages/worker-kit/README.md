@@ -24,7 +24,7 @@ await app.start()
 
 ## Documentacion
 
-Guia completa: [docs/worker-kit.md](../../docs/worker-kit.md)
+Guia completa: [@iskra-bun/worker-kit](https://iskra-docs.fly.dev/es/packages/worker-kit/)
 
 ## Licencia
 

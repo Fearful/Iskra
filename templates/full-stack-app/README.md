@@ -4,13 +4,13 @@ App completa que combina todos los kits de Iskra: servidor HTTP con documentacio
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con OpenAPI
-- [`@iskra-bun/socket-kit`](../../docs/socket-kit.md) — WebSocket con router de eventos
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Key-Value store en memoria
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos SQL con Drizzle ORM
-- [`@iskra-bun/db-oracle`](../../docs/db-kit.md) — Oracle Database (opcional)
-- [`@iskra-bun/process-kit`](../../docs/process-kit.md) — Gestion de procesos externos
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con OpenAPI
+- [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket con router de eventos
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store en memoria
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQL con Drizzle ORM
+- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Oracle Database (opcional)
+- [`@iskra-bun/process-kit`](https://iskra-docs.fly.dev/es/packages/process-kit/) — Gestion de procesos externos
 
 ## Inicio rapido
 
@@ -78,9 +78,9 @@ A partir de aca podes:
 - Agregar mas rutas HTTP con validacion Zod
 - Agregar soporte de salas en WebSocket
 - Configurar el KV store con Redis para produccion
-- Agregar migraciones con [Drizzle Kit](../../docs/migraciones.md)
-- Revisar las [features del Web Kit](../../docs/web-kit.md) (auth, CORS, rate limit, etc.)
+- Agregar migraciones con [Drizzle Kit](https://iskra-docs.fly.dev/es/guides/migrations/)
+- Revisar las [features del Web Kit](https://iskra-docs.fly.dev/es/packages/web-kit/) (auth, CORS, rate limit, etc.)
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. El worker.js se copia por separado ya que no se incluye en el binario compilado. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. El worker.js se copia por separado ya que no se incluye en el binario compilado. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

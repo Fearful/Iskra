@@ -4,9 +4,9 @@ Template para procesamiento de tareas en segundo plano con colas de trabajo. Ide
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/worker-kit`](../../docs/worker-kit.md) — Cola de jobs con BullMQ (Redis)
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Endpoint HTTP de health/monitoring
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/worker-kit`](https://iskra-docs.fly.dev/es/packages/worker-kit/) — Cola de jobs con BullMQ (Redis)
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Endpoint HTTP de health/monitoring
 
 ## Requisitos
 
@@ -111,8 +111,8 @@ worker.register(
 worker.enqueue('mi-job.nombre', { dato: 'valor' });
 ```
 
-Para opciones avanzadas (prioridad, delay, backoff por job), revisa la [documentacion de Worker Kit](../../docs/worker-kit.md).
+Para opciones avanzadas (prioridad, delay, backoff por job), revisa la [documentacion de Worker Kit](https://iskra-docs.fly.dev/es/packages/worker-kit/).
 
 ## Despliegue
 
-El `Dockerfile` compila un binario con Bun y expone el puerto `8080` para el endpoint de health. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+El `Dockerfile` compila un binario con Bun y expone el puerto `8080` para el endpoint de health. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

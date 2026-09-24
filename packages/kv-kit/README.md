@@ -24,7 +24,7 @@ Cambia `adapter: 'redis'` para usar Redis en produccion; la API (`get`/`set`/`de
 
 ## Documentacion
 
-Guia completa: [docs/kv-kit.md](../../docs/kv-kit.md)
+Guia completa: [@iskra-bun/kv-kit](https://iskra-docs.fly.dev/es/packages/kv-kit/)
 
 ## Licencia
 

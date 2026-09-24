@@ -30,7 +30,7 @@ Cambia `provider` entre `mock`, `smtp`, `sendgrid`, `mailgun` o `ses`; la API (`
 
 ## Documentacion
 
-Guia completa: [docs/mailer-kit.md](../../docs/mailer-kit.md)
+Guia completa: [@iskra-bun/mailer-kit](https://iskra-docs.fly.dev/es/packages/mailer-kit/)
 
 ## Licencia
 

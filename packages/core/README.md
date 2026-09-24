@@ -24,7 +24,7 @@ Registra capacidades adicionales con `app.register(driver)` (Drivers) o `app.use
 
 ## Documentacion
 
-Guia completa: [docs/core.md](../../docs/core.md) · Arquitectura: [docs/arquitectura.md](../../docs/arquitectura.md)
+Guia completa: [@iskra-bun/core](https://iskra-docs.fly.dev/es/packages/core/) · [Arquitectura](https://iskra-docs.fly.dev/es/concepts/architecture/)
 
 ## Licencia
 

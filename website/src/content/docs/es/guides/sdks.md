@@ -22,8 +22,8 @@ Iskra se despliega como un servicio HTTP (via `@iskra-bun/web-kit`) y los SDKs a
 
 | Lenguaje | Paquete | Ubicacion | Estado |
 |----------|---------|-----------|--------|
-| **Java** | `dev.iskra:iskra-client` | [`sdks/java/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/) | v0.1.0 |
-| **Python** | `iskra-client` | [`sdks/python/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/) | v0.1.0 |
+| **Java** | `dev.iskra:iskra-client` | [`sdks/java/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/) | v0.2.0 |
+| **Python** | `iskra-client` | [`sdks/python/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/) | v0.2.0 |
 
 ## Java SDK
 
@@ -41,7 +41,7 @@ Cliente para Java 11+ compatible con Spring MVC, Spring Boot, Jakarta EE, y cual
 <dependency>
     <groupId>dev.iskra</groupId>
     <artifactId>iskra-client</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -56,8 +56,8 @@ var resultado = iskra.post("/api/ordenes", datos, Orden.class);
 
 // Sub-clientes
 iskra.health().check();
-iskra.auth().signIn(email, password);
-iskra.storage().upload(path, "archivo.pdf");
+Session session = iskra.auth().signIn(email, password).getData();
+iskra.withSession(session).storage().upload(path, "archivo.pdf");
 ```
 
 Documentacion completa: [`sdks/java/iskra-client/README.md`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/README.md)
@@ -93,14 +93,53 @@ resultado = iskra.post("/api/ordenes", json=datos)
 
 # Sub-clientes
 iskra.health.check()
-iskra.auth.sign_in(email, password)
-iskra.storage.upload(path, "archivo.pdf")
+session = iskra.auth.sign_in(email, password).data
+iskra.with_session(session).storage.upload(path, "archivo.pdf")
 
 # Async
 resultado = await iskra.async_get("/api/productos")
 ```
 
 Documentacion completa: [`sdks/python/iskra-client/README.md`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/README.md)
+
+## Sesiones
+
+Los dos SDKs estan pensados para correr dentro de un backend que atiende a muchos
+usuarios, asi que un cliente **nunca guarda cookies**: la sesion de un usuario no
+puede filtrarse a las peticiones de otro. `sign_in` / `signIn` (y `sign_up` /
+`signUp`) devuelven un `Session` cuyo `cookie` autentica a ese usuario. Guardalo del
+lado del servidor (por ejemplo, en una cookie HttpOnly propia) y asocialo en cada
+peticion:
+
+```python
+session = iskra.auth.sign_in(email, password).data
+como_usuario = iskra.with_session(session)    # o with_session(session.cookie)
+como_usuario.get("/api/mis-pedidos")
+iskra.auth.sign_out(session)
+```
+
+```java
+Session session = iskra.auth().signIn(email, password).getData();
+IskraClient comoUsuario = iskra.withSession(session);   // o withSession(session.getCookie())
+comoUsuario.get("/api/mis-pedidos", Map.class);
+iskra.auth().signOut(session);
+```
+
+- Solo se conserva la cookie `session_token` de Better Auth (su cookie de cache
+  `session_data` mantendria valida una sesion cerrada hasta que expire).
+- Las peticiones con sesion envian `Origin` = el origen de la URL base, que Better
+  Auth exige en los POST autenticados con cookie. Si el `baseURL` del AuthFeature es
+  otra URL (la publica), configura `origin` en el cliente o agrega la URL base a
+  `trustedOrigins`.
+- El AuthFeature limita las rutas de auth a 20 peticiones cada 15 minutos por IP. Un
+  backend que inicia sesion por todos sus usuarios desde una IP deberia subirlo con
+  `rateLimit: { max, windowMs }` (o `rateLimit: false` y limitar por su cuenta).
+- El cliente de storage usa las rutas del UploadFeature, que normalmente exigen un
+  usuario con sesion: usalo desde `with_session(...)` / `withSession(...)`.
+
+Los dos SDKs se testean contra un servicio Iskra real,
+[`sdks/contract/server.ts`](https://github.com/fearful/iskra/tree/main/sdks/contract/server.ts),
+asi que interpretan lo que el servicio realmente responde.
 
 ## Preparar tu Servicio Iskra para SDKs
 

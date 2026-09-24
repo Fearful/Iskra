@@ -4,9 +4,9 @@ Chat en tiempo real sobre WebSocket con **salas**, **presencia de usuarios**, **
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/socket-kit`](../../docs/socket-kit.md) — WebSocket con router de eventos
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Key-Value store para salas, presencia e historial
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket con router de eventos
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store para salas, presencia e historial
 
 ## Inicio rapido
 
@@ -123,10 +123,10 @@ src/
 ## Proximos pasos
 
 - Reemplazar `verifyToken` por verificacion de JWT firmado
-- Persistir mensajes en base de datos con [`@iskra-bun/db-kit`](../../docs/db-kit.md)
+- Persistir mensajes en base de datos con [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/)
 - Cambiar `KV_DRIVER` a `redis` para correr varias instancias del servidor
-- Agregar un endpoint HTTP con [`@iskra-bun/web-kit`](../../docs/web-kit.md) para consultar historial
+- Agregar un endpoint HTTP con [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) para consultar historial
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

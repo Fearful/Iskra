@@ -4,7 +4,7 @@ Template para crear plugins (Drivers) reutilizables para Iskra. Usa esto como pu
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Interfaz `Driver`, Clase App, logger
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Interfaz `Driver`, Clase App, logger
 
 ## Inicio rapido
 
@@ -54,4 +54,4 @@ await app.start();
 2. Ajusta la interfaz `MyPluginConfig` con las opciones que necesites
 3. Implementa tu logica en los metodos de ciclo de vida y los metodos custom
 
-Para entender mejor la arquitectura de plugins y drivers, revisa la [documentacion de arquitectura](../../docs/arquitectura.md).
+Para entender mejor la arquitectura de plugins y drivers, revisa la [documentacion de arquitectura](https://iskra-docs.fly.dev/es/concepts/architecture/).

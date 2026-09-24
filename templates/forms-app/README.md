@@ -53,11 +53,11 @@ En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegari
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, DI, logger, event bus
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono, features (Auth, CSRF, CORS, RateLimit)
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos con Drizzle ORM (PostgreSQL)
-- [`@iskra-bun/worker-kit`](../../docs/worker-kit.md) — Cola de jobs con BullMQ
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Key-Value store con Redis
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, DI, logger, event bus
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono, features (Auth, CSRF, CORS, RateLimit)
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos con Drizzle ORM (PostgreSQL)
+- [`@iskra-bun/worker-kit`](https://iskra-docs.fly.dev/es/packages/worker-kit/) — Cola de jobs con BullMQ
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store con Redis
 
 ## Servicios y paquetes
 
@@ -462,7 +462,7 @@ Cada servicio tiene su propio Dockerfile:
 
 Los binarios se compilan con `NODE_ENV=production` (Bun lo fija al compilar), y todas
 las imagenes corren con un UID no root (1001, grupo 0). Detalles en la
-[guia de despliegue](../../docs/despliegue.md).
+[guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
 # Build y levantar todo
@@ -492,13 +492,13 @@ cd services/answer-writer && bun dev
 
 A partir de aca podes:
 
-- Agregar migraciones con [Drizzle Kit](../../docs/migraciones.md) para manejar cambios de schema
+- Agregar migraciones con [Drizzle Kit](https://iskra-docs.fly.dev/es/guides/migrations/) para manejar cambios de schema
 - Configurar un CDN (CloudFront, Cloudflare) delante de nginx para cachear los formularios estaticos
-- Agregar notificaciones por email cuando se reciben respuestas usando el [EmailFeature](../../docs/web-kit.md)
+- Agregar notificaciones por email cuando se reciben respuestas usando el [EmailFeature](https://iskra-docs.fly.dev/es/packages/web-kit/)
 - Implementar exportacion de respuestas a CSV/Excel desde el admin
 - Agregar soporte de formularios multi-paso (wizard)
 - Configurar los dos nginx de produccion (DMZ + interno) segun tu infraestructura
-- Revisar las [features del Web Kit](../../docs/web-kit.md) para agregar mas funcionalidad (API keys, permisos, OpenAPI)
+- Revisar las [features del Web Kit](https://iskra-docs.fly.dev/es/packages/web-kit/) para agregar mas funcionalidad (API keys, permisos, OpenAPI)
 
 ## Despliegue
 
@@ -509,4 +509,4 @@ Para produccion necesitas:
 3. PostgreSQL y Redis en alta disponibilidad
 4. Al menos 2 replicas de forms-api y answer-writer
 
-Mas info general en la [guia de despliegue](../../docs/despliegue.md).
+Mas info general en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

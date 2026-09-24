@@ -12,8 +12,8 @@ un **menu nativo**, un **dialogo de archivos** y una **UI** que consume todo eso
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger, bus de eventos
-- [`@iskra-bun/desktop-kit`](../../docs/desktop-kit.md) — `DesktopDriver`, puente con Tauri
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger, bus de eventos
+- [`@iskra-bun/desktop-kit`](https://iskra-docs.fly.dev/es/packages/desktop-kit/) — `DesktopDriver`, puente con Tauri
 
 ## Arquitectura
 
@@ -143,5 +143,5 @@ src-tauri/
 3. Ajustá la ventana (tamano, decoraciones, multiples ventanas) en `tauri.conf.json`.
 4. Reemplazá `ui/` por tu framework favorito apuntando `frontendDist` a su build.
 
-Referencia de la API del kit: [docs/desktop-kit.md](../../docs/desktop-kit.md).
+Referencia de la API del kit: [@iskra-bun/desktop-kit](https://iskra-docs.fly.dev/es/packages/desktop-kit/).
 Para apps que tambien apuntan a moviles, mirá [`universal-app`](../universal-app/).

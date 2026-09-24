@@ -44,7 +44,7 @@ await cache.invalidateTag('items'); // elimina item:1 e item:2
 
 ## Documentacion
 
-Guia completa: [docs/cache-kit.md](../../docs/cache-kit.md)
+Guia completa: [@iskra-bun/cache-kit](https://iskra-docs.fly.dev/es/packages/cache-kit/)
 
 ## Licencia
 
