@@ -76,7 +76,8 @@ export class MigrationHelper {
     }
 
     /**
-     * Elimina todas las tablas de la base de datos.
+     * Elimina un archivo de migración ya generado (`drizzle-kit drop`, interactivo).
+     * No borra tablas ni datos de la base.
      * `drop` acepta --out (dónde viven las migraciones) pero no --schema.
      */
     async drop(): Promise<void> {

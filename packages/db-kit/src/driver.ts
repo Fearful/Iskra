@@ -6,8 +6,7 @@ import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import postgres from 'postgres';
 import mysql from 'mysql2/promise';
 import { sql } from 'drizzle-orm';
-import { ConnectionError, QueryError } from './errors';
-import { MigrationHelper, mapDialect } from './migrations';
+import { ConnectionError, MigrationError, QueryError } from './errors';
 
 /**
  * Observability callback invoked for every SQL statement Drizzle executes.
@@ -154,9 +153,13 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
                         context: { driver: config.driver },
                     });
             }
+            // postgres-js and mysql2 pools connect lazily: without a round-trip
+            // a wrong host or password only surfaced on the first query.
+            await this.roundTrip();
             this.app!.logger.info('DB connected successfully.');
         } catch (error) {
             if (error instanceof DriverError) throw error;
+            await this.stop();
             this.app!.logger.error({ error }, 'Failed to connect to DB');
             const safeUrl = scrubUrl(config.url);
             throw new ConnectionError('Failed to connect to DB', {
@@ -170,27 +173,52 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
     }
 
     /**
-     * Ejecuta migraciones pendientes usando Drizzle Kit.
+     * Applies the pending migrations in `migrationsDir` (generated with
+     * `drizzle-kit generate`) over the live connection, using Drizzle's
+     * migrator for the configured dialect. Requires `start()`.
+     *
+     * It used to shell out to `drizzle-kit migrate`, which ignored both
+     * arguments and failed without a drizzle.config.ts. `schemaPath` is kept for
+     * compatibility; applying migrations does not need the schema.
      */
-    async runMigrations(schemaPath: string, migrationsDir: string = './drizzle'): Promise<void> {
-        if (!this.app?.config.db) {
+    async runMigrations(_schemaPath?: string, migrationsDir: string = './drizzle'): Promise<void> {
+        const config = this.app?.config.db;
+        if (!config) {
             throw new DriverError('Cannot run migrations: no DB configuration found', {
                 code: 'DRIVER_START_FAILED',
             });
         }
+        if (!this.db) {
+            throw new DriverError('Cannot run migrations: DB is not started', {
+                code: 'DRIVER_START_FAILED',
+                context: { driver: config.driver },
+            });
+        }
 
-        const config = this.app.config.db;
-        const helper = new MigrationHelper(
-            {
-                dialect: mapDialect(config.driver),
-                dbUrl: config.url,
-                schemaPath,
-                migrationsDir,
-            },
-            this.app,
-        );
-
-        await helper.migrate();
+        const options = { migrationsFolder: migrationsDir };
+        const db = this.db as never;
+        try {
+            switch (config.driver) {
+                case 'postgres':
+                    await (await import('drizzle-orm/postgres-js/migrator')).migrate(db, options);
+                    break;
+                case 'mysql':
+                    await (await import('drizzle-orm/mysql2/migrator')).migrate(db, options);
+                    break;
+                case 'sqlite':
+                    (await import('drizzle-orm/bun-sqlite/migrator')).migrate(db, options);
+                    break;
+                case 'libsql':
+                    await (await import('drizzle-orm/libsql/migrator')).migrate(db, options);
+                    break;
+            }
+            this.app!.logger.info({ migrationsDir }, 'Migrations applied');
+        } catch (error) {
+            throw new MigrationError('Failed to apply migrations', {
+                cause: error instanceof Error ? error : new Error(String(error)),
+                context: { driver: config.driver, migrationsDir },
+            });
+        }
     }
 
     /**
@@ -230,22 +258,27 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
     async ping(): Promise<boolean> {
         if (!this.db) return false;
         try {
-            // bun-sqlite exposes the synchronous `.run()`; postgres-js, mysql2 and
-            // libsql expose the async `.execute()`. Prefer whichever exists.
-            const handle = this.db as {
-                run?(query: unknown): unknown;
-                execute?(query: unknown): Promise<unknown>;
-            };
-            if (typeof handle.run === 'function') {
-                await handle.run(sql`SELECT 1`);
-            } else if (typeof handle.execute === 'function') {
-                await handle.execute(sql`SELECT 1`);
-            } else {
-                return false;
-            }
+            await this.roundTrip();
             return true;
         } catch {
             return false;
+        }
+    }
+
+    /** `SELECT 1` on the active connection; throws on failure. */
+    private async roundTrip(): Promise<void> {
+        // bun-sqlite exposes the synchronous `.run()`; postgres-js, mysql2 and
+        // libsql expose the async `.execute()`. Prefer whichever exists.
+        const handle = this.db as {
+            run?(query: unknown): unknown;
+            execute?(query: unknown): Promise<unknown>;
+        };
+        if (typeof handle.run === 'function') {
+            await handle.run(sql`SELECT 1`);
+        } else if (typeof handle.execute === 'function') {
+            await handle.execute(sql`SELECT 1`);
+        } else {
+            throw new Error('DB handle exposes neither run() nor execute()');
         }
     }
 

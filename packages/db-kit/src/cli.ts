@@ -26,7 +26,7 @@ Comandos:
   generate [nombre]  Genera archivos de migración a partir del schema
   migrate            Aplica migraciones pendientes
   push               Empuja el schema directo a la DB (sin migración)
-  drop               Elimina todas las tablas
+  drop               Elimina un archivo de migracion generado (no toca la DB)
 `);
     process.exit(command ? 1 : 0);
 }
