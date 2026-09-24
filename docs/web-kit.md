@@ -163,7 +163,7 @@ Se pueden personalizar via `KernelConfig.security`.
 **Notas de hardening de seguridad:**
 
 - **CSRF (`CsrfFeature`):** double-submit cookie firmada con HMAC-SHA256 bajo el `secret` configurado y comparada en tiempo constante. Un token sin firma o ajeno se rechaza antes de cualquier comparacion. El kill-switch `disableCSRFCheck` se **ignora en produccion** (`NODE_ENV === 'production'`), por lo que la proteccion CSRF no puede desactivarse silenciosamente en un entorno desplegado.
-- **API keys (`ApiKeyFeature`):** la clave de cache es un hash **SHA-256** de la key (la key en claro nunca se persiste en el cache, p. ej. Redis). Los `id` de las API keys son aleatorios (UUID) y no filtran ningun prefijo del secreto. La comparacion de keys es en tiempo constante.
+- **API keys (`ApiKeyFeature`):** la clave de cache es un hash **SHA-256** de la key (la key en claro nunca se persiste en el cache, p. ej. Redis). Los `id` de las API keys son aleatorios (UUID) y no filtran ningun prefijo del secreto. La comparacion de keys es en tiempo constante. Un `Authorization: Bearer` que no es una API key valida no se rechaza globalmente (puede ser un JWT o token de sesion de otro esquema); las rutas que exigen API key usan `requireApiKey()` / `requireScope()`. Una key invalida en el header `X-API-Key` si devuelve 401.
 - **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar. Ver la seccion de Auth.
 
 ## Auth
@@ -181,6 +181,7 @@ new AuthFeature({
 ```
 
 - El `secret` se usa para firmar las sesiones y **debe tener al menos 32 caracteres**; uno mas corto o vacio lanza un error al inicializar.
+- En modo `oidc` (o si se pasa `oidcConfig`) el login email/password queda deshabilitado; activalo explicitamente con `enableEmailPassword: true`. `enableSelfRegistration: false` rechaza `/sign-up/email` (las cuentas se crean por otro medio).
 - Las rutas de auth (`{basePath}/*`) tienen rate limiting por IP por defecto (20 intentos / 15 min) para frenar credential stuffing.
 - La IP del cliente (para este limitador y para `RateLimitFeature`) es la del socket. Si la app corre detras de un proxy (nginx, load balancer), configura `new Kernel({ trustProxy: 1 })` con la cantidad de proxies para usar `X-Forwarded-For`; sin eso el header se ignora, porque cualquier cliente puede falsificarlo.
 - Usa `requireAuth(kernel)` como middleware para proteger rutas que requieren sesion.

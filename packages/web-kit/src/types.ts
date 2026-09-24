@@ -178,7 +178,12 @@ export interface AuthConfig {
     trustedOrigins?: string[]; // For better-auth CORS
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
     authMode?: "oidc" | "email"; // Authentication mode
-    enableSelfRegistration?: boolean; // Enable user self-registration for email/password mode
+    /**
+     * Email/password sign-in. Defaults to `authMode === "email"`, so an OIDC
+     * deployment does not also expose an open email/password login.
+     */
+    enableEmailPassword?: boolean;
+    enableSelfRegistration?: boolean; // Allow `/sign-up/email` (default true); false = accounts are provisioned elsewhere
 
     // deno-lint-ignore no-explicit-any
     socialProviders?: Record<string, any>; // Allow other providers

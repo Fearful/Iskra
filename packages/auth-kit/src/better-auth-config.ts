@@ -28,6 +28,8 @@ export interface BetterAuthConfigOptions {
     basePath?: string;
     trustedOrigins?: string[];
     enableEmailPassword?: boolean;
+    /** Reject `/sign-up/email` (accounts are provisioned another way). Default false. */
+    disableSignUp?: boolean;
     disableCSRFCheck?: boolean;
     /**
      * Cookie-cache lifetime in seconds. This is the session-revocation lag: a
@@ -70,6 +72,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         basePath = "/api/auth",
         trustedOrigins = [],
         enableEmailPassword = true,
+        disableSignUp = false,
         disableCSRFCheck = false,
         cookieCacheMaxAge = 5 * 60,
         socialProviders,
@@ -164,6 +167,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
             ? {
                 enabled: true,
                 autoSignIn: true,
+                disableSignUp,
             }
             : undefined,
         socialProviders: Object.keys(socialProviders || {}).length > 0 ? socialProviders : undefined,

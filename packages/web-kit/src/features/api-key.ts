@@ -92,9 +92,16 @@ export class ApiKeyStore {
         if (cache) {
             try {
                 const cached = await cache.get(cacheKey);
-                if (cached) {
-                    const metadata = typeof cached === 'string' ? JSON.parse(cached) : cached;
-                    return { isValid: true, key: metadata };
+                // Only static keys exist today, so a cached entry is honored only
+                // while its key is still configured: a Redis cache outlives a
+                // restart that removed or rotated the key.
+                if (cached && (this.config.vaultService || this.staticKeysMap.has(key))) {
+                    const metadata: ApiKeyMetadata = typeof cached === 'string' ? JSON.parse(cached) : cached;
+                    const expiresAt = metadata.expiresAt ? new Date(metadata.expiresAt) : undefined;
+                    if (this.isExpired(expiresAt)) {
+                        return { isValid: false, error: "API key has expired" };
+                    }
+                    return { isValid: true, key: { ...metadata, expiresAt } };
                 }
             } catch (err) {
                 // Cache error, ignore
@@ -155,6 +162,8 @@ declare module "hono" {
         hasScope?: (scope: string) => boolean;
         hasAnyScope?: (...scopes: string[]) => boolean;
         hasAllScopes?: (...scopes: string[]) => boolean;
+        /** Why a Bearer token was not accepted as an API key (see requireApiKey). */
+        apiKeyError?: string;
     }
 }
 
@@ -194,22 +203,36 @@ export class ApiKeyFeature implements Feature {
                 return;
             }
 
-            const apiKey = this.extractApiKey(c);
-            if (!apiKey) {
+            const extracted = this.extractApiKey(c);
+            if (!extracted) {
                 c.set("apiKey", undefined);
                 c.set("apiKeyScopes", undefined);
                 await next();
                 return;
             }
 
-            const result = await this.store!.validate(apiKey);
+            const result = await this.store!.validate(extracted.key);
             if (!result.isValid) {
-                throw new HTTPException(401, { message: result.error || "Invalid API key" });
+                const error = result.error || "Invalid API key";
+                if (extracted.strategy === "bearer") {
+                    // A Bearer token may belong to another auth scheme (a JWT, a
+                    // session token). Rejecting it here would 401 every such
+                    // request app-wide, public routes included; routes that need
+                    // an API key enforce it with requireApiKey()/requireScope().
+                    c.set("apiKey", undefined);
+                    c.set("apiKeyScopes", undefined);
+                    c.set("apiKeyError", error);
+                    await next();
+                    return;
+                }
+                if (this.config.onError) return this.config.onError(error, c);
+                throw new HTTPException(401, { message: error });
             }
 
             // When requireScopes is enabled, a validated key that carries no scope
             // is treated as insufficiently privileged and rejected.
             if (this.config.requireScopes && !(result.key?.scopes && result.key.scopes.length > 0)) {
+                if (this.config.onError) return this.config.onError("API key has no scopes", c);
                 throw new HTTPException(403, { message: "API key has no scopes" });
             }
 
@@ -220,6 +243,7 @@ export class ApiKeyFeature implements Feature {
             c.set("hasAnyScope", (...scopes: string[]) => scopes.some(s => this.store!.hasScopes(result.key!, [s])));
             c.set("hasAllScopes", (...scopes: string[]) => this.store!.hasScopes(result.key!, scopes));
 
+            if (this.config.onValidated) await this.config.onValidated(result.key!, c);
             await next();
         });
 
@@ -234,7 +258,7 @@ export class ApiKeyFeature implements Feature {
         });
     }
 
-    private extractApiKey(c: Context): string | null {
+    private extractApiKey(c: Context): { key: string; strategy: string } | null {
         for (const strategy of (this.config.extractStrategies || [])) {
             let key: string | null = null;
             switch (strategy) {
@@ -249,8 +273,11 @@ export class ApiKeyFeature implements Feature {
                 case "query":
                     key = c.req.query(this.config.queryParamName) || null;
                     break;
+                case "custom":
+                    key = this.config.customExtractor?.(c) || null;
+                    break;
             }
-            if (key) return key;
+            if (key) return { key, strategy };
         }
         return null;
     }
@@ -258,7 +285,7 @@ export class ApiKeyFeature implements Feature {
 
 export function requireApiKey() {
     return async (c: Context, next: Next) => {
-        if (!c.get("apiKey")) throw new HTTPException(401, { message: "API key is required" });
+        if (!c.get("apiKey")) throw new HTTPException(401, { message: c.get("apiKeyError") || "API key is required" });
         await next();
     };
 }
@@ -266,7 +293,7 @@ export function requireApiKey() {
 export function requireScope(...scopes: string[]) {
     return async (c: Context, next: Next) => {
         const hasAll = c.get("hasAllScopes");
-        if (!c.get("apiKey")) throw new HTTPException(401, { message: "API key is required" });
+        if (!c.get("apiKey")) throw new HTTPException(401, { message: c.get("apiKeyError") || "API key is required" });
         if (!hasAll || !hasAll(...scopes)) throw new HTTPException(403, { message: "Insufficient scopes" });
         await next();
     };

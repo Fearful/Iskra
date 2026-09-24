@@ -65,7 +65,10 @@ export class PermissionsFeature implements Feature {
             }
 
             if (permissions.length === 0) {
-                permissions = await this.config.loadPermissions(userId);
+                // Copy: role permissions are appended below, and the loader may
+                // return a shared/cached array — mutating it would leak role
+                // permissions (e.g. admin "*") into other users' results.
+                permissions = [...(await this.config.loadPermissions(userId))];
                 if (this.config.enableRBAC) {
                     roles = await this.config.loadRoles(userId);
                     for (const rName of roles) {

@@ -166,7 +166,7 @@ They can be customized via `KernelConfig.security`.
 **Security hardening notes:**
 
 - **CSRF (`CsrfFeature`):** HMAC-SHA256-signed double-submit cookie under the configured `secret`, compared in constant time. An unsigned or foreign token is rejected before any comparison. The `disableCSRFCheck` kill-switch is **ignored in production** (`NODE_ENV === 'production'`), so CSRF protection cannot be silently turned off in a deployed environment.
-- **API keys (`ApiKeyFeature`):** the cache key is a **SHA-256** hash of the key (the raw key is never persisted in the cache, e.g. Redis). API key `id`s are random (UUID) and leak no prefix of the secret. Key comparison is constant-time.
+- **API keys (`ApiKeyFeature`):** the cache key is a **SHA-256** hash of the key (the raw key is never persisted in the cache, e.g. Redis). API key `id`s are random (UUID) and leak no prefix of the secret. Key comparison is constant-time. An `Authorization: Bearer` value that is not a valid API key is not rejected globally (it may be a JWT or session token from another scheme); routes that need an API key use `requireApiKey()` / `requireScope()`. An invalid key in the `X-API-Key` header still returns 401.
 - **Auth (`AuthFeature`):** the underlying `secret` must be **>= 32 characters** (validated by `@iskra-bun/auth-kit`); a shorter or empty secret is rejected at initialization. See the Auth section.
 
 ## Auth
@@ -184,6 +184,7 @@ new AuthFeature({
 ```
 
 - The `secret` signs sessions and **must be at least 32 characters**; a shorter or empty one throws at initialization.
+- In `oidc` mode (or when `oidcConfig` is passed) email/password login is disabled; opt back in with `enableEmailPassword: true`. `enableSelfRegistration: false` rejects `/sign-up/email` (accounts are provisioned another way).
 - Auth routes (`{basePath}/*`) are rate-limited per IP by default (20 attempts / 15 min) to throttle credential stuffing.
 - The client IP (for this limiter and for `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so `X-Forwarded-For` is used; otherwise the header is ignored, since any client can forge it.
 - Use `requireAuth(kernel)` as middleware to protect routes that require a session.
