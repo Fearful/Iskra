@@ -6,8 +6,11 @@ export const appConfig = {
     databaseUrl: process.env.DATABASE_URL || ':memory:',
     processes: {
         'my-worker': {
-            command: 'bun',
-            args: [join(import.meta.dir, 'scripts', 'worker.js')],
+            // WORKER_COMMAND runs a prebuilt worker binary (the Docker image
+            // compiles one: it has no bun, and a compiled app cannot read
+            // scripts/ from import.meta.dir).
+            command: process.env.WORKER_COMMAND || 'bun',
+            args: process.env.WORKER_COMMAND ? [] : [join(import.meta.dir, 'scripts', 'worker.js')],
             mode: 'stdio' as const,
             restartOnCrash: true
         }

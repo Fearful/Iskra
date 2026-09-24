@@ -7,10 +7,25 @@ Guide for building Docker images and understanding the CI/CD pipeline in GitHub 
 
 ## Docker
 
-Each template includes a `Dockerfile` that uses multi-stage builds:
+Each template includes a `Dockerfile` that uses multi-stage builds, built from the
+repository root (the root `.dockerignore` limits the context to the workspace):
 
-1. **Stage 1 (Builder):** Uses `oven/bun:1` to install dependencies and compile to a standalone binary with `bun build --compile`.
-2. **Stage 2 (Runtime):** Uses Red Hat's `ubi9/ubi-minimal` as a minimal production image.
+1. **Dependencies:** `oven/bun:1.1.38`, the Bun the monorepo is pinned to, runs
+   `bun install --frozen-lockfile` over the whole workspace (the lockfile covers every
+   workspace, so copying only some of them fails).
+2. **Build:** `oven/bun:1.3.14` compiles a standalone binary with `bun build --compile`.
+   1.1.38's bundler emits binaries that fail to start, so compiling uses a newer Bun.
+3. **Runtime:** Red Hat's `ubi9/ubi-minimal`. The binary only needs glibc, so this
+   stage installs nothing (it builds offline or behind a TLS-inspecting proxy) and runs
+   as a non-root UID in group 0.
+
+:::caution[`NODE_ENV` is fixed at build time]
+`bun build` inlines `process.env.NODE_ENV` (`"development"` unless it is set while
+building), so a compiled binary ignores the runtime value. Build with
+`NODE_ENV=production`, as the template Dockerfiles do: otherwise the app runs in
+development mode in production (stack traces in error responses, session cookies
+without `Secure`).
+:::
 
 ### Build an Image
 

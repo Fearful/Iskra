@@ -2,8 +2,9 @@
  * Keeps create-iskra's bundled data in sync with the monorepo:
  *
  *  - `templates/<name>/` is a copy of the monorepo's `templates/<name>/`, except
- *    `tsconfig.json`, which is a standalone variant (the monorepo one extends
- *    `../../tsconfig.base.json`, which does not exist in a scaffolded project).
+ *    standalone variants of files that only work inside the monorepo:
+ *    `tsconfig.json` (extends `../../tsconfig.base.json`), `Dockerfile` (built
+ *    from the repository root, with the workspace lockfile) and `.dockerignore`.
  *  - `src/versions.ts` records the current version of every publishable
  *    `@iskra-bun/*` package, used to turn `workspace:*` into installable ranges.
  *
@@ -22,7 +23,7 @@ const REPO_ROOT = join(PACKAGE_DIR, '..', '..');
 export const BUNDLED_TEMPLATES = ['simple-server', 'starter-app'] as const;
 
 /** Files that intentionally differ between the monorepo template and the bundled copy. */
-const STANDALONE_FILES = new Set(['tsconfig.json']);
+const STANDALONE_FILES = new Set(['tsconfig.json', 'Dockerfile', '.dockerignore']);
 const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git']);
 
 export const VERSIONS_FILE = join(PACKAGE_DIR, 'src', 'versions.ts');
