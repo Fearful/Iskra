@@ -37,8 +37,12 @@ yarn-error.log*
 # Bun
 .bun-build/
 
-# Local storage (if used for development)
+# Local storage created at runtime (LocalStorageAdapter defaults to ./storage)
 storage/
+# ...but never source directories that happen to be named `storage`
+# (e.g. packages/web-kit/src/features/storage, the SDK storage clients).
+!**/src/**/storage/
+!sdks/**/storage/
 
 # Local databases
 *.db
