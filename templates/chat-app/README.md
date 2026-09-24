@@ -78,9 +78,12 @@ actualizada y quien se sumó (`joined`) o se fue (`left`).
 ### Historial paginado
 
 Los mensajes se guardan en `room:<room>:messages` (recortado a los ultimos 500). El
-evento `history { before?, limit? }` pagina por **cursor temporal**: devuelve hasta
-`limit` mensajes con `time < before`, en orden cronologico, junto con `hasMore` y un
-`nextBefore` para seguir paginando hacia atras.
+evento `history { before?, limit? }` pagina por **cursor**: cada mensaje tiene un `seq`
+creciente dentro de la sala, y se devuelven hasta `limit` mensajes con `seq < before`, en
+orden cronologico, junto con `hasMore` y un `nextBefore` para seguir paginando hacia atras
+(con la hora como cursor se salteaban los mensajes del mismo milisegundo). Las escrituras a
+una sala se serializan dentro del proceso; con varias instancias sobre Redis habria que
+pasar a listas nativas de Redis.
 
 ```jsonc
 // Cliente → Servidor
@@ -89,7 +92,7 @@ evento `history { before?, limit? }` pagina por **cursor temporal**: devuelve ha
 { "event": "history:reply", "payload": {
     "ok": true, "room": "general",
     "items": [ /* ChatMessage[] */ ],
-    "total": 42, "hasMore": true, "nextBefore": 1718500000000
+    "total": 42, "hasMore": true, "nextBefore": 22
 } }
 ```
 

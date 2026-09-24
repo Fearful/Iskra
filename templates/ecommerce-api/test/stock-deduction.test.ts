@@ -78,4 +78,25 @@ describe('Ecommerce API - Stock Deduction', () => {
         const updatedProduct = await ProductService.findById(product.id);
         expect(updatedProduct?.stock).toBe(1);
     });
+
+    it('leaves the stock untouched when an order is rejected', async () => {
+        const product = await ProductService.create({ name: 'Widget', price: 10, stock: 10, description: '' });
+        const other = await ProductService.create({ name: 'Gadget', price: 5, stock: 1, description: '' });
+
+        // The same product twice (4 + 7 > 10), and a second product short of stock.
+        await expect(OrderService.create({
+            userId: 'u',
+            items: [{ productId: product.id, quantity: 4 }, { productId: product.id, quantity: 7 }],
+        })).rejects.toThrow(/Insufficient stock/);
+        await expect(OrderService.create({
+            userId: 'u',
+            items: [{ productId: product.id, quantity: 4 }, { productId: other.id, quantity: 2 }],
+        })).rejects.toThrow(/Insufficient stock/);
+
+        // The first line's stock used to be taken anyway (the async callback's
+        // transaction had already committed).
+        expect((await ProductService.findById(product.id))?.stock).toBe(10);
+        expect((await ProductService.findById(other.id))?.stock).toBe(1);
+        expect(client.query('SELECT count(*) AS c FROM orders').get().c).toBe(0);
+    });
 });
