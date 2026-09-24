@@ -48,6 +48,13 @@ only runs at release time), in the same order as the CI pipeline.
 If you only touched one package you can scope `bun test` to it (for example
 `bun test packages/core`), but the full suite must still pass before you submit.
 
+### Dependency audit
+
+With Bun >= 1.2 installed alongside, `bun audit` lists known vulnerabilities in
+the resolved tree. Security fixes in transitive dependencies are pinned with
+`overrides` in the root `package.json`; accepted findings (with a reason and
+expiry) live in `osv-scanner.toml`, which the CI audit job reads.
+
 ### Integration tests
 
 The Redis, PostgreSQL and MySQL integration suites are skipped unless their

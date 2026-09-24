@@ -20,6 +20,14 @@
         "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
         "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
     },
+    "overrides": {
+        "hono": "^4.12.34",
+        "fast-uri": "^3.1.8",
+        "nanoid": "^3.3.16",
+        "postcss": "^8.5.23",
+        "browserslist": "^4.28.7",
+        "baseline-browser-mapping": "^2.11.0"
+    },
     "devDependencies": {
         "@changesets/changelog-github": "^0.7.0",
         "@changesets/cli": "^2.31.0",

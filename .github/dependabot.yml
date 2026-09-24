@@ -1,0 +1,16 @@
+# Dependabot configuration.
+#
+# JavaScript dependencies are not covered yet: Dependabot's `bun` ecosystem only
+# reads the text lockfile (`bun.lock`), and this repo still commits the binary
+# `bun.lockb` pinned by .bun-version (1.1.38). Add a `bun` entry once the
+# toolchain moves to Bun >= 1.2 and the text lockfile. Until then run
+# `bun audit` (Bun >= 1.2) locally; see CONTRIBUTING.md.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

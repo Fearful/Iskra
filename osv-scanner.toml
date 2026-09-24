@@ -1,0 +1,13 @@
+# Accepted findings for the CI dependency audit (osv-scanner). Every entry needs
+# a reason and an expiry so it is re-evaluated.
+
+[[IgnoredVulns]]
+id = "GHSA-67mh-4wv8-2f99"
+ignoreUntil = 2027-03-31
+reason = """
+esbuild <= 0.24.2 dev server lets any website read its responses. The only
+affected copy (0.18.20) comes from drizzle-kit -> @esbuild-kit/esm-loader, a
+devDependency of db-kit that never starts esbuild's dev server; it is not
+installed for consumers of the published packages. Remove once drizzle-kit
+drops @esbuild-kit.
+"""

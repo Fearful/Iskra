@@ -10,7 +10,7 @@
         "./validation": "./src/validation/index.ts"
     },
     "dependencies": {
-        "drizzle-orm": "^0.45.1",
+        "drizzle-orm": "^0.45.2",
         "zod": "^3.24.1"
     }
 }

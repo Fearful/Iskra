@@ -13,7 +13,7 @@
         "@iskra-bun/socket-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "@hono/zod-validator": "^0.4.2",
-        "hono": "^4.6.14",
+        "hono": "^4.12.34",
         "@types/uuid": "^11.0.0",
         "uuid": "^13.0.0",
         "zod": "^3.24.1"
