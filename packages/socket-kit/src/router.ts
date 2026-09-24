@@ -7,6 +7,8 @@ import type { ServerWebSocket } from 'bun';
  */
 export interface SocketData {
     connectionId: string;
+    /** Whatever `authenticate(req)` returned for this connection, if configured. */
+    auth?: unknown;
 }
 
 export interface SocketContext<TPayload = unknown, TData extends SocketData = SocketData> extends Context<TPayload> {

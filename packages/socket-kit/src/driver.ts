@@ -15,6 +15,18 @@ const DEFAULT_RATE_WINDOW_MS = 1000;
 export type CanJoin = (connection: ServerWebSocket<SocketData>, room: string) => boolean;
 /** Authorization hook gating which topics a connection may publish to. */
 export type CanPublish = (connection: ServerWebSocket<SocketData>, topic: string) => boolean;
+/**
+ * Authenticates an upgrade request. The returned value is stored as
+ * `socket.data.auth`; return `null`, `undefined` or `false` (or throw) to
+ * refuse the connection with 401.
+ */
+export type Authenticate = (req: Request) => unknown | Promise<unknown>;
+
+/**
+ * Event names the driver itself emits on the app bus (`socket:<name>`).
+ * Clients may not trigger them through the fallback path.
+ */
+const RESERVED_EVENTS: ReadonlySet<string> = new Set(['connected', 'disconnected']);
 
 export interface SocketDriverOptions {
     port?: number;
@@ -27,6 +39,15 @@ export interface SocketDriverOptions {
     canPublish?: CanPublish;
     /** Allowed fallback event names; when set, others are dropped. */
     allowedEvents?: readonly string[];
+    /**
+     * Browser origins allowed to connect (exact match, e.g.
+     * "https://app.example.com"). A handshake with any other `Origin` is
+     * refused with 403, which blocks cross-site WebSocket hijacking; requests
+     * without an Origin (non-browser clients) are allowed. Default: any origin.
+     */
+    allowedOrigins?: readonly string[];
+    /** Authenticate the upgrade request (see Authenticate). Default: none. */
+    authenticate?: Authenticate;
     /** Max inbound messages per connection per window. Defaults to 100. */
     rateLimit?: number;
     /** Rate-limit window in ms. Defaults to 1000. */
@@ -50,6 +71,8 @@ export class SocketDriver implements Driver {
     private readonly canJoin: CanJoin;
     private readonly canPublish: CanPublish;
     private readonly allowedEvents: ReadonlySet<string> | null;
+    private readonly allowedOrigins: ReadonlySet<string> | null;
+    private readonly authenticate?: Authenticate;
     private readonly rateLimit: number;
     private readonly rateWindowMs: number;
     private rateStates: Map<string, RateState> = new Map();
@@ -61,6 +84,8 @@ export class SocketDriver implements Driver {
         this.canJoin = options.canJoin ?? (() => true);
         this.canPublish = options.canPublish ?? (() => true);
         this.allowedEvents = options.allowedEvents ? new Set(options.allowedEvents) : null;
+        this.allowedOrigins = options.allowedOrigins ? new Set(options.allowedOrigins) : null;
+        this.authenticate = options.authenticate;
         this.rateLimit = options.rateLimit ?? DEFAULT_RATE_LIMIT;
         this.rateWindowMs = options.rateWindowMs ?? DEFAULT_RATE_WINDOW_MS;
     }
@@ -71,13 +96,37 @@ export class SocketDriver implements Driver {
 
     start() {
         this.app?.logger.info(`Starting SocketDriver on port ${this.port}...`);
+        if (!this.allowedOrigins && !this.authenticate) {
+            this.app?.logger.warn(
+                'SocketDriver accepts connections from any origin without authentication; ' +
+                    'set allowedOrigins and/or authenticate to prevent cross-site WebSocket hijacking'
+            );
+        }
 
         this.runningServer = Bun.serve<SocketData>({
             port: this.port,
-            fetch(req, server) {
+            fetch: async (req, server) => {
+                const origin = req.headers.get('origin');
+                if (this.allowedOrigins && origin && !this.allowedOrigins.has(origin)) {
+                    return new Response('Forbidden origin', { status: 403 });
+                }
+
+                let auth: unknown;
+                if (this.authenticate) {
+                    try {
+                        auth = await this.authenticate(req);
+                    } catch (err) {
+                        this.app?.logger.warn({ err }, 'Socket authenticate() threw; refusing connection');
+                        auth = null;
+                    }
+                    if (auth === null || auth === undefined || auth === false) {
+                        return new Response('Unauthorized', { status: 401 });
+                    }
+                }
+
                 // Assign a unique id per connection at upgrade time.
                 const connectionId = crypto.randomUUID();
-                if (server.upgrade(req, { data: { connectionId } })) {
+                if (server.upgrade(req, { data: { connectionId, auth } })) {
                     return; // Bun handles the rest
                 }
                 return new Response('Upgrade failed', { status: 500 });
@@ -167,7 +216,12 @@ export class SocketDriver implements Driver {
                 });
             } else {
                 // Fallback to the global app event bus, but only for events that
-                // pass the allow-list (when configured). Unknown names are dropped.
+                // pass the allow-list (when configured). Unknown names are dropped,
+                // and clients can never fire the driver's own lifecycle events.
+                if (RESERVED_EVENTS.has(event)) {
+                    this.app?.logger.warn({ event }, 'Dropping client socket event with a reserved name');
+                    return;
+                }
                 if (this.allowedEvents && !this.allowedEvents.has(event)) {
                     this.app?.logger.warn(
                         { event },

@@ -147,6 +147,21 @@ router.on('subscribe:me', async (ctx) => {
 socketDriver.broadcastTo(connectionId, 'inbox:new', { unread: 3 });
 ```
 
+## Handshake: origen y autenticacion
+
+Sin configuracion, el driver acepta conexiones de cualquier origen y sin autenticar (y lo avisa con un warning al arrancar). Un navegador envia las cookies del usuario en el handshake de WebSocket, asi que cualquier sitio podria abrir una conexion en su nombre (cross-site WebSocket hijacking).
+
+```typescript
+const driver = new SocketDriver({
+    port: 3001,
+    router,
+    // Handshakes con otro header Origin reciben 403; sin Origin (clientes no-navegador) se aceptan.
+    allowedOrigins: ['https://app.example.com'],
+    // Lo que devuelva queda en ctx.socket.data.auth; null/undefined/false (o un throw) => 401.
+    authenticate: async (req) => verifyToken(new URL(req.url).searchParams.get('token')),
+});
+```
+
 ## Autorizacion
 
 El driver acepta hooks opcionales `canJoin` y `canPublish` que controlan las uniones a salas y las publicaciones por conexion. Ambos permiten todo por defecto cuando se omiten.
@@ -224,7 +239,7 @@ El driver emite eventos automaticamente:
 
 - `socket:connected` — cuando se conecta un cliente (payload: `{ connectionId }`)
 - `socket:disconnected` — cuando se desconecta un cliente (payload: `{ connectionId }`)
-- `socket:${event}` — fallback cuando no hay handler en el router (sujeto a `allowedEvents`)
+- `socket:${event}` — fallback cuando no hay handler en el router (sujeto a `allowedEvents`); los nombres reservados `connected` y `disconnected` nunca se reemiten desde un cliente
 
 ```typescript
 app.on('socket:connected', ({ connectionId }) => {
