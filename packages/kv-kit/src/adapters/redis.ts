@@ -71,6 +71,11 @@ export class RedisAdapter implements KVAdapter {
         }
     }
 
+    /** The ioredis client once connected (null before connect() and after disconnect()). */
+    get nativeClient(): Redis | null {
+        return this.client;
+    }
+
     /** The live client; operations before connect() fail instead of silently doing nothing. */
     private get redis(): Redis {
         if (!this.client) throw new Error('RedisAdapter is not connected; call connect() first');

@@ -6,7 +6,7 @@ export interface WorkerManagerOptions {
      * jobs sin handler local (los procesa otro proceso). Default: true.
      */
     consume?: boolean;
-    /** Cantidad de jobs que se procesan en paralelo (default: 1) */
+    /** Cantidad de jobs que se procesan en paralelo (default: 1). `0` = solo productor, como `consume: false`. */
     concurrency?: number;
     /** Nombre de la queue en Redis (default: 'iskra-jobs') */
     queueName?: string;

@@ -69,6 +69,11 @@ describe('App lifecycle', () => {
                 if (done) break;
                 out += new TextDecoder().decode(value);
             }
+            // Bun 1.1.38 arms a process.on() signal handler slightly after the
+            // call returns: a SIGTERM in that window is lost and the process
+            // spins (measured ~5% of runs; 0/80 with this pause, 0/40 on Bun
+            // 1.3). A real app is not signalled within milliseconds of start.
+            await Bun.sleep(100);
             proc.kill('SIGTERM');
             const exitCode = await proc.exited;
             for (;;) {

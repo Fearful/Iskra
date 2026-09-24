@@ -51,7 +51,7 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 |--------|------|---------|-------------|
 | `connection` | `string \| object` | **required** | Redis URL (`redis://user:pass@host:6379/0`; `rediss://` enables TLS) or `{ host, port, username, password, db, tls }` |
 | `consume` | `boolean` | `true` | `false` = producer only: no Worker is created and `enqueue` accepts jobs without a local handler (another process runs them) |
-| `concurrency` | `number` | `1` | Jobs processed in parallel |
+| `concurrency` | `number` | `1` | Jobs processed in parallel; `0` = producer-only, like `consume: false` |
 | `queueName` | `string` | `'iskra-jobs'` | Name of the queue in Redis |
 | `defaultJobOptions` | `JobOptions` | `undefined` | Default options for all jobs |
 | `deadLetter` | `boolean` | `false` | Enable dead-letter routing (see [Dead-Letter Handling](#dead-letter-handling)) |

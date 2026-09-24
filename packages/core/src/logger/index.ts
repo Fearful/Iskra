@@ -1,8 +1,9 @@
 import pino from 'pino';
+import pretty from 'pino-pretty';
 
 export const createLogger = (name: string, level: string = 'info') => {
     const isDev = process.env.NODE_ENV !== 'production';
-    return pino({
+    const options: pino.LoggerOptions = {
         name,
         level,
         redact: {
@@ -24,15 +25,11 @@ export const createLogger = (name: string, level: string = 'info') => {
             ],
             censor: '[REDACTED]'
         },
-        ...(isDev && {
-            transport: {
-                target: 'pino-pretty',
-                options: {
-                    colorize: true
-                }
-            }
-        })
-    });
+    };
+    // pino-pretty as an in-process stream, not a `transport`: a transport runs
+    // in a worker thread that loads the module by name at runtime, which fails
+    // in a `bun build --compile` binary and crashed it at startup.
+    return isDev ? pino(options, pretty({ colorize: true })) : pino(options);
 };
 
 export type Logger = pino.Logger;

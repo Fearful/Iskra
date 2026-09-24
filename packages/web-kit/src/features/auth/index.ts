@@ -45,6 +45,30 @@ const SessionResponseSchema = z.object({
 
 // ─── Auth Feature ────────────────────────────────────────────────────────────
 
+/**
+ * better-auth ignores `basePath` when `baseURL` has a path and serves its
+ * routes under that path instead, while the feature mounts them at
+ * `basePath`: every auth request then 404s. A reverse-proxy prefix belongs in
+ * the proxy, not in `baseURL` (e.g. `http://localhost`, not
+ * `http://localhost/admin/api`).
+ */
+function assertBaseURLMatchesBasePath(baseURL: string | undefined, basePath: string): void {
+    if (!baseURL) return;
+    let pathname: string;
+    try {
+        pathname = new URL(baseURL).pathname.replace(/\/+$/, "");
+    } catch {
+        throw new Error(`AuthFeature: invalid baseURL "${baseURL}"`);
+    }
+    if (pathname && pathname !== basePath.replace(/\/+$/, "")) {
+        throw new Error(
+            `AuthFeature: baseURL "${baseURL}" has the path "${pathname}", so better-auth would serve its routes ` +
+                `there instead of at basePath "${basePath}" and every auth request would 404. ` +
+                `Use the origin only (e.g. "${new URL(baseURL).origin}").`,
+        );
+    }
+}
+
 export class AuthFeature implements Feature {
     name = "auth";
     dependencies = ["db"];
@@ -61,6 +85,7 @@ export class AuthFeature implements Feature {
     // be restored, which would otherwise leak into auth-kit's own test suite).
     constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
         this.createAuth = createAuth;
+        assertBaseURLMatchesBasePath(config.baseURL, config.basePath || "/api/sso");
         this.config = {
             ...config,
             basePath: config.basePath || "/api/sso",

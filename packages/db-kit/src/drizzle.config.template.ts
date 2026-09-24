@@ -1,5 +1,3 @@
-import { defineConfig } from 'drizzle-kit';
-
 export interface DrizzleConfigOptions {
     /** Dialecto: 'postgresql', 'mysql', 'sqlite' */
     dialect: 'postgresql' | 'mysql' | 'sqlite';
@@ -9,6 +7,19 @@ export interface DrizzleConfigOptions {
     schemaPath: string;
     /** Directorio de migraciones (ej: './drizzle') */
     migrationsDir?: string;
+}
+
+/**
+ * La configuración que lee drizzle-kit (el `export default` de `drizzle.config.ts`).
+ * Se declara aquí para no importar drizzle-kit: es una herramienta de desarrollo,
+ * y el entry point de db-kit (que usa Bun vía la condición `bun`) fallaba al
+ * importarse donde no estaba instalada, por ejemplo con `--production`.
+ */
+export interface DrizzleKitConfig {
+    dialect: DrizzleConfigOptions['dialect'];
+    schema: string;
+    out: string;
+    dbCredentials: { url: string };
 }
 
 /**
@@ -26,13 +37,13 @@ export interface DrizzleConfigOptions {
  * });
  * ```
  */
-export function createDrizzleConfig(options: DrizzleConfigOptions) {
-    return defineConfig({
+export function createDrizzleConfig(options: DrizzleConfigOptions): DrizzleKitConfig {
+    return {
         dialect: options.dialect,
         schema: options.schemaPath,
         out: options.migrationsDir || './drizzle',
         dbCredentials: {
             url: options.dbUrl,
         },
-    });
+    };
 }

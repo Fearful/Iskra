@@ -78,6 +78,18 @@ await kv.del('key');
 const exists = await kv.has('key');
 ```
 
+### Native Redis client
+
+With the `redis` driver, `kv.client` is the [ioredis](https://github.com/redis/ioredis)
+client (after `app.start()`) for commands the KV API does not cover (sets, sorted sets,
+pipelines). It bypasses `namespace` and the JSON codec. It is `undefined` with the
+`memory` driver. The `KVManager` is also registered in the app context:
+
+```typescript
+const kv = app.context.get('kv'); // the KVManager
+await kv.client?.sadd('tags', 'a', 'b');
+```
+
 ## Generic (Typed) Values
 
 `get` and `set` accept a type parameter so you get typed reads instead of `any`:

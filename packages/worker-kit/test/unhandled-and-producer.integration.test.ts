@@ -31,7 +31,7 @@ describe.if(redisUp)('WorkerManager job routing (requires Redis)', () => {
         while (managers.length) await managers.pop()!.app.stop();
     });
 
-    async function startManager(queueName: string, opts: { consume?: boolean; deadLetter?: boolean } = {}) {
+    async function startManager(queueName: string, opts: { consume?: boolean; concurrency?: number; deadLetter?: boolean } = {}) {
         const app = new App({ name: 'WorkerRouting', logger: { level: 'silent' } });
         const wm = new WorkerManager({ connection: REDIS_URL, queueName, ...opts });
         app.register(wm);
@@ -52,6 +52,34 @@ describe.if(redisUp)('WorkerManager job routing (requires Redis)', () => {
         const job = await producer.wm.enqueue<{ n: number }, number>('double', { n: 21 });
         expect(await job.result(5000)).toBe(42);
     });
+
+    it('concurrency: 0 is producer-only and never takes jobs from the real consumer', async () => {
+        // Regression: 0 fell back to 1, so an API that set concurrency: 0 to
+        // only enqueue (forms-app's forms-api) consumed jobs it had no handler
+        // for, and those were lost.
+        const queueName = `iskra-concurrency0-${Date.now()}`;
+        const consumer = await startManager(queueName);
+        consumer.wm.register<{ n: number }, number>('double', async (job) => job.data.n * 2);
+        await consumer.app.start();
+        const producer = await startManager(queueName, { concurrency: 0 });
+        await producer.app.start();
+
+        const JOBS = 10;
+        for (let n = 0; n < JOBS; n++) await producer.wm.enqueue('double', { n });
+
+        const queue = new Queue(queueName, { connection });
+        try {
+            let counts = await queue.getJobCounts('completed', 'failed');
+            for (let i = 0; i < 100 && counts.completed + counts.failed < JOBS; i++) {
+                await Bun.sleep(100);
+                counts = await queue.getJobCounts('completed', 'failed');
+            }
+            expect(counts).toEqual({ completed: JOBS, failed: 0 });
+        } finally {
+            await queue.obliterate({ force: true });
+            await queue.close();
+        }
+    }, 20_000);
 
     it('fails (does not complete) a job nobody handles, and dead-letters it', async () => {
         // Regression: the worker returned early, so BullMQ marked the job

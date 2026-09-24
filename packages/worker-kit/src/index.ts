@@ -106,11 +106,19 @@ export class WorkerManager implements Driver {
         return this.enqueue<T, R>(name, data, { ...opts, repeat });
     }
 
+    /**
+     * `consume: false`, or `concurrency: 0` (which used to fall back to 1, so
+     * a service meant to only enqueue consumed jobs it had no handler for).
+     */
+    private get producerOnly(): boolean {
+        return this.options.consume === false || this.options.concurrency === 0;
+    }
+
     async start() {
-        if (this.options.consume === false) {
+        if (this.producerOnly) {
             this.app?.logger.info(
                 { queue: this.options.queueName || 'iskra-jobs' },
-                'WorkerManager started in producer-only mode (consume: false)',
+                'WorkerManager started in producer-only mode (consume: false / concurrency: 0)',
             );
             return;
         }
@@ -272,7 +280,7 @@ export class WorkerManager implements Driver {
     private validateEnqueue(name: string, data: unknown, opts?: JobOptions) {
         // A consuming instance only accepts jobs it can process itself; a
         // producer-only instance (consume: false) enqueues for other workers.
-        if (this.options.consume !== false && !this.handlers.has(name)) {
+        if (!this.producerOnly && !this.handlers.has(name)) {
             throw new QueueError(`No handler registered for job "${name}"`, {
                 context: { jobName: name },
             });

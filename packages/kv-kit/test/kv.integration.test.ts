@@ -111,6 +111,17 @@ describe.if(redisUp)('KVManager with the Redis driver', () => {
         await app.stop();
     });
 
+    it('registers as "kv" in the app context and exposes the ioredis client', async () => {
+        // forms-app's services read app.context.get('kv').client: it was
+        // undefined, so they silently skipped every Redis write and read.
+        expect(app.context.get('kv')).toBe(kv);
+        const client = kv.client!;
+        expect(client).toBeDefined();
+        await client.sadd(`${key}:set`, 'a', 'b');
+        expect((await client.smembers(`${key}:set`)).sort()).toEqual(['a', 'b']);
+        await client.del(`${key}:set`);
+    });
+
     it('selects the Redis adapter and persists values to Redis', async () => {
         await kv.set(key, { ok: true });
         expect(await kv.get<{ ok: boolean }>(key)).toEqual({ ok: true });
@@ -184,6 +195,14 @@ describe('RedisAdapter / KVManager guards', () => {
         const adapter = new RedisAdapter({});
         await expect(adapter.set('k', 'v')).rejects.toThrow(/not connected/);
         await expect(adapter.get('k')).rejects.toThrow(/not connected/);
+    });
+
+    it('has no native client with the memory driver', () => {
+        const app = new App({ name: 'KVMem', logger: { level: 'error' } });
+        const kv = new KVManager();
+        kv.init(app);
+        expect(app.context.get('kv')).toBe(kv);
+        expect(kv.client).toBeUndefined();
     });
 
     it('rejects an unsupported driver instead of silently using memory', () => {
