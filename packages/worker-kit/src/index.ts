@@ -232,7 +232,8 @@ export class WorkerManager implements Driver {
         if (typeof this.options.connection === 'string') {
             const url = new URL(this.options.connection);
             return {
-                host: url.hostname,
+                // URL keeps the brackets of an IPv6 host ("[::1]"); ioredis wants the bare address.
+                host: url.hostname.replace(/^\[(.*)\]$/, '$1'),
                 port: Number(url.port) || 6379,
                 username: url.username ? decodeURIComponent(url.username) : undefined,
                 password: url.password ? decodeURIComponent(url.password) : undefined,
@@ -243,16 +244,18 @@ export class WorkerManager implements Driver {
         return this.options.connection;
     }
 
+    /**
+     * Only the options that were given: BullMQ merges `{ ...defaultJobOptions,
+     * ...opts }`, so an explicit `undefined` erased the queue default (a job
+     * enqueued with just `{ priority }`, and every scheduled job, lost its
+     * attempts, backoff and removeOn* settings).
+     */
     private mapJobOptions(opts?: JobOptions) {
         if (!opts) return undefined;
-        const mapped: Record<string, unknown> = {
-            attempts: opts.attempts,
-            delay: opts.delay,
-            priority: opts.priority,
-            backoff: opts.backoff,
-            removeOnComplete: opts.removeOnComplete,
-            removeOnFail: opts.removeOnFail,
-        };
+        const mapped: Record<string, unknown> = {};
+        for (const key of ['attempts', 'delay', 'priority', 'backoff', 'removeOnComplete', 'removeOnFail'] as const) {
+            if (opts[key] !== undefined) mapped[key] = opts[key];
+        }
         if (opts.repeat !== undefined) {
             mapped.repeat = this.mapRepeat(opts.repeat);
         }

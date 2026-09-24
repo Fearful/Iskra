@@ -196,7 +196,7 @@ The driver bounds inbound work two ways, both configurable on `SocketDriverOptio
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `maxPayloadLength` | `16 * 1024` (16 KiB) | Max inbound frame size in bytes, wired into Bun's `websocket.maxPayloadLength`. Larger frames are dropped by Bun, bounding `JSON.parse` cost. |
+| `maxPayloadLength` | `16 * 1024` (16 KiB) | Max inbound frame size in bytes, wired into Bun's `websocket.maxPayloadLength`. A larger frame makes Bun close the connection, bounding `JSON.parse` cost. |
 | `rateLimit` | `100` | Max inbound messages accepted per connection per window. Frames over budget are dropped (handler not invoked) and a warning is logged. |
 | `rateWindowMs` | `1000` | Length of the rate-limit window in milliseconds. The budget resets when the window elapses. |
 
@@ -231,8 +231,8 @@ Every connection is assigned a unique `connectionId` (UUID) at upgrade time, sto
 The `connectionId` is the payload of the lifecycle events:
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(connectionId); // e.g. "a3f1c2d0-..."
+app.on('socket:connected', (ctx) => {
+    console.log(ctx.payload.connectionId); // e.g. "a3f1c2d0-..."
 });
 ```
 
@@ -245,12 +245,12 @@ The driver emits events automatically:
 - `socket:${event}` — fallback when there is no router handler (subject to `allowedEvents`); the reserved names `connected` and `disconnected` are never re-emitted from a client
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(`Client ${connectionId} connected`);
+app.on('socket:connected', (ctx) => {
+    console.log(`Client ${ctx.payload.connectionId} connected`);
 });
 
-app.on('socket:disconnected', ({ connectionId }) => {
-    console.log(`Client ${connectionId} disconnected`);
+app.on('socket:disconnected', (ctx) => {
+    console.log(`Client ${ctx.payload.connectionId} disconnected`);
 });
 ```
 

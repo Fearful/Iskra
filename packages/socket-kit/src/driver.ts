@@ -76,6 +76,7 @@ export class SocketDriver implements Driver {
     private readonly rateLimit: number;
     private readonly rateWindowMs: number;
     private rateStates: Map<string, RateState> = new Map();
+    private sockets: Set<ServerWebSocket<SocketData>> = new Set();
 
     constructor(options: SocketDriverOptions = {}) {
         this.port = options.port || 3001;
@@ -134,6 +135,7 @@ export class SocketDriver implements Driver {
             websocket: {
                 maxPayloadLength: this.maxPayloadLength,
                 open: (ws) => {
+                    this.sockets.add(ws);
                     this.app?.logger.debug('Socket connected');
                     ws.subscribe('global');
                     this.app?.emit('socket:connected', {
@@ -144,6 +146,7 @@ export class SocketDriver implements Driver {
                     await this.handleMessage(ws, message);
                 },
                 close: (ws) => {
+                    this.sockets.delete(ws);
                     ws.unsubscribe('global');
                     this.rateStates.delete(ws.data.connectionId);
                     this.app?.logger.debug('Socket disconnected');
@@ -165,8 +168,29 @@ export class SocketDriver implements Driver {
         this.runningServer?.publish(room, JSON.stringify({ event, payload }));
     }
 
-    stop() {
-        this.runningServer?.stop();
+    /**
+     * Closes every open connection (1001 "going away", so clients see a clean
+     * close and can reconnect elsewhere) and the listener. A plain
+     * `server.stop()` only stopped accepting: connected clients kept being
+     * served after app.stop(), by handlers whose DB and other drivers were
+     * already stopped.
+     */
+    async stop() {
+        const server = this.runningServer;
+        this.runningServer = null;
+        for (const ws of this.sockets) ws.close(1001, 'Server shutting down');
+        this.sockets.clear();
+        if (server) {
+            // stop(true) closes the listener at once, but with WebSocket
+            // connections its promise may never settle (Bun 1.3): don't let
+            // app.stop() hang on it.
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            await Promise.race([
+                Promise.resolve(server.stop(true)).catch(() => {}),
+                new Promise<void>((resolve) => { timer = setTimeout(resolve, 1000); }),
+            ]);
+            clearTimeout(timer);
+        }
         this.app?.logger.info('SocketDriver stopped');
     }
 
@@ -198,16 +222,20 @@ export class SocketDriver implements Driver {
 
             const text = typeof message === 'string' ? message : new TextDecoder().decode(message);
             const eventData = JSON.parse(text);
-            const { event, payload } = eventData;
-
-            if (!event) return;
+            if (!eventData || typeof eventData !== 'object') return;
+            const { event } = eventData;
+            // Only string names: `["disconnected"]` passed the reserved-name
+            // check and then stringified to "socket:disconnected".
+            if (typeof event !== 'string' || !event) return;
+            // Missing payload defaults to {}; falsy values (0, false, "") are kept.
+            const payload = eventData.payload ?? {};
 
             const handler = this.router.getHandler(event);
             if (handler && this.app) {
                 await handler({
                     app: this.app,
                     logger: this.app.logger.child({ source: 'socket', event }),
-                    payload: payload || {},
+                    payload,
                     socket: ws,
                     reply: (data) => ws.send(JSON.stringify({ event: `${event}:reply`, payload: data })),
                     broadcast: (topic, data) => this.publishAuthorized(ws, topic, data),

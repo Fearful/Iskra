@@ -196,7 +196,7 @@ El driver acota el trabajo entrante de dos formas, ambas configurables en `Socke
 
 | Opcion | Por defecto | Efecto |
 | --- | --- | --- |
-| `maxPayloadLength` | `16 * 1024` (16 KiB) | Tamano maximo del frame entrante en bytes, conectado a `websocket.maxPayloadLength` de Bun. Bun descarta los frames mas grandes, acotando el costo de `JSON.parse`. |
+| `maxPayloadLength` | `16 * 1024` (16 KiB) | Tamano maximo del frame entrante en bytes, conectado a `websocket.maxPayloadLength` de Bun. Un frame mas grande hace que Bun cierre la conexion, acotando el costo de `JSON.parse`. |
 | `rateLimit` | `100` | Maximo de mensajes entrantes aceptados por conexion por ventana. Los frames sobre el presupuesto se descartan (el handler no se invoca) y se registra un warning. |
 | `rateWindowMs` | `1000` | Duracion de la ventana de rate-limit en milisegundos. El presupuesto se reinicia al terminar la ventana. |
 
@@ -231,8 +231,8 @@ Cada conexion recibe un `connectionId` unico (UUID) en el momento del upgrade, a
 El `connectionId` es el payload de los eventos del ciclo de vida:
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(connectionId); // ej. "a3f1c2d0-..."
+app.on('socket:connected', (ctx) => {
+    console.log(ctx.payload.connectionId); // ej. "a3f1c2d0-..."
 });
 ```
 
@@ -245,12 +245,12 @@ El driver emite eventos automaticamente:
 - `socket:${event}` — fallback cuando no hay handler en el router (sujeto a `allowedEvents`); los nombres reservados `connected` y `disconnected` nunca se reemiten desde un cliente
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(`Cliente ${connectionId} conectado`);
+app.on('socket:connected', (ctx) => {
+    console.log(`Cliente ${ctx.payload.connectionId} conectado`);
 });
 
-app.on('socket:disconnected', ({ connectionId }) => {
-    console.log(`Cliente ${connectionId} desconectado`);
+app.on('socket:disconnected', (ctx) => {
+    console.log(`Cliente ${ctx.payload.connectionId} desconectado`);
 });
 ```
 
