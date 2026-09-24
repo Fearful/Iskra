@@ -19,3 +19,5 @@
 ---
 
 Packages declare the runtime they are tested on: `engines.bun` `>=1.3.0` (the monorepo now builds and tests on Bun 1.3). `create-iskra`, a CLI that also runs under `npm create iskra`, declares `engines.node` `>=18`.
+
+Every package is published with an npm provenance attestation (`publishConfig.provenance`), linking each version to the commit and CI run that built it.

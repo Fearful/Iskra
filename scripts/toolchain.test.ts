@@ -52,6 +52,20 @@ describe('toolchain pins', () => {
         expect(wrong).toEqual([]);
     });
 
+    it('publishes every package publicly with provenance', () => {
+        const wrong = readdirSync(join(ROOT, 'packages')).flatMap((dir) => {
+            const manifest = JSON.parse(readFileSync(join(ROOT, 'packages', dir, 'package.json'), 'utf8'));
+            if (manifest.private) return [];
+            const { access, provenance } = manifest.publishConfig ?? {};
+            const repo = manifest.repository ?? {};
+            // npm rejects a provenance publish whose repository does not match the source repo.
+            const ok = access === 'public' && provenance === true
+                && repo.url === 'git+https://github.com/fearful/iskra.git' && repo.directory === `packages/${dir}`;
+            return ok ? [] : [manifest.name];
+        });
+        expect(wrong).toEqual([]);
+    });
+
     it('commits text lockfiles only', () => {
         expect(walk(ROOT, (name) => name === 'bun.lockb').map((f) => relative(ROOT, f))).toEqual([]);
     });
