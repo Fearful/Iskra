@@ -15,7 +15,7 @@ By participating in this project you agree to abide by our
 
   ```bash
   bun --version
-  # e.g. 1.1.x
+  # e.g. 1.3.x
   ```
 
   If your version is older than the pinned one, upgrade with `bun upgrade`.
@@ -50,8 +50,7 @@ If you only touched one package you can scope `bun test` to it (for example
 
 ### Dependency audit
 
-With Bun >= 1.2 installed alongside, `bun audit` lists known vulnerabilities in
-the resolved tree. Security fixes in transitive dependencies are pinned with
+`bun audit` lists known vulnerabilities in the resolved tree (`bun.lock`). Security fixes in transitive dependencies are pinned with
 `overrides` in the root `package.json`; accepted findings (with a reason and
 expiry) live in `osv-scanner.toml`, which the CI audit job reads.
 

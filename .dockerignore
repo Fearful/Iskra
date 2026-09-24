@@ -3,7 +3,7 @@
 # so it needs every workspace manifest the lockfile lists, but nothing else.
 *
 !package.json
-!bun.lockb
+!bun.lock
 !tsconfig.base.json
 !packages/
 !templates/

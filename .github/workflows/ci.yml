@@ -109,20 +109,12 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # Dependency vulnerability (CVE) gate.
-  #
-  # Auditing this repo is awkward: it ships a binary `bun.lockb`, and the
-  # internal packages depend on each other via the `workspace:*` protocol.
-  #   - `bun audit` does not exist in the pinned Bun (1.1.38).
-  #   - `npm install --package-lock-only` aborts with EUNSUPPORTEDPROTOCOL the
-  #     moment it hits a `workspace:*` spec, so no npm lockfile can be produced.
-  #
-  # Instead we let Bun resolve the tree and emit a *text* lockfile (`bun.lock`,
-  # added in Bun 1.1.39 behind `--save-text-lockfile`), then scan that file with
-  # google/osv-scanner, which has a native bun.lock parser. osv-scanner queries
-  # osv.dev for known CVEs in the resolved third-party dependencies. This job is
-  # independent of the test job so a CVE finding is surfaced without blocking or
-  # being blocked by tests. A non-zero exit (vulnerabilities found) fails CI.
+  # Dependency vulnerability (CVE) gate: google/osv-scanner reads the
+  # committed text lockfile (bun.lock) natively and queries osv.dev for known
+  # CVEs in the resolved third-party dependencies. Accepted findings (with a
+  # reason and an expiry) live in osv-scanner.toml. Independent of the test job,
+  # so a finding is surfaced without blocking or being blocked by tests; a
+  # vulnerability match exits non-zero and fails the job.
   audit:
     name: Dependency audit (CVE gate)
     runs-on: ubuntu-latest
@@ -131,25 +123,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          # Pin a Bun new enough to support `--save-text-lockfile` (>= 1.1.39);
-          # the audit does not run the test suite, so it is intentionally
-          # decoupled from the .bun-version used by the main `ci` job (1.1.38).
-          bun-version: "1.2.2"
-
-      - name: Generate a text lockfile (bun.lock) for scanning
-        # Migrate the committed binary bun.lockb into the text lockfile that
-        # osv-scanner can parse. `--lockfile-only` writes the lockfile without
-        # installing packages or running lifecycle scripts; it is required when
-        # combining `--save-text-lockfile` with `--frozen-lockfile`, which keeps
-        # resolution faithful to the committed bun.lockb.
-        run: bun install --save-text-lockfile --frozen-lockfile --lockfile-only
-
       - name: Install osv-scanner
-        # Download a pinned prebuilt binary (avoids the reusable-workflow path,
-        # which checks out fresh and would not see the bun.lock generated above).
         run: |
           curl -sSfL \
             "https://github.com/google/osv-scanner/releases/download/v2.3.2/osv-scanner_linux_amd64" \
@@ -158,6 +132,4 @@ jobs:
           osv-scanner --version
 
       - name: Scan dependencies for known CVEs (osv-scanner)
-        # Scans only the generated text lockfile against osv.dev. A vulnerability
-        # match exits non-zero and fails the job; a clean tree exits 0.
-        run: osv-scanner scan --lockfile=bun.lock
+        run: osv-scanner scan --config=osv-scanner.toml --lockfile=bun.lock --lockfile=website/bun.lock

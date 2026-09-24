@@ -10,13 +10,11 @@ Guia para construir imagenes Docker y entender la pipeline de CI/CD en GitHub Ac
 Cada template incluye un `Dockerfile` multi-stage que se construye desde la raiz del
 repositorio (el `.dockerignore` de la raiz limita el contexto al workspace):
 
-1. **Dependencias:** `oven/bun:1.1.38`, la version de Bun fijada en el monorepo, corre
+1. **Build:** `oven/bun`, en la version de `.bun-version`, corre
    `bun install --frozen-lockfile` sobre todo el workspace (el lockfile cubre todos los
-   workspaces, asi que copiar solo algunos falla).
-2. **Build:** `oven/bun:1.3.14` compila un binario standalone con `bun build --compile`.
-   El bundler de 1.1.38 genera binarios que fallan al arrancar, por eso se compila con
-   un Bun mas nuevo.
-3. **Runtime:** `ubi9/ubi-minimal` de Red Hat. El binario solo necesita glibc, asi que
+   workspaces, asi que copiar solo algunos falla) y compila un binario standalone con
+   `bun build --compile`.
+2. **Runtime:** `ubi9/ubi-minimal` de Red Hat. El binario solo necesita glibc, asi que
    esta etapa no instala nada (se construye sin red o detras de un proxy que inspecciona
    TLS) y corre con un UID no root en el grupo 0.
 

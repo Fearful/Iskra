@@ -128,7 +128,9 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
                 case 'mysql': {
                     const client = mysql.createPool(config.url);
                     this.client = client;
-                    this.db = drizzleMysql<TSchema>(client, { logger });
+                    // Name the client type: with only TSchema given, drizzle's
+                    // TClient defaults to mysql2's callback Pool, not this promise Pool.
+                    this.db = drizzleMysql<TSchema, typeof client>(client, { logger });
                     break;
                 }
                 case 'sqlite': {

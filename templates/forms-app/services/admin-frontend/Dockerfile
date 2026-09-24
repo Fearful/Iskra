@@ -3,9 +3,9 @@
 #   docker build -f templates/forms-app/services/admin-frontend/Dockerfile .
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
-# Built with the monorepo's Bun: the app depends on @forms-app/shared through
+# Built with the monorepo's Bun (.bun-version): the app depends on @forms-app/shared through
 # `workspace:*`, which npm cannot install.
-FROM oven/bun:1.1.38 AS builder
+FROM oven/bun:1.3.14 AS builder
 
 WORKDIR /build
 

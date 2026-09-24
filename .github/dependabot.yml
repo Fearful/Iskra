@@ -1,10 +1,8 @@
 # Dependabot configuration.
 #
-# JavaScript dependencies are not covered yet: Dependabot's `bun` ecosystem only
-# reads the text lockfile (`bun.lock`), and this repo still commits the binary
-# `bun.lockb` pinned by .bun-version (1.1.38). Add a `bun` entry once the
-# toolchain moves to Bun >= 1.2 and the text lockfile. Until then run
-# `bun audit` (Bun >= 1.2) locally; see CONTRIBUTING.md.
+# The `bun` ecosystem reads the text lockfile (bun.lock) of the monorepo and of
+# the docs site. Updates are grouped weekly so the lockfile changes in one PR;
+# security updates are opened as soon as an advisory is published.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -14,3 +12,21 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dependencies:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: bun
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docs-site:
+        update-types: ["minor", "patch"]

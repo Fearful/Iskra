@@ -10,12 +10,11 @@ Guide for building Docker images and understanding the CI/CD pipeline in GitHub 
 Each template includes a `Dockerfile` that uses multi-stage builds, built from the
 repository root (the root `.dockerignore` limits the context to the workspace):
 
-1. **Dependencies:** `oven/bun:1.1.38`, the Bun the monorepo is pinned to, runs
+1. **Build:** `oven/bun`, at the version in `.bun-version`, runs
    `bun install --frozen-lockfile` over the whole workspace (the lockfile covers every
-   workspace, so copying only some of them fails).
-2. **Build:** `oven/bun:1.3.14` compiles a standalone binary with `bun build --compile`.
-   1.1.38's bundler emits binaries that fail to start, so compiling uses a newer Bun.
-3. **Runtime:** Red Hat's `ubi9/ubi-minimal`. The binary only needs glibc, so this
+   workspace, so copying only some of them fails) and compiles a standalone binary with
+   `bun build --compile`.
+2. **Runtime:** Red Hat's `ubi9/ubi-minimal`. The binary only needs glibc, so this
    stage installs nothing (it builds offline or behind a TLS-inspecting proxy) and runs
    as a non-root UID in group 0.
 
