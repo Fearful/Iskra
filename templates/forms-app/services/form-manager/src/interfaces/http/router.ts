@@ -37,4 +37,15 @@ app.post('/internal/lifecycle/close', async (c) => {
     }
 });
 
+app.post('/internal/lifecycle/remove', async (c) => {
+    const { spaceSlug, formSlug } = await c.req.json();
+    try {
+        await LifecycleService.removeForm(String(spaceSlug), String(formSlug));
+        return c.json({ data: { ok: true } });
+    } catch (err: any) {
+        console.error('Remove form failed:', err);
+        return c.json({ error: err.message }, 500);
+    }
+});
+
 export default app;

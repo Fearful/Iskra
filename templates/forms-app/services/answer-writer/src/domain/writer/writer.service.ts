@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AnswerJob } from '@forms-app/shared';
 import { config } from '../../app.config.ts';
 
-interface PendingAnswer {
+interface AnswerRow {
     id: string;
     formId: string;
     data: Record<string, unknown>;
@@ -12,6 +12,21 @@ interface PendingAnswer {
     recaptchaScore: number;
 }
 
+interface PendingAnswer {
+    row: AnswerRow;
+    /** Settles the job that submitted it: completed once stored, failed (and retried) otherwise. */
+    resolve: () => void;
+    reject: (error: unknown) => void;
+}
+
+/**
+ * Buffers answers and inserts them in batches. A job completes only when its
+ * answer is stored: it used to complete when buffered, so a crash lost the
+ * buffer. A failed batch is retried row by row, so one bad answer (for a form
+ * deleted since it was queued, say) fails only its own job, which BullMQ
+ * retries and then keeps as failed; it used to be put back at the front of
+ * the buffer and fail every later batch with it, forever.
+ */
 export class WriterService {
     private static db: any;
     private static buffer: PendingAnswer[] = [];
@@ -24,10 +39,8 @@ export class WriterService {
     static startFlushTimer(): void {
         if (this.flushTimer) return;
 
-        this.flushTimer = setInterval(async () => {
-            if (this.buffer.length > 0) {
-                await this.flush();
-            }
+        this.flushTimer = setInterval(() => {
+            if (this.buffer.length > 0) void this.flush();
         }, config.batch.flushIntervalMs);
     }
 
@@ -38,20 +51,25 @@ export class WriterService {
         }
     }
 
-    static async bufferAnswer(job: AnswerJob): Promise<void> {
-        this.buffer.push({
-            id: uuidv4(),
-            formId: job.formId,
-            data: job.data,
-            submittedAt: new Date(),
-            ipHash: job.ipHash,
-            recaptchaScore: job.recaptchaScore,
-        });
+    /** Resolves once the answer is in the database. */
+    static bufferAnswer(job: AnswerJob): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.buffer.push({
+                row: {
+                    id: uuidv4(),
+                    formId: job.formId,
+                    data: job.data,
+                    submittedAt: new Date(),
+                    ipHash: job.ipHash,
+                    recaptchaScore: job.recaptchaScore,
+                },
+                resolve,
+                reject,
+            });
 
-        // Flush if buffer is full
-        if (this.buffer.length >= config.batch.maxSize) {
-            await this.flush();
-        }
+            // Flush if buffer is full
+            if (this.buffer.length >= config.batch.maxSize) void this.flush();
+        });
     }
 
     static async flush(): Promise<void> {
@@ -60,12 +78,19 @@ export class WriterService {
         const batch = this.buffer.splice(0, this.buffer.length);
 
         try {
-            await this.db.insert(answers).values(batch);
+            await this.db.insert(answers).values(batch.map((p) => p.row));
             console.log(`Flushed ${batch.length} answers to database`);
+            for (const pending of batch) pending.resolve();
         } catch (err) {
-            console.error(`Failed to flush ${batch.length} answers:`, err);
-            // Put failed items back at the front of the buffer
-            this.buffer.unshift(...batch);
+            console.error(`Failed to flush ${batch.length} answers, retrying one by one:`, err);
+            for (const pending of batch) {
+                try {
+                    await this.db.insert(answers).values(pending.row);
+                    pending.resolve();
+                } catch (rowErr) {
+                    pending.reject(rowErr);
+                }
+            }
         }
     }
 

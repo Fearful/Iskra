@@ -111,6 +111,9 @@ services:
       RECAPTCHA_SECRET: ${RECAPTCHA_SECRET:-your-secret-key}
       RECAPTCHA_MIN_SCORE: "0.5"
       CSRF_SECRET: ${CSRF_SECRET:-dev-csrf-secret}
+      IP_HASH_SECRET: ${IP_HASH_SECRET:-dev-ip-hash-secret}
+      # Behind nginx: the client IP is its X-Forwarded-For entry.
+      TRUST_PROXY: "1"
       STATIC_DIR: /app/static
     volumes:
       - static-forms:/app/static:ro
@@ -127,7 +130,7 @@ services:
     environment:
       DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
       REDIS_URL: redis://redis:6379
-      WORKER_CONCURRENCY: "5"
+      WORKER_CONCURRENCY: "50"
       BATCH_MAX_SIZE: "50"
       BATCH_FLUSH_INTERVAL_MS: "2000"
     depends_on:

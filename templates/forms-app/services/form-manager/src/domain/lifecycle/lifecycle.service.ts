@@ -1,5 +1,8 @@
+import { rmSync } from 'fs';
+import { join } from 'path';
 import { forms, spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
+import { config } from '../../app.config.ts';
 import { REDIS_KEYS, FormStatus } from '@forms-app/shared';
 import { PrerenderService } from '../prerender/prerender.service.ts';
 
@@ -93,5 +96,23 @@ export class LifecycleService {
         }
 
         console.log(`Form ${formId} closed`);
+    }
+
+    /**
+     * Unpublishes the form at these slugs: its Redis schema and meta and its
+     * static page. Called when a form is deleted; its keys used to stay, so
+     * forms-api kept accepting answers the answer-writer could not store.
+     */
+    static async removeForm(spaceSlug: string, formSlug: string): Promise<void> {
+        const slug = /^[a-z0-9][a-z0-9-]*$/i;
+        if (!slug.test(spaceSlug) || !slug.test(formSlug)) {
+            throw new Error('Invalid slug');
+        }
+        if (this.redis) {
+            await this.redis.del(REDIS_KEYS.formSchema(spaceSlug, formSlug), REDIS_KEYS.formMeta(spaceSlug, formSlug));
+            await this.redis.srem(REDIS_KEYS.formIndex, `${spaceSlug}:${formSlug}`);
+        }
+        rmSync(join(config.staticDir, spaceSlug, formSlug), { recursive: true, force: true });
+        console.log(`Form ${spaceSlug}/${formSlug} removed`);
     }
 }

@@ -32,6 +32,7 @@ app.register(worker);
 app.register(
     new WebPlugin({
         port: config.web.port,
+        trustProxy: config.web.trustProxy,
         router: honoApp,
         features: [
             new HealthCheckFeature({ path: '/health' }),

@@ -1,5 +1,17 @@
 import { describe, it, expect } from "bun:test";
+import { z } from "zod";
 import { transformJsonSchemaToZod } from "../src/transform";
+
+/** Evaluates the generated module and returns its formSchema. */
+function load(code: string) {
+    const body = code.replace("import { z } from 'zod';", "").replace("export const formSchema =", "return");
+    return new Function("z", body)(z) as z.ZodTypeAny;
+}
+
+const messages = (schema: z.ZodTypeAny, data: unknown) => {
+    const result = schema.safeParse(data);
+    return result.success ? [] : result.error.issues.map((i) => i.message);
+};
 
 describe("transformJsonSchemaToZod", () => {
     it("wraps fields in a formSchema object and exports the inferred type", () => {
@@ -21,7 +33,10 @@ describe("transformJsonSchemaToZod", () => {
             },
             required: ["name"],
         });
-        expect(code).toContain("name: z.string().max(5, 'Max 5 chars').min(1, 'Required!'),");
+        const schema = load(code.split("\n\nexport type")[0]);
+        expect(messages(schema, {})).toEqual(["Required!"]);
+        expect(messages(schema, { name: "" })).toEqual(["Required!"]);
+        expect(messages(schema, { name: "abcdef" })).toEqual(["Max 5 chars"]);
     });
 
     it("makes non-required fields optional", () => {
@@ -89,7 +104,48 @@ describe("transformJsonSchemaToZod", () => {
             properties: { color: { type: "string", enum: ["red", "blue"], errorMessage: { type: "pick one" } } },
             required: ["color"],
         });
-        expect(code).toContain("z.enum(['red', 'blue'], { message: 'pick one' })");
+        const schema = load(code.split("\n\nexport type")[0]);
+        expect(messages(schema, { color: "green" })).toEqual(["pick one"]);
+        expect(schema.safeParse({ color: "red" }).success).toBe(true);
+    });
+
+    it("gives a required select its required message without breaking the module", () => {
+        // `.min(1, …)` on an enum threw when the page's script loaded.
+        const schema = load(transformJsonSchemaToZod({
+            type: "object",
+            properties: { color: { type: "string", enum: ["red"], errorMessage: { type: "pick one" } } },
+            required: ["color"],
+            errorMessage: { required: { color: "Choose a color" } },
+        }, { typeExport: false }));
+        expect(messages(schema, {})).toEqual(["Choose a color"]);
+    });
+
+    it("uses the object-level required messages the server schema carries", () => {
+        const schema = load(transformJsonSchemaToZod({
+            type: "object",
+            properties: { age: { type: "number" }, mail: { type: "string", format: "email" } },
+            required: ["age", "mail"],
+            errorMessage: { required: { age: "Age?", mail: "Mail?" } },
+        }, { typeExport: false }));
+        expect(messages(schema, {})).toEqual(["Age?", "Mail?"]);
+    });
+
+    it("requires a checked checkbox and handles several options as an array", () => {
+        const schema = load(transformJsonSchemaToZod({
+            type: "object",
+            properties: {
+                terms: { type: "boolean", const: true },
+                tags: { type: "array", items: { type: "string", enum: ["a", "b"] }, minItems: 1 },
+            },
+            required: ["terms", "tags"],
+            errorMessage: { required: { terms: "Accept", tags: "Pick" } },
+            additionalProperties: false,
+        }, { typeExport: false }));
+        expect(messages(schema, { terms: false, tags: [] })).toEqual(["Accept", "Pick"]);
+        expect(schema.safeParse({ terms: true, tags: ["a", "b"] }).success).toBe(true);
+        expect(schema.safeParse({ terms: true, tags: ["c"] }).success).toBe(false);
+        // additionalProperties: false
+        expect(schema.safeParse({ terms: true, tags: ["a"], extra: 1 }).success).toBe(false);
     });
 
     it("renders boolean fields and an unknown fallback", () => {

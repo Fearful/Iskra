@@ -136,6 +136,8 @@ Copia `.env.example` a `.env`:
 | `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
 | `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
 | `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |
+| `IP_HASH_SECRET` | Clave del hash diario de IP de cada respuesta (sin ella el hash se puede revertir probando todas las IPv4) | `CSRF_SECRET` |
+| `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
 | `FORM_MANAGER_URL` | URL interna del form-manager | `http://form-manager:4001` |
 
 ## Estructura del proyecto
@@ -403,7 +405,7 @@ No se guarda la IP cruda. Se hashea con SHA256 usando un salt que rota diariamen
 
 ### Secretos
 
-Todos los secretos (AUTH_SECRET, CSRF_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
+Todos los secretos (AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
 
 ## Escalabilidad
 
@@ -505,7 +507,7 @@ A partir de aca podes:
 Para produccion necesitas:
 
 1. Dos instancias de nginx: una en la DMZ (solo `/formularios/`) y otra en la red interna (`/admin/`)
-2. Secretos reales para AUTH_SECRET, CSRF_SECRET, RECAPTCHA_SECRET
+2. Secretos reales para AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET
 3. PostgreSQL y Redis en alta disponibilidad
 4. Al menos 2 replicas de forms-api y answer-writer
 

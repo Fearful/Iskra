@@ -9,7 +9,9 @@ export const AppConfigSchema = z.object({
         url: z.string().default('redis://localhost:6379'),
     }),
     worker: z.object({
-        concurrency: z.number().default(5),
+        // Jobs wait for their answer to be stored, so this is also the
+        // largest batch: keep it at least batch.maxSize.
+        concurrency: z.number().default(50),
     }),
     batch: z.object({
         maxSize: z.number().default(50),
@@ -28,7 +30,7 @@ export const config: AppConfig = AppConfigSchema.parse({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
     },
     worker: {
-        concurrency: Number(process.env.WORKER_CONCURRENCY) || 5,
+        concurrency: Number(process.env.WORKER_CONCURRENCY) || 50,
     },
     batch: {
         maxSize: Number(process.env.BATCH_MAX_SIZE) || 50,

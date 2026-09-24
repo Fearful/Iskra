@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { getClientIp } from '@iskra-bun/web-kit';
+import { config } from '../../app.config.ts';
 import { FormStatus } from '@forms-app/shared';
 import { RecaptchaService } from '../../domain/recaptcha/recaptcha.service.ts';
 import { SubmissionService } from '../../domain/submission/submission.service.ts';
@@ -58,10 +60,10 @@ app.post('/api/submit/:spaceSlug/:formSlug', async (c) => {
     }
 
     // 6. Hash IP
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-        || c.req.header('x-real-ip')
-        || 'unknown';
-    const ipHash = SubmissionService.hashIp(ip);
+    // The address nginx saw, not the first X-Forwarded-For entry (which the
+    // client writes).
+    const ip = getClientIp(c, config.web.trustProxy) ?? 'unknown';
+    const ipHash = SubmissionService.hashIp(ip, config.ipHashSecret);
 
     // 7. Enqueue answer
     try {

@@ -3,7 +3,7 @@
  * Preserves errorMessage properties as Zod .message() parameters.
  *
  * Supports:
- * - string, number, integer, boolean types
+ * - string, number, integer, boolean and array (of enum strings) types
  * - format: email, date, uri
  * - minLength, maxLength, minimum, maximum, pattern
  * - enum
@@ -20,6 +20,9 @@ interface JsonSchemaProperty {
     maximum?: number;
     pattern?: string;
     enum?: (string | number)[];
+    const?: unknown;
+    items?: { type?: string; enum?: (string | number)[] };
+    minItems?: number;
     errorMessage?: Record<string, string>;
 }
 
@@ -27,7 +30,9 @@ interface JsonSchema {
     type: 'object';
     properties: Record<string, JsonSchemaProperty>;
     required?: string[];
-    errorMessage?: Record<string, string>;
+    additionalProperties?: boolean;
+    /** ajv-errors messages for the object; `required` maps field names to messages. */
+    errorMessage?: { required?: Record<string, string> } & Record<string, unknown>;
 }
 
 /** Escapes text for a single-quoted JS string literal in the generated module. */
@@ -50,23 +55,46 @@ function interpolateMessage(msg: string, values: Record<string, unknown>): strin
     return msg.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? key));
 }
 
+/**
+ * Zod params giving a missing value the required message and a value of the
+ * wrong type (or not among the options) the type message; the checks' own
+ * issues (min, max, format…) keep theirs.
+ */
+function createParams(typeMsg: string | undefined, requiredMsg: string | undefined): string {
+    if (!typeMsg && !requiredMsg) return '';
+    const req = requiredMsg ? `'${escapeString(requiredMsg)}'` : 'ctx.defaultError';
+    const type = typeMsg ? `'${escapeString(typeMsg)}'` : 'ctx.defaultError';
+    return (
+        `{ errorMap: (issue, ctx) => ({ message: ctx.data === undefined ? ${req}` +
+        ` : issue.code === 'invalid_type' || issue.code === 'invalid_enum_value' ? ${type} : ctx.defaultError }) }`
+    );
+}
+
+function enumOf(values: (string | number)[], params: string): string {
+    const list = values.map((v) => `'${escapeString(String(v))}'`).join(', ');
+    return `z.enum([${list}]${params ? `, ${params}` : ''})`;
+}
+
 function transformProperty(
     name: string,
     prop: JsonSchemaProperty,
     isRequired: boolean,
+    requiredMessage?: string,
 ): string {
     const msgs = prop.errorMessage ?? {};
+    const reqMsg = isRequired ? (requiredMessage ?? msgs.required) : undefined;
+    const params = createParams(msgs.type, reqMsg);
     let chain: string;
 
     if (prop.enum && prop.enum.length > 0) {
-        const enumValues = prop.enum.map((v) => `'${escapeString(String(v))}'`).join(', ');
-        const enumMsg = msgs.type ? `, { message: '${escapeString(msgs.type)}' }` : '';
-        chain = `z.enum([${enumValues}]${enumMsg})`;
+        // A required select sends nothing when left empty, so the params'
+        // required message covers it (a .min() here threw: enums have none,
+        // and the whole form's script failed to load).
+        chain = enumOf(prop.enum, params);
     } else {
         switch (prop.type) {
             case 'string': {
-                const typeMsg = msgs.type ? `{ message: '${escapeString(msgs.type)}' }` : '';
-                chain = `z.string(${typeMsg})`;
+                chain = `z.string(${params})`;
 
                 if (prop.format === 'email') {
                     const fmtMsg = msgs.format
@@ -107,8 +135,7 @@ function transformProperty(
 
             case 'number':
             case 'integer': {
-                const typeMsg = msgs.type ? `{ message: '${escapeString(msgs.type)}' }` : '';
-                chain = prop.type === 'integer' ? `z.number(${typeMsg}).int()` : `z.number(${typeMsg})`;
+                chain = prop.type === 'integer' ? `z.number(${params}).int()` : `z.number(${params})`;
 
                 if (prop.minimum !== undefined) {
                     const msg = msgs.minimum
@@ -127,7 +154,20 @@ function transformProperty(
             }
 
             case 'boolean': {
-                chain = 'z.boolean()';
+                chain = `z.boolean(${params})`;
+                if (prop.const === true) {
+                    // A required checkbox must be checked.
+                    chain += `.refine((v) => v === true, '${escapeString(reqMsg ?? msgs.const ?? 'Required')}')`;
+                }
+                break;
+            }
+
+            case 'array': {
+                const item = prop.items?.enum?.length ? enumOf(prop.items.enum, '') : 'z.string()';
+                chain = `z.array(${item}${params ? `, ${params}` : ''})`;
+                if (prop.minItems) {
+                    chain += `.min(${prop.minItems}, '${escapeString(msgs.minItems ?? reqMsg ?? 'Required')}')`;
+                }
                 break;
             }
 
@@ -138,8 +178,8 @@ function transformProperty(
     }
 
     if (isRequired) {
-        const reqMsg = msgs.required;
-        if (reqMsg && (prop.type === 'string' || prop.type === undefined)) {
+        // An empty text answer: strings only, never an enum.
+        if (reqMsg && !prop.enum?.length && (prop.type === 'string' || prop.type === undefined)) {
             chain += `.min(1, '${escapeString(reqMsg)}')`;
         }
     } else {
@@ -162,8 +202,10 @@ export function transformJsonSchemaToZod(schema: JsonSchema, { typeExport = true
     const required = new Set(schema.required ?? []);
     const properties = schema.properties ?? {};
 
+    const requiredMessages = schema.errorMessage?.required ?? {};
+
     const fields = Object.entries(properties).map(([name, prop]) => {
-        const zodChain = transformProperty(name, prop, required.has(name));
+        const zodChain = transformProperty(name, prop, required.has(name), requiredMessages[name]);
         return `    ${propertyKey(name)}: ${zodChain},`;
     });
 
@@ -172,7 +214,7 @@ export function transformJsonSchemaToZod(schema: JsonSchema, { typeExport = true
         '',
         'export const formSchema = z.object({',
         ...fields,
-        '});',
+        schema.additionalProperties === false ? '}).strict();' : '});',
     ];
     if (typeExport) lines.push('', 'export type FormData = z.infer<typeof formSchema>;');
     return lines.join('\n');

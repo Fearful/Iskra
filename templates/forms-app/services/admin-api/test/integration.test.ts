@@ -140,6 +140,50 @@ const pgUp = await pgUsable(PG_URL);
         expect((await FormService.findById(form.id))?.status).toBe("open");
     });
 
+    it("rolls back create and update when a field cannot be stored", async () => {
+        const space = await SpaceService.create({ name: "Tx", slug: "tx" });
+        // An invalid field type fails in the database, after the form row.
+        const bad = [{ fieldType: "bogus", name: "x", label: "X", position: 0 }];
+        await expect(FormService.create(space.id, { title: "F", slug: "tx-f", fields: bad } as any)).rejects.toThrow();
+        expect(await FormService.findBySpaceId(space.id)).toEqual([]);
+
+        const form = await FormService.create(space.id, {
+            title: "F", slug: "tx-g",
+            fields: [{ fieldType: "text", name: "kept", label: "Kept", position: 0 }],
+        } as any);
+        await expect(FormService.update(form.id, { fields: bad } as any)).rejects.toThrow();
+        // The fields used to be deleted before the failing insert.
+        expect((await FormService.findById(form.id))?.fields.map((f: any) => f.name)).toEqual(["kept"]);
+    });
+
+    it("opens a scheduled form that has no start date", async () => {
+        const { SchedulerService } = await import("../../cron/src/domain/scheduler.service.ts");
+        const space = await SpaceService.create({ name: "Sched", slug: "sched" });
+        const form = await FormService.create(space.id, {
+            title: "F", slug: "now",
+            fields: [{ fieldType: "text", name: "a", label: "A", position: 0 }],
+        } as any);
+        await FormService.setStatus(form.id, "scheduled");
+
+        const opened: string[] = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = (async (_url: unknown, init: any) => {
+            opened.push(JSON.parse(init.body).formId);
+            return new Response("{}", { status: 200 });
+        }) as typeof fetch;
+        const log = console.log;
+        console.log = () => {};
+        try {
+            SchedulerService.setDb(db);
+            await SchedulerService.checkAndOpenForms();
+        } finally {
+            globalThis.fetch = realFetch;
+            console.log = log;
+        }
+        // starts_at <= now is never true for NULL: it stayed scheduled forever.
+        expect(opened).toContain(form.id);
+    });
+
     it("cascades form and field deletion when a space is deleted", async () => {
         const space = await SpaceService.create({ name: "Casc", slug: "casc" });
         const form = await FormService.create(space.id, {

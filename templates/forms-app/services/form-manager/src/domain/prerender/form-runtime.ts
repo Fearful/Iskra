@@ -75,6 +75,16 @@ function getFormData() {
     form.querySelectorAll('input[type="checkbox"]:not([value])').forEach(el => {
         data[el.name] = el.checked;
     });
+    // A group of checkboxes is always a list, even with one or none checked.
+    form.querySelectorAll('input[type="checkbox"][value]').forEach(el => {
+        const value = data[el.name];
+        data[el.name] = value === undefined ? [] : Array.isArray(value) ? value : [value];
+    });
+    // An empty input means no answer: sent as "", an optional number, email,
+    // date or select failed validation.
+    for (const key of Object.keys(data)) {
+        if (data[key] === '') delete data[key];
+    }
     return data;
 }
 

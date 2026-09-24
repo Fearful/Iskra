@@ -18,6 +18,8 @@ app.register(new DbDriver());
 app.register(
     new WebPlugin({
         port: config.web.port,
+        // Behind nginx: the auth rate limit is per client, not per proxy.
+        trustProxy: Number(process.env.TRUST_PROXY ?? 1),
         router: honoApp,
         features: [
             new CorsFeature({

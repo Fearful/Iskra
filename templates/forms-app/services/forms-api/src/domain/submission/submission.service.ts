@@ -3,7 +3,7 @@ import ajvErrors from 'ajv-errors';
 import addFormats from 'ajv-formats';
 import { REDIS_KEYS, FormStatus, QUEUE_NAMES, JOB_NAMES } from '@forms-app/shared';
 import type { FormMeta } from '@forms-app/shared';
-import { createHash } from 'crypto';
+import { createHmac } from 'crypto';
 
 // addFormats registers the standard string formats (email, date, uri, ...).
 // Without it, AJV's strict mode throws on `format` keywords, so any form with an
@@ -13,7 +13,7 @@ addFormats(ajv);
 ajvErrors(ajv);
 
 // In-memory cache for form schemas (TTL-based)
-const schemaCache = new Map<string, { schema: any; meta: FormMeta; cachedAt: number }>();
+const schemaCache = new Map<string, { schema: any; schemaJson: string; meta: FormMeta; cachedAt: number }>();
 const CACHE_TTL_MS = 30_000; // 30 seconds
 
 export class SubmissionService {
@@ -48,10 +48,14 @@ export class SubmissionService {
 
         if (!schemaJson || !metaJson) return null;
 
-        const schema = JSON.parse(schemaJson);
+        // The same schema object while its JSON is unchanged: AJV caches the
+        // compiled validator per schema object, so a new object on every
+        // refresh compiled (and kept) another validator every 30 s.
+        const schema = cached?.schemaJson === schemaJson ? cached.schema : JSON.parse(schemaJson);
+        if (cached && cached.schema !== schema) ajv.removeSchema(cached.schema);
         const meta: FormMeta = JSON.parse(metaJson);
 
-        schemaCache.set(cacheKey, { schema, meta, cachedAt: Date.now() });
+        schemaCache.set(cacheKey, { schema, schemaJson, meta, cachedAt: Date.now() });
 
         return { schema, meta };
     }
@@ -69,8 +73,14 @@ export class SubmissionService {
 
         const errors: Record<string, string> = {};
         for (const err of validate.errors ?? []) {
-            const field = err.instancePath?.replace('/', '') || err.params?.missingProperty;
-            if (field) {
+            // "/tags/0" → "tags"; a missing field is reported on the object,
+            // directly or (with a custom message) through ajv-errors.
+            const field =
+                err.instancePath?.split('/')[1] ||
+                err.params?.missingProperty ||
+                err.params?.errors?.[0]?.params?.missingProperty ||
+                (err.keyword === 'additionalProperties' ? err.params?.additionalProperty : undefined);
+            if (field && !errors[field]) {
                 errors[field] = err.message ?? 'Invalid value';
             }
         }
@@ -78,9 +88,13 @@ export class SubmissionService {
         return { valid: false, errors };
     }
 
-    static hashIp(ip: string): string {
-        const dailySalt = new Date().toISOString().slice(0, 10);
-        return createHash('sha256').update(`${ip}:${dailySalt}`).digest('hex');
+    /**
+     * Daily pseudonymous IP id. Keyed with a secret: a plain hash of the IP
+     * and the date could be reversed by hashing every IPv4 address.
+     */
+    static hashIp(ip: string, secret: string): string {
+        const day = new Date().toISOString().slice(0, 10);
+        return createHmac('sha256', secret).update(`${ip}:${day}`).digest('hex');
     }
 
     static async enqueueAnswer(
