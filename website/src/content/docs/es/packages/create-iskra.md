@@ -28,7 +28,7 @@ npm create iskra@latest my-app
 ## Qué hace
 
 1. Copia la plantilla elegida en `my-app/`, excluyendo `node_modules`, `dist` y `.git`.
-2. Reescribe `package.json`: establece `name` con el nombre base del directorio destino y reemplaza cada dependencia `@iskra-bun/* : workspace:*` por un rango semver real (`^0.1.0`).
+2. Reescribe `package.json`: establece `name` con el nombre base del directorio destino y reemplaza cada dependencia `@iskra-bun/* : workspace:*` por un rango semver sobre la versión actual de cada paquete (p. ej. `^0.2.0` para `web-kit`, `^0.1.1` para `core`).
 3. Imprime los pasos siguientes (`cd`, `bun install`, `bun start`).
 
 Si el directorio destino ya existe y no está vacío, el comando se cancela sin modificar nada.

@@ -7,8 +7,11 @@ import {
     listTemplates,
     rewritePackageJson,
     scaffold,
-    WORKSPACE_REPLACEMENT_RANGE,
+    workspaceRange,
 } from '../src/scaffold.ts';
+import { ISKRA_VERSIONS } from '../src/versions.ts';
+
+const range = (name: string) => `^${ISKRA_VERSIONS[name]}`;
 
 /**
  * Builds a throwaway templates root with a single `demo` template that mimics
@@ -33,7 +36,7 @@ function makeTemplatesRoot(): string {
                     zod: '^3.24.1',
                 },
                 devDependencies: {
-                    '@iskra-bun/test-kit': 'workspace:^',
+                    '@iskra-bun/testing-kit': 'workspace:^',
                 },
             },
             null,
@@ -51,19 +54,33 @@ describe('rewritePackageJson', () => {
         const input = {
             name: 'demo',
             dependencies: { '@iskra-bun/core': 'workspace:*', zod: '^3.0.0' },
-            devDependencies: { '@iskra-bun/test-kit': 'workspace:^' },
+            devDependencies: { '@iskra-bun/testing-kit': 'workspace:^' },
         };
-        const { pkg, rewrittenDeps } = rewritePackageJson(input, 'my-app');
+        const versions = { '@iskra-bun/core': '0.1.1', '@iskra-bun/testing-kit': '0.3.0' };
+        const { pkg, rewrittenDeps } = rewritePackageJson(input, 'my-app', versions);
 
         expect(pkg.name).toBe('my-app');
-        expect((pkg.dependencies as Record<string, string>)['@iskra-bun/core']).toBe(
-            WORKSPACE_REPLACEMENT_RANGE,
-        );
+        expect((pkg.dependencies as Record<string, string>)['@iskra-bun/core']).toBe('^0.1.1');
         expect((pkg.dependencies as Record<string, string>)['zod']).toBe('^3.0.0');
-        expect((pkg.devDependencies as Record<string, string>)['@iskra-bun/test-kit']).toBe(
-            WORKSPACE_REPLACEMENT_RANGE,
-        );
+        expect((pkg.devDependencies as Record<string, string>)['@iskra-bun/testing-kit']).toBe('^0.3.0');
         expect(rewrittenDeps).toBe(2);
+    });
+
+    test('gives each package a range on its own version, not one shared range', () => {
+        // Regression: a single hardcoded `^0.1.0` excluded web-kit 0.2.x on 0.x semver.
+        const input = {
+            name: 'demo',
+            dependencies: { '@iskra-bun/core': 'workspace:*', '@iskra-bun/web-kit': 'workspace:*' },
+        };
+        const { pkg } = rewritePackageJson(input, 'my-app', {
+            '@iskra-bun/core': '0.1.1',
+            '@iskra-bun/web-kit': '0.2.0',
+        });
+        expect(pkg.dependencies).toEqual({ '@iskra-bun/core': '^0.1.1', '@iskra-bun/web-kit': '^0.2.0' });
+    });
+
+    test('refuses to guess a range for an unknown @iskra-bun package', () => {
+        expect(() => workspaceRange('@iskra-bun/nope', {})).toThrow(/@iskra-bun\/nope/);
     });
 
     test('does not mutate the input object (immutability)', () => {
@@ -130,7 +147,7 @@ describe('scaffold', () => {
             templatesRoot,
         });
 
-        // 2 in dependencies (core, web-kit) + 1 in devDependencies (test-kit)
+        // 2 in dependencies (core, web-kit) + 1 in devDependencies (testing-kit)
         expect(result.rewrittenDeps).toBe(3);
 
         // src copied
@@ -139,10 +156,10 @@ describe('scaffold', () => {
         // package.json rewritten
         const pkg = JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf8'));
         expect(pkg.name).toBe('my-app');
-        expect(pkg.dependencies['@iskra-bun/core']).toBe(WORKSPACE_REPLACEMENT_RANGE);
-        expect(pkg.dependencies['@iskra-bun/web-kit']).toBe(WORKSPACE_REPLACEMENT_RANGE);
+        expect(pkg.dependencies['@iskra-bun/core']).toBe(range('@iskra-bun/core'));
+        expect(pkg.dependencies['@iskra-bun/web-kit']).toBe(range('@iskra-bun/web-kit'));
         expect(pkg.dependencies['zod']).toBe('^3.24.1');
-        expect(pkg.devDependencies['@iskra-bun/test-kit']).toBe(WORKSPACE_REPLACEMENT_RANGE);
+        expect(pkg.devDependencies['@iskra-bun/testing-kit']).toBe(range('@iskra-bun/testing-kit'));
     });
 
     test('excludes node_modules and dist from the copy', () => {

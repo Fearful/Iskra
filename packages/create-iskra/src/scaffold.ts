@@ -1,13 +1,22 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { ISKRA_VERSIONS } from './versions.ts';
 
 /**
- * The semver range that bundled `@iskra-bun/*` workspace dependencies are
- * rewritten to when a template is scaffolded into a standalone project. The
+ * Installable range for a bundled `@iskra-bun/*` workspace dependency. The
  * template `package.json` files use `workspace:*` (valid only inside the
- * monorepo); a generated project needs a real, installable range.
+ * monorepo); a generated project needs a real range. Each package gets a caret
+ * range on its own current version (`src/versions.ts`, kept in sync by
+ * `scripts/sync.ts`): on 0.x a single shared range such as `^0.1.0` would
+ * exclude the 0.2 line of the kits that are already there.
  */
-export const WORKSPACE_REPLACEMENT_RANGE = '^0.1.0';
+export function workspaceRange(name: string, versions: Readonly<Record<string, string>> = ISKRA_VERSIONS): string {
+    const version = versions[name];
+    if (!version) {
+        throw new Error(`No se conoce la version publicada de ${name}; no se puede generar un rango instalable.`);
+    }
+    return `^${version}`;
+}
 
 /** Directories that must never be copied from a template into a new project. */
 export const EXCLUDED_ENTRIES: readonly string[] = ['node_modules', 'dist', '.git'];
@@ -55,13 +64,13 @@ export function isEmptyDir(dir: string): boolean {
 /**
  * Rewrites a parsed `package.json` object for a standalone project: sets the
  * package name and replaces every `@iskra-bun/* : workspace:*` dependency with
- * a real semver range. Returns a NEW object (no mutation of the input) plus the
- * count of rewritten dependencies.
+ * a real semver range (see `workspaceRange`). Returns a NEW object (no mutation
+ * of the input) plus the count of rewritten dependencies.
  */
 export function rewritePackageJson(
     pkg: Record<string, unknown>,
     projectName: string,
-    range = WORKSPACE_REPLACEMENT_RANGE,
+    versions: Readonly<Record<string, string>> = ISKRA_VERSIONS,
 ): { readonly pkg: Record<string, unknown>; readonly rewrittenDeps: number } {
     let rewrittenDeps = 0;
 
@@ -71,7 +80,7 @@ export function rewritePackageJson(
         const next: Record<string, string> = {};
         for (const [name, version] of Object.entries(source)) {
             if (name.startsWith('@iskra-bun/') && version.startsWith('workspace:')) {
-                next[name] = range;
+                next[name] = workspaceRange(name, versions);
                 rewrittenDeps += 1;
             } else {
                 next[name] = version;
