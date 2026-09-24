@@ -69,6 +69,7 @@ src/
 El `Dockerfile` expone ambos puertos (HTTP y WebSocket). Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t realtime-feed .
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/realtime-feed/Dockerfile -t realtime-feed .
 docker run -p 3000:3000 -p 3001:3001 realtime-feed
 ```

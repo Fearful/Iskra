@@ -28,6 +28,13 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 WORKDIR /app
 COPY --from=builder --chown=1001:0 /build/app /app/app
 
+# The SQLite file lives in a directory the runtime user can write: /app itself
+# is root's, so the default relative path (cms.db) could not be created and the
+# app failed to start. Group 0 gets the owner's rights for an arbitrary UID.
+# Mount a volume here to keep the data: -v cms-starter-data:/app/data
+RUN mkdir -p /app/data && chown 1001:0 /app/data && chmod 2775 /app/data
+ENV DATABASE_URL=/app/data/cms.db
+
 ENV NODE_ENV=production
 
 # Non-root, arbitrary UID in group 0 (OpenShift convention).

@@ -29,7 +29,7 @@ El servidor levanta en `http://localhost:3000`. Por defecto usa el archivo SQLit
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
-| `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `cms.db` |
+| `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `cms.db` (en la imagen Docker, `/app/data/cms.db`) |
 
 ## Funcionalidades
 
@@ -112,6 +112,8 @@ Incluye un `Dockerfile` con build multi-stage. Mas detalles en la
 [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t cms-starter .
-docker run -p 3000:3000 cms-starter
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/cms-starter/Dockerfile -t cms-starter .
+# La base SQLite queda en /app/data: con un volumen sobrevive a los reinicios
+docker run -p 3000:3000 -v cms-starter-data:/app/data cms-starter
 ```

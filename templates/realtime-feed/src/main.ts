@@ -32,4 +32,9 @@ async function main() {
     console.log('Realtime Feed App started');
 }
 
-main().catch(console.error);
+// Exit 1 on a failed start (e.g. the database is unreachable): with only
+// console.error the process exited 0, which restart policies read as success.
+main().catch((err) => {
+    console.error('Could not start Realtime Feed:', err);
+    process.exit(1);
+});

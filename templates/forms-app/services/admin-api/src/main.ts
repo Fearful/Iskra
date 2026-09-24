@@ -44,9 +44,9 @@ app.register(
 
 async function setupDb() {
     const dbDriver = app.context.get('db');
+    // Fail the start instead of serving every request without a database.
     if (!dbDriver?.db) {
-        console.error('DB Driver not initialized');
-        return;
+        throw new Error('DB Driver not initialized');
     }
 
     SpaceService.setDb(dbDriver.db);
@@ -61,4 +61,9 @@ async function main() {
     console.log(`Admin API running on port ${config.web.port}`);
 }
 
-main().catch(console.error);
+// Exit 1 on a failed start (e.g. the database is unreachable): with only
+// console.error the process exited 0, which restart policies read as success.
+main().catch((err) => {
+    console.error('Could not start Admin API:', err);
+    process.exit(1);
+});

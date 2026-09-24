@@ -133,6 +133,7 @@ Copia `.env.example` a `.env`:
 | `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
 | `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens), 32+ caracteres | `dev-only-auth-secret-change-me-32chars` |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
+| `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
 | `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
 | `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
 | `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |

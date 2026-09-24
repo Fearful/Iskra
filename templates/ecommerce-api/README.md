@@ -28,7 +28,7 @@ Copia `.env.example` a `.env`:
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
-| `DATABASE_URL` | Ruta o URL de la base de datos | `ecommerce.db` |
+| `DATABASE_URL` | Ruta o URL de la base de datos | `ecommerce.db` (en la imagen Docker, `/app/data/ecommerce.db`) |
 
 ## Endpoints
 
@@ -76,6 +76,8 @@ Para manejar migraciones de schema, revisa la [guia de migraciones](https://iskr
 Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t ecommerce-api .
-docker run -p 3000:3000 ecommerce-api
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/ecommerce-api/Dockerfile -t ecommerce-api .
+# La base SQLite queda en /app/data: con un volumen sobrevive a los reinicios
+docker run -p 3000:3000 -v ecommerce-api-data:/app/data ecommerce-api
 ```
