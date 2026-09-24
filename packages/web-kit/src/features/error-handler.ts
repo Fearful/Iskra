@@ -3,7 +3,7 @@ import type { Kernel } from "../kernel";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { IskraError } from '@iskra-bun/core';
-import { HttpError } from '../errors';
+import { HttpError, ValidationError } from '../errors';
 
 export class ErrorHandlerFeature implements Feature {
     name = "error-handler";
@@ -50,6 +50,10 @@ export class ErrorHandlerFeature implements Feature {
                 code: err.code,
             };
 
+            if (err instanceof ValidationError && err.details !== undefined) {
+                response.details = err.details;
+            }
+
             if (Object.keys(err.context).length > 0) {
                 response.context = err.context;
             }
@@ -93,6 +97,9 @@ export class ErrorHandlerFeature implements Feature {
             if (this.config.customHandlers?.[status]) {
                 return this.config.customHandlers[status](err, c);
             }
+            // A custom response (e.g. basicAuth's 401 with WWW-Authenticate,
+            // which makes the browser prompt) is sent as is.
+            if (err.res) return err.getResponse();
 
             const response: any = {
                 error: err.message || this.getStatusText(status),

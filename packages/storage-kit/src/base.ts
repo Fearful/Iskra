@@ -74,6 +74,13 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     }
 
     async move(from: string, to: string): Promise<void> {
+        // Onto itself: copying then deleting the source deleted the file.
+        if (this.sanitizePath(from) === this.sanitizePath(to)) {
+            if (!(await this.exists(from))) {
+                throw new Error(`Source file not found: ${from}`);
+            }
+            return;
+        }
         await this.copy(from, to);
         await this.delete(from);
     }

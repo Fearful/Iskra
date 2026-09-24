@@ -8,7 +8,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "test-secret-key",
+            secret: "test-secret-key-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -31,7 +31,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "test-secret",
+            secret: "test-secret-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -58,7 +58,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "restore-test-secret",
+            secret: "restore-test-secret-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -96,7 +96,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "tamper-test",
+            secret: "tamper-test-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -121,7 +121,7 @@ describe("Session Feature", () => {
         kernel.registerFeature(new CacheFeature({ adapter: "memory" }));
         kernel.registerFeature(new SessionFeature({
             store: "cache",
-            secret: "cache-session-test",
+            secret: "cache-session-test-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -141,7 +141,7 @@ describe("Session Feature", () => {
     it("persists, restores and destroys a session via the cache store", async () => {
         const kernel = new Kernel();
         kernel.registerFeature(new CacheFeature({ adapter: "memory" }));
-        kernel.registerFeature(new SessionFeature({ store: "cache", secret: "cache-restore" }));
+        kernel.registerFeature(new SessionFeature({ store: "cache", secret: "cache-restore-0123456789abcdef0123456789abcdef" }));
         await kernel.initialize();
 
         const app = kernel.getApp();
@@ -173,7 +173,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "custom-cookie",
+            secret: "custom-cookie-0123456789abcdef0123456789abcdef",
             cookieName: "my_session",
         }));
         await kernel.initialize();
@@ -196,7 +196,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "destroy-test",
+            secret: "destroy-test-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -217,7 +217,7 @@ describe("Session Feature", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new SessionFeature({
             store: "memory",
-            secret: "destroy-real",
+            secret: "destroy-real-0123456789abcdef0123456789abcdef",
         }));
         await kernel.initialize();
 
@@ -245,5 +245,121 @@ describe("Session Feature", () => {
         expect(after.session).toEqual({});
 
         await kernel.shutdown();
+    });
+
+    describe("hardening", () => {
+        const SECRET = "hardening-secret-0123456789abcdef0123456789";
+        const cookieOf = (res: Response) => res.headers.get("Set-Cookie")!.split(";")[0];
+
+        async function app(kernel = new Kernel(), store: "memory" | "cache" = "memory") {
+            if (store === "cache") kernel.registerFeature(new CacheFeature({ adapter: "memory" }));
+            kernel.registerFeature(new SessionFeature({ store, secret: SECRET }));
+            await kernel.initialize();
+            const a = kernel.getApp();
+            a.get("/login", async (c) => {
+                if (c.req.query("regenerate")) await c.get("regenerateSession")();
+                c.get("session").userId = "u1";
+                return c.json({ id: c.get("sessionId") });
+            });
+            a.get("/logout", (c) => {
+                delete c.get("session").userId;
+                return c.json({ ok: true });
+            });
+            a.get("/me", (c) => c.json({ session: c.get("session") }));
+            return { kernel, a };
+        }
+
+        it("rejects a secret shorter than 32 characters", () => {
+            expect(() => new SessionFeature({ store: "memory", secret: "short" })).toThrow(/at least 32 characters/);
+        });
+
+        for (const store of ["memory", "cache"] as const) {
+            it(`logs out when the handler empties the session (${store} store)`, async () => {
+                // Regression: an emptied session was simply not saved, so the old
+                // data loaded again on the next request and logout did nothing.
+                const { kernel, a } = await app(new Kernel(), store);
+                const cookie = cookieOf(await a.request("/login"));
+
+                const out = await a.request("/logout", { headers: { Cookie: cookie } });
+                expect(out.headers.get("Set-Cookie")).toContain("Max-Age=0");
+
+                const me = (await (await a.request("/me", { headers: { Cookie: cookie } })).json()) as any;
+                expect(me.session).toEqual({});
+                await kernel.shutdown();
+            });
+        }
+
+        it("regenerateSession issues a new ID and invalidates the old one", async () => {
+            const { kernel, a } = await app();
+            const before = cookieOf(await a.request("/login"));
+
+            const res = await a.request("/login?regenerate=1", { headers: { Cookie: before } });
+            const after = cookieOf(res);
+            expect(after).not.toBe(before);
+
+            const oldMe = (await (await a.request("/me", { headers: { Cookie: before } })).json()) as any;
+            expect(oldMe.session).toEqual({});
+            const newMe = (await (await a.request("/me", { headers: { Cookie: after } })).json()) as any;
+            expect(newMe.session).toEqual({ userId: "u1" });
+            await kernel.shutdown();
+        });
+
+        for (const store of ["memory", "cache"] as const) {
+            it(`a request in flight does not revive a session destroyed meanwhile (${store} store)`, async () => {
+                // Regression: the slow request re-saved the session after the
+                // other request's logout / regenerateSession, which undid the
+                // logout; with the memory store (one shared object) it even
+                // saved the login's userId under the old, attacker-known ID.
+                const { kernel, a } = await app(new Kernel(), store);
+                let release!: () => void;
+                let entered!: () => void;
+                const inHandler = new Promise<void>((r) => (entered = r));
+                a.get("/slow", async (c) => {
+                    c.get("session").seen = true;
+                    entered();
+                    await new Promise<void>((r) => (release = r));
+                    return c.json({ ok: true });
+                });
+                a.get("/visit", (c) => {
+                    c.get("session").cart = ["book"];
+                    return c.json({ ok: true });
+                });
+
+                // Session fixation: the victim's browser carries the attacker's ID.
+                const fixed = cookieOf(await a.request("/visit"));
+                const slow = a.request("/slow", { headers: { Cookie: fixed } });
+                await inHandler;
+                const login = await a.request("/login?regenerate=1", { headers: { Cookie: fixed } });
+                release();
+                await slow;
+
+                const oldMe = (await (await a.request("/me", { headers: { Cookie: fixed } })).json()) as { session: Record<string, unknown> };
+                expect(oldMe.session.userId).toBeUndefined();
+                const newMe = (await (await a.request("/me", { headers: { Cookie: cookieOf(login) } })).json()) as { session: Record<string, unknown> };
+                expect(newMe.session.userId).toBe("u1");
+
+                // Logout in one tab while another request is in flight.
+                const session = cookieOf(await a.request("/login"));
+                const inHandler2 = new Promise<void>((r) => (entered = r));
+                const slow2 = a.request("/slow", { headers: { Cookie: session } });
+                await inHandler2;
+                await a.request("/logout", { headers: { Cookie: session } });
+                release();
+                await slow2;
+                const me = (await (await a.request("/me", { headers: { Cookie: session } })).json()) as { session: Record<string, unknown> };
+                expect(me.session).toEqual({});
+                await kernel.shutdown();
+            });
+        }
+
+        it("marks the cookie Secure in production unless overridden", async () => {
+            const prod = await app(new Kernel({ environment: "production" }));
+            expect((await prod.a.request("/login")).headers.get("Set-Cookie")).toContain("Secure");
+            await prod.kernel.shutdown();
+
+            const dev = await app(new Kernel({ environment: "development" }));
+            expect((await dev.a.request("/login")).headers.get("Set-Cookie")).not.toContain("Secure");
+            await dev.kernel.shutdown();
+        });
     });
 });

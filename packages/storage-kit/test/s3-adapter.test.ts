@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { S3StorageAdapter } from "../src/adapters/s3";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 
 function makeAdapter() {
     return new S3StorageAdapter({

@@ -1,3 +1,4 @@
+import type { TrustProxy } from "./client-ip";
 import type { Kernel } from "./kernel";
 
 export type { Kernel };
@@ -9,9 +10,22 @@ export interface Sink {
 
 export interface KernelConfig {
     port?: number;
+    /** Interface to bind. Default "0.0.0.0" (all); use "127.0.0.1" for local only. */
     hostname?: string;
+    /** Largest request body Bun.serve accepts, in bytes (413 above). Default 16 MiB. */
+    maxRequestBodySize?: number;
+    /** Seconds a connection may stay idle before Bun closes it (Bun default: 10). */
+    idleTimeout?: number;
+    /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
+    shutdownGraceMs?: number;
     environment?: "development" | "production" | "test";
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
+    /**
+     * Number of reverse proxies in front of the app (`true` = 1). Only then are
+     * `X-Forwarded-For` / `X-Real-IP` used to identify clients (rate limiting);
+     * by default the socket address is used. See `getClientIp`.
+     */
+    trustProxy?: TrustProxy;
 }
 
 export interface SecurityHeadersConfig {
@@ -66,9 +80,15 @@ export interface ApiKeyConfig {
     headerName?: string;
     queryParamName?: string;
     extractStrategies?: ("header" | "bearer" | "query" | "custom")[];
-    vaultService?: any; // Placeholder for now
+    /** Not used yet: only `staticKeys` are validated. */
+    vaultService?: any;
     customExtractor?: (c: any) => string | null;
+    /**
+     * @deprecated Ignored. Keys are looked up in memory on every request; the
+     * cache kept a revoked key working and stored it in plaintext.
+     */
     enableCache?: boolean;
+    /** @deprecated Ignored, see `enableCache`. */
     cacheTtl?: number;
     requireScopes?: boolean;
     skipPaths?: string[];
@@ -125,6 +145,8 @@ export interface HealthCheckConfig {
     readinessPath?: string;
     livenessPath?: string;
     includeDetails?: boolean;
+    /** Per-check timeout for /health probes, in ms. Default 2000. */
+    checkTimeoutMs?: number;
     checks?: {
         [key: string]: (context?: any) => Promise<{
             status: "ok" | "error";
@@ -169,9 +191,20 @@ export interface AuthConfig {
     basePath?: string; // Default: "/api/sso"
     baseURL?: string; // For better-auth
     trustedOrigins?: string[]; // For better-auth CORS
+    /**
+     * Per-client-IP limit on the auth routes (default 20 requests / 15 min).
+     * Raise it when a backend calls these routes on behalf of many users from
+     * one IP (e.g. through the SDKs), or pass `false` to disable it.
+     */
+    rateLimit?: false | { max?: number; windowMs?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
     authMode?: "oidc" | "email"; // Authentication mode
-    enableSelfRegistration?: boolean; // Enable user self-registration for email/password mode
+    /**
+     * Email/password sign-in. Defaults to `authMode === "email"`, so an OIDC
+     * deployment does not also expose an open email/password login.
+     */
+    enableEmailPassword?: boolean;
+    enableSelfRegistration?: boolean; // Allow `/sign-up/email` (default true); false = accounts are provisioned elsewhere
 
     // deno-lint-ignore no-explicit-any
     socialProviders?: Record<string, any>; // Allow other providers
@@ -266,10 +299,23 @@ export interface OpenAPIConfig {
     securitySchemes?: Record<string, any>;
 }
 
+export type UploadAction = "upload" | "list" | "download" | "delete";
+
 export interface UploadConfig {
     projectName: string;
+    /**
+     * Largest file the upload route accepts, in bytes (default 10 MiB). With
+     * `exposeRoutes` it must fit, plus 64 KiB of multipart overhead, in the
+     * Kernel's `maxRequestBodySize` (16 MiB by default): initialize() fails otherwise.
+     */
     maxFileSize?: number;
     allowedExtensions?: string[];
     exposeRoutes?: boolean;
     routePrefix?: string;
+    /**
+     * Required with `exposeRoutes`: whether the request may perform `action` on
+     * the built-in upload routes (e.g. check `c.get("user")`). Pass
+     * `() => true` to make them public on purpose.
+     */
+    authorize?: (c: any, action: UploadAction) => boolean | Promise<boolean>;
 }

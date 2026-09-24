@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { SubmissionService } from "../src/domain/submission/submission.service.ts";
 import { REDIS_KEYS, JOB_NAMES } from "@forms-app/shared";
@@ -65,15 +66,41 @@ describe("SubmissionService.validateAnswer", () => {
 
 describe("SubmissionService.hashIp", () => {
     it("is deterministic within a day and never exposes the raw ip", () => {
-        const h1 = SubmissionService.hashIp("1.2.3.4");
-        const h2 = SubmissionService.hashIp("1.2.3.4");
+        const h1 = SubmissionService.hashIp("1.2.3.4", "secret");
+        const h2 = SubmissionService.hashIp("1.2.3.4", "secret");
         expect(h1).toBe(h2);
         expect(h1).not.toContain("1.2.3.4");
         expect(h1).toMatch(/^[a-f0-9]{64}$/);
     });
 
     it("produces different hashes for different ips", () => {
-        expect(SubmissionService.hashIp("1.1.1.1")).not.toBe(SubmissionService.hashIp("2.2.2.2"));
+        expect(SubmissionService.hashIp("1.1.1.1", "secret")).not.toBe(SubmissionService.hashIp("2.2.2.2", "secret"));
+    });
+
+    it("is keyed: without the secret the hash cannot be recomputed from the ip and date", () => {
+        const day = new Date().toISOString().slice(0, 10);
+        const unkeyed = createHash("sha256").update(`1.2.3.4:${day}`).digest("hex");
+        expect(SubmissionService.hashIp("1.2.3.4", "secret")).not.toBe(unkeyed);
+        expect(SubmissionService.hashIp("1.2.3.4", "secret")).not.toBe(SubmissionService.hashIp("1.2.3.4", "other"));
+    });
+});
+
+describe("SubmissionService.getFormData", () => {
+    it("keeps the same schema object while its JSON is unchanged (AJV caches validators per object)", async () => {
+        const schemaJson = JSON.stringify({ type: "object", properties: { a: { type: "string" } } });
+        const meta = JSON.stringify({ formId: "f1", status: "open" });
+        const redis = { get: async (key: string) => (key.includes("schema") ? schemaJson : meta) };
+        SubmissionService.setRedis(redis);
+        const realNow = Date.now;
+        try {
+            const first = await SubmissionService.getFormData("reuse-space", "reuse-form");
+            // Past the 30 s cache TTL: the refresh reads Redis again.
+            Date.now = () => realNow() + 60_000;
+            const second = await SubmissionService.getFormData("reuse-space", "reuse-form");
+            expect(second!.schema).toBe(first!.schema);
+        } finally {
+            Date.now = realNow;
+        }
     });
 });
 
@@ -154,5 +181,23 @@ const redisUp = await redisReachable();
 
     it("returns null when the form is not in Redis", async () => {
         expect(await SubmissionService.getFormData("missing", "missing")).toBeNull();
+    });
+});
+
+describe("SubmissionService.validateAnswer with a generated schema", () => {
+    it("reports custom required messages and rejects unknown fields", async () => {
+        const { generateJsonSchema } = await import("../../admin-api/src/domain/forms/schema-generator.ts");
+        const field = (o: Record<string, unknown>) => ({ label: "L", maxLength: null, min: null, max: null, options: null, errorMessage: null, ...o });
+        const schema = generateJsonSchema([
+            field({ fieldType: "email", name: "mail", required: true, errorMessage: "Pon tu correo" }),
+            field({ fieldType: "checkbox", name: "terms", required: true }),
+            field({ fieldType: "number", name: "age", required: false }),
+        ] as any);
+        // The custom message used to be ignored for a missing field.
+        expect(SubmissionService.validateAnswer(schema, {}).errors.mail).toBe("Pon tu correo");
+        expect(SubmissionService.validateAnswer(schema, { mail: "a@b.co", terms: false }).valid).toBe(false);
+        expect(SubmissionService.validateAnswer(schema, { mail: "a@b.co", terms: true, extra: "x" }).errors).toHaveProperty("extra");
+        // An optional field left empty is omitted by the form, and passes.
+        expect(SubmissionService.validateAnswer(schema, { mail: "a@b.co", terms: true }).valid).toBe(true);
     });
 });

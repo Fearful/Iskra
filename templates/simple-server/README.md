@@ -4,8 +4,8 @@ El template mas simple de Iskra. Un servidor HTTP minimo en ~18 lineas de codigo
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP
 
 ## Inicio rapido
 
@@ -43,10 +43,10 @@ src/
 A partir de aca podes:
 
 - Agregar mas rutas y handlers
-- Sumar una base de datos con [`@iskra-bun/db-kit`](../../docs/db-kit.md)
-- Agregar WebSockets con [`@iskra-bun/socket-kit`](../../docs/socket-kit.md)
-- Revisar las [features del Web Kit](../../docs/web-kit.md) (auth, CORS, rate limit, etc.)
+- Sumar una base de datos con [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/)
+- Agregar WebSockets con [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/)
+- Revisar las [features del Web Kit](https://iskra-docs.fly.dev/es/packages/web-kit/) (auth, CORS, rate limit, etc.)
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

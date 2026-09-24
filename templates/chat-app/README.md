@@ -4,9 +4,9 @@ Chat en tiempo real sobre WebSocket con **salas**, **presencia de usuarios**, **
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/socket-kit`](../../docs/socket-kit.md) — WebSocket con router de eventos
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Key-Value store para salas, presencia e historial
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket con router de eventos
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store para salas, presencia e historial
 
 ## Inicio rapido
 
@@ -78,9 +78,12 @@ actualizada y quien se sumó (`joined`) o se fue (`left`).
 ### Historial paginado
 
 Los mensajes se guardan en `room:<room>:messages` (recortado a los ultimos 500). El
-evento `history { before?, limit? }` pagina por **cursor temporal**: devuelve hasta
-`limit` mensajes con `time < before`, en orden cronologico, junto con `hasMore` y un
-`nextBefore` para seguir paginando hacia atras.
+evento `history { before?, limit? }` pagina por **cursor**: cada mensaje tiene un `seq`
+creciente dentro de la sala, y se devuelven hasta `limit` mensajes con `seq < before`, en
+orden cronologico, junto con `hasMore` y un `nextBefore` para seguir paginando hacia atras
+(con la hora como cursor se salteaban los mensajes del mismo milisegundo). Las escrituras a
+una sala se serializan dentro del proceso; con varias instancias sobre Redis habria que
+pasar a listas nativas de Redis.
 
 ```jsonc
 // Cliente → Servidor
@@ -89,7 +92,7 @@ evento `history { before?, limit? }` pagina por **cursor temporal**: devuelve ha
 { "event": "history:reply", "payload": {
     "ok": true, "room": "general",
     "items": [ /* ChatMessage[] */ ],
-    "total": 42, "hasMore": true, "nextBefore": 1718500000000
+    "total": 42, "hasMore": true, "nextBefore": 22
 } }
 ```
 
@@ -123,10 +126,10 @@ src/
 ## Proximos pasos
 
 - Reemplazar `verifyToken` por verificacion de JWT firmado
-- Persistir mensajes en base de datos con [`@iskra-bun/db-kit`](../../docs/db-kit.md)
+- Persistir mensajes en base de datos con [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/)
 - Cambiar `KV_DRIVER` a `redis` para correr varias instancias del servidor
-- Agregar un endpoint HTTP con [`@iskra-bun/web-kit`](../../docs/web-kit.md) para consultar historial
+- Agregar un endpoint HTTP con [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) para consultar historial
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

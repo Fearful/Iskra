@@ -58,7 +58,7 @@ bun run packages/db-kit/src/cli.ts migrate
 # Empujar schema directo a la DB (sin archivos de migracion, ideal para dev)
 bun run packages/db-kit/src/cli.ts push
 
-# Eliminar todas las tablas
+# Eliminar un archivo de migracion generado (no toca la base de datos)
 bun run packages/db-kit/src/cli.ts drop
 ```
 
@@ -82,8 +82,9 @@ const db = new DbDriver();
 app.register(db);
 await app.start();
 
-// Ejecutar migraciones pendientes
-await db.runMigrations('./src/db/schema.ts', './drizzle');
+// Aplicar las migraciones pendientes de ./drizzle (generadas con `generate`)
+// sobre la conexion activa. El primer argumento (schema) no se usa para aplicar.
+await db.runMigrations(undefined, './drizzle');
 ```
 
 O usando `MigrationHelper` directamente:

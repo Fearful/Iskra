@@ -129,4 +129,43 @@ describe("Rate Limit Feature", () => {
 
         await kernel.shutdown();
     });
+
+    describe("default client key", () => {
+        const socket = (address: string) => ({ requestIP: () => ({ address, family: "IPv4", port: 40000 }) });
+
+        it("ignores a spoofed X-Forwarded-For unless trustProxy is set", async () => {
+            // Regression: the key used to be the raw X-Forwarded-For header, so a
+            // client rotating it was never limited.
+            const kernel = new Kernel();
+            kernel.registerFeature(new RateLimitFeature({ windowMs: 5000, max: 2 }));
+            await kernel.initialize();
+            const app = kernel.getApp();
+            app.get("/x", (c) => c.text("ok"));
+
+            const env = socket("203.0.113.9");
+            const statuses = [];
+            for (const ip of ["1.1.1.1", "2.2.2.2", "3.3.3.3"]) {
+                statuses.push((await app.request("/x", { headers: { "x-forwarded-for": ip } }, env)).status);
+            }
+            expect(statuses).toEqual([200, 200, 429]);
+
+            await kernel.shutdown();
+        });
+
+        it("gives distinct forwarded clients their own bucket behind a trusted proxy", async () => {
+            const kernel = new Kernel({ trustProxy: true });
+            kernel.registerFeature(new RateLimitFeature({ windowMs: 5000, max: 1 }));
+            await kernel.initialize();
+            const app = kernel.getApp();
+            app.get("/x", (c) => c.text("ok"));
+
+            const proxy = socket("10.0.0.2");
+            const req = (ip: string) => app.request("/x", { headers: { "x-forwarded-for": ip } }, proxy);
+            expect((await req("198.51.100.1")).status).toBe(200);
+            expect((await req("198.51.100.2")).status).toBe(200);
+            expect((await req("198.51.100.1")).status).toBe(429);
+
+            await kernel.shutdown();
+        });
+    });
 });

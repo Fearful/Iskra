@@ -22,8 +22,8 @@ Iskra is deployed as an HTTP service (via `@iskra-bun/web-kit`) and the SDKs act
 
 | Language | Package | Location | Status |
 |----------|---------|-----------|--------|
-| **Java** | `dev.iskra:iskra-client` | [`sdks/java/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/) | v0.1.0 |
-| **Python** | `iskra-client` | [`sdks/python/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/) | v0.1.0 |
+| **Java** | `dev.iskra:iskra-client` | [`sdks/java/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/) | v0.2.0 |
+| **Python** | `iskra-client` | [`sdks/python/iskra-client`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/) | v0.2.0 |
 
 ## Java SDK
 
@@ -41,7 +41,7 @@ Client for Java 11+ compatible with Spring MVC, Spring Boot, Jakarta EE, and any
 <dependency>
     <groupId>dev.iskra</groupId>
     <artifactId>iskra-client</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -56,8 +56,8 @@ var resultado = iskra.post("/api/ordenes", datos, Orden.class);
 
 // Sub-clientes
 iskra.health().check();
-iskra.auth().signIn(email, password);
-iskra.storage().upload(path, "archivo.pdf");
+Session session = iskra.auth().signIn(email, password).getData();
+iskra.withSession(session).storage().upload(path, "archivo.pdf");
 ```
 
 Full documentation: [`sdks/java/iskra-client/README.md`](https://github.com/fearful/iskra/tree/main/sdks/java/iskra-client/README.md)
@@ -93,14 +93,52 @@ resultado = iskra.post("/api/ordenes", json=datos)
 
 # Sub-clientes
 iskra.health.check()
-iskra.auth.sign_in(email, password)
-iskra.storage.upload(path, "archivo.pdf")
+session = iskra.auth.sign_in(email, password).data
+iskra.with_session(session).storage.upload(path, "archivo.pdf")
 
 # Async
 resultado = await iskra.async_get("/api/productos")
 ```
 
 Full documentation: [`sdks/python/iskra-client/README.md`](https://github.com/fearful/iskra/tree/main/sdks/python/iskra-client/README.md)
+
+## Sessions
+
+Both SDKs are meant to run inside a backend that serves many users, so a client
+**never stores cookies**: the session of one user cannot leak into another user's
+requests. `sign_in` / `signIn` (and `sign_up` / `signUp`) return a `Session` whose
+`cookie` authenticates that user. Keep it server-side (for example in your own
+HttpOnly cookie) and bind it per request:
+
+```python
+session = iskra.auth.sign_in(email, password).data
+as_user = iskra.with_session(session)        # or with_session(session.cookie)
+as_user.get("/api/my-orders")
+iskra.auth.sign_out(session)
+```
+
+```java
+Session session = iskra.auth().signIn(email, password).getData();
+IskraClient asUser = iskra.withSession(session);   // or withSession(session.getCookie())
+asUser.get("/api/my-orders", Map.class);
+iskra.auth().signOut(session);
+```
+
+- Only Better Auth's `session_token` cookie is kept (its `session_data` cache
+  cookie would keep a signed-out session valid until it expires).
+- Session requests send `Origin` = the base URL's origin, which Better Auth
+  requires for cookie-authenticated POSTs. If the service's AuthFeature `baseURL`
+  is a different (public) URL, set `origin` in the client or add the base URL to
+  `trustedOrigins`.
+- The AuthFeature limits auth routes to 20 requests per 15 minutes per IP. A
+  backend signing all its users in from one IP should raise it with
+  `rateLimit: { max, windowMs }` (or `rateLimit: false` and limit on its side).
+- The storage client calls UploadFeature's routes, which usually require a
+  signed-in user: use it on `with_session(...)` / `withSession(...)`.
+
+Both SDKs are tested against a real Iskra service,
+[`sdks/contract/server.ts`](https://github.com/fearful/iskra/tree/main/sdks/contract/server.ts),
+so their parsing follows what the service actually returns.
 
 ## Preparing your Iskra Service for SDKs
 

@@ -23,7 +23,7 @@ npm create iskra@latest mi-app
 ## Que hace
 
 1. Copia el template elegido a `mi-app/` (excluyendo `node_modules`, `dist` y `.git`).
-2. Reescribe el `package.json` del proyecto: ajusta el `name` al nombre del directorio y reemplaza las dependencias `@iskra-bun/* : workspace:*` por un rango real (`^0.1.0`).
+2. Reescribe el `package.json` del proyecto: ajusta el `name` al nombre del directorio y reemplaza las dependencias `@iskra-bun/* : workspace:*` por un rango real sobre la versión actual de cada paquete (p. ej. `^0.2.0` para `web-kit`, `^0.1.1` para `core`).
 3. Imprime los proximos pasos (`cd`, `bun install`, `bun start`).
 
 Si el directorio destino ya existe y no esta vacio, el comando se aborta sin tocar nada.

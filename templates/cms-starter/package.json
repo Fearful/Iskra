@@ -1,6 +1,7 @@
 {
     "name": "cms-starter",
     "version": "0.1.0",
+    "private": true,
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",
@@ -11,8 +12,8 @@
         "@iskra-bun/db-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "@hono/zod-validator": "^0.4.2",
-        "hono": "^4.6.14",
-        "drizzle-orm": "^0.30.0",
+        "hono": "^4.12.34",
+        "drizzle-orm": "^0.45.2",
         "zod": "^3.24.1"
     }
 }

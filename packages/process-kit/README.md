@@ -22,7 +22,7 @@ await app.start()
 
 ## Documentacion
 
-Guia completa: [docs/process-kit.md](../../docs/process-kit.md)
+Guia completa: [@iskra-bun/process-kit](https://iskra-docs.fly.dev/es/packages/process-kit/)
 
 ## Licencia
 

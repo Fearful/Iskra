@@ -61,6 +61,8 @@ const app = new App({
 });
 ```
 
+`app.start()` waits for Redis to answer, so an unreachable server or a wrong password fails the start instead of the first command. Once connected, a dropped connection is retried by ioredis, and its connection errors go to the app's logger (`warn`).
+
 ## API
 
 ```typescript
@@ -76,6 +78,18 @@ await kv.del('key');
 
 // Check existence
 const exists = await kv.has('key');
+```
+
+### Native Redis client
+
+With the `redis` driver, `kv.client` is the [ioredis](https://github.com/redis/ioredis)
+client (after `app.start()`) for commands the KV API does not cover (sets, sorted sets,
+pipelines). It bypasses `namespace` and the JSON codec. It is `undefined` with the
+`memory` driver. The `KVManager` is also registered in the app context:
+
+```typescript
+const kv = app.context.get('kv'); // the KVManager
+await kv.client?.sadd('tags', 'a', 'b');
 ```
 
 ## Generic (Typed) Values
@@ -102,7 +116,7 @@ A missing key resolves to `undefined` (not `null`). Previously the Redis adapter
 
 ## Redis Value Codec
 
-The Redis adapter uses a single consistent codec for every write and read: values are serialised with `JSON.stringify` on write and parsed with `JSON.parse` on read. This preserves JavaScript types, matching the in-memory adapter:
+The Redis adapter uses a single consistent codec for every write and read: values are serialised with `JSON.stringify` on write and parsed with `JSON.parse` on read. Strings, numbers, booleans, and plain objects and arrays of them keep their types:
 
 ```typescript
 await kv.set('numeric', '123'); // string
@@ -116,6 +130,8 @@ typeof (await kv.get('count'));   // 'number'
 ```
 
 `undefined` is handled explicitly (stored as the JSON `null` literal and decoded back to `undefined`), so it can never be corrupted into the string `"undefined"`. Values written outside the adapter that are not valid JSON are returned as-is (as a string).
+
+Anything JSON cannot represent does **not** round-trip, unlike with the in-memory adapter, which keeps the value itself: a `Date` comes back as an ISO string, a `Map` or `Set` as `{}`, `undefined` inside an array as `null`, and `null` as `undefined`. Convert such values yourself (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
 
 ## Namespace
 
@@ -152,7 +168,9 @@ await kv.mdel(['key:a', 'key:b', 'key:c']);
 
 ## TTL and the Memory Adapter
 
-The in-memory adapter manages expiry timers without leaks: overwriting a key with a new `set` call cancels any previous timer before scheduling the new one, so a stale timer can never delete a freshly written value.
+A TTL is a number of seconds; `0` (or none) means no expiry, and a negative or non-finite TTL is rejected with a `RangeError`.
+
+The in-memory adapter manages expiry timers without leaks: overwriting a key with a new `set` call cancels any previous timer before scheduling the new one, so a stale timer can never delete a freshly written value. TTLs longer than `setTimeout`'s limit (about 24.8 days) are supported.
 
 ## Environment Variables
 

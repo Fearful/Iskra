@@ -43,7 +43,11 @@ await app.start();
 
 ### `daemon`
 
-The process runs continuously in the background. If `restartOnCrash: true`, it automatically restarts if it dies.
+The process runs continuously in the background. With `restartOnCrash: true` it is restarted when it fails (non-zero exit code or killed by a signal); a clean exit with code 0 is not restarted.
+
+Each process is started in its own process group, so `kill()` and `stop()` signal the whole tree: the children of a wrapper (`sh -c`, `npm run`, a script) are terminated too. They wait until every process of the group is gone, and send SIGKILL to the group if anything in it (a grandchild that ignores SIGTERM, say) is still alive after the graceful timeout. When a process crashes, whatever it left running in its group is terminated before it is restarted. A `kill()` while the process waits out its restart backoff cancels that restart. Since the groups are separate, the terminal's Ctrl-C does not reach them: if the app exits before `stop()` is done with them (the App's `shutdownTimeoutMs`, a second signal, any `process.exit()`), every group still running is sent SIGKILL on exit, so no child outlives the app.
+
+A process that cannot be spawned (its command does not exist, say) makes `spawn()` reject. At `app.start()` it does not fail the app: it is reported with `process:spawn-error` and, with `restartOnCrash`, retried with the restart backoff, as is a restart that cannot spawn it; each failed attempt counts towards `maxRestarts`.
 
 ### `oneshot`
 
@@ -69,8 +73,11 @@ for line in sys.stdin:
 The ProcessManager emits these events on the App bus:
 
 - `process:message` — parsed JSON message from the process stdout
-- `process:log` — non-JSON log lines from the process
-- `process:error` — when the process fails
+- `process:log` — non-JSON log lines from the process (including a last line without a trailing newline)
+- `process:error` — each line the process writes to stderr (`stdio` mode)
+- `process:exit` — when a process exits on its own (not after `kill()` or `stop()`): `{ name, exitCode, signal }` (`exitCode` is `null` when a signal killed it)
+- `process:spawn-error` — when a process could not be spawned at `app.start()` or on a restart: `{ name, error }`
+- `process:max-restarts` — when `maxRestarts` is exceeded
 
 ## Runtime Process Management
 

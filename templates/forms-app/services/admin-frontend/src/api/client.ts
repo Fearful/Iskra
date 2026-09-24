@@ -1,4 +1,5 @@
-const BASE_URL = '/api';
+// nginx (and the Vite dev proxy) route /admin/api/* to admin-api's /api/*.
+const BASE_URL = '/admin/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -10,9 +11,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
         ...options,
     });
 
+    if (res.status === 401 && !path.startsWith('/auth/')) {
+        // Session missing or expired: every admin endpoint requires one.
+        window.location.assign('/admin/login');
+        throw new Error('Unauthorized');
+    }
+
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        // Iskra errors carry `error`; Better Auth's (sign-in) carry `message`.
+        throw new Error(err.error || err.message || `HTTP ${res.status}`);
     }
 
     return res.json();
@@ -46,4 +54,11 @@ export const formsApi = {
         request<{ data: any }>(`/forms/${id}/prerender`, { method: 'POST' }),
     getAnswers: (id: string, page = 1, pageSize = 50) =>
         request<any>(`/forms/${id}/answers?page=${page}&pageSize=${pageSize}`),
+};
+
+// Auth (Better Auth routes served by admin-api under /api/auth)
+export const authApi = {
+    signIn: (email: string, password: string) =>
+        request<{ user: any }>('/auth/sign-in/email', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    signOut: () => request<{ success: boolean }>('/auth/sign-out', { method: 'POST', body: '{}' }),
 };

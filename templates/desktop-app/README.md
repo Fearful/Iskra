@@ -1,13 +1,19 @@
 # Desktop App
 
-App de escritorio con [Tauri](https://tauri.app) e Iskra. Ejemplo completo y
-funcional: **gestion de ventana**, **comandos IPC** cableados al `@iskra-bun/desktop-kit`,
+App de escritorio con [Tauri](https://tauri.app) e Iskra: **gestion de ventana**, **comandos IPC**,
 un **menu nativo**, un **dialogo de archivos** y una **UI** que consume todo eso.
+
+> ⚠️ **Experimental, no funciona de punta a punta todavia.** `src/main.ts` corre como un
+> proceso Bun aparte, donde el runtime de Tauri no existe, asi que `bridge.ts` y `menu.ts`
+> siempre toman su camino de respaldo (stubs). Ademas `ui/app.js` lee `window.__TAURI__` pero
+> `tauri.conf.json` no activa `withGlobalTauri`, y falta `src-tauri/icons/icon.png`, que el
+> build de Tauri necesita. `@iskra-bun/desktop-kit` es un placeholder que solo registra el
+> ciclo de vida. Tomalo como punto de partida, no como app lista.
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger, bus de eventos
-- [`@iskra-bun/desktop-kit`](../../docs/desktop-kit.md) — `DesktopDriver`, puente con Tauri
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger, bus de eventos
+- [`@iskra-bun/desktop-kit`](https://iskra-docs.fly.dev/es/packages/desktop-kit/) — `DesktopDriver`, puente con Tauri
 
 ## Arquitectura
 
@@ -137,5 +143,5 @@ src-tauri/
 3. Ajustá la ventana (tamano, decoraciones, multiples ventanas) en `tauri.conf.json`.
 4. Reemplazá `ui/` por tu framework favorito apuntando `frontendDist` a su build.
 
-Referencia de la API del kit: [docs/desktop-kit.md](../../docs/desktop-kit.md).
+Referencia de la API del kit: [@iskra-bun/desktop-kit](https://iskra-docs.fly.dev/es/packages/desktop-kit/).
 Para apps que tambien apuntan a moviles, mirá [`universal-app`](../universal-app/).

@@ -37,45 +37,45 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
     });
 
     it("throttles repeated requests to auth routes from the same IP (429)", async () => {
-        const kernel = new Kernel();
+        const kernel = new Kernel({ trustProxy: true });
         kernel.registerFeature(new FakeDbFeature() as any);
         const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
         kernel.registerFeature(auth);
         await kernel.initialize();
 
         const app = kernel.getApp();
-        // A route under the auth basePath so the rate-limit middleware applies.
-        app.get("/api/sso/ping", (c) => c.text("ok"));
+        // A POST route under the auth basePath: POSTs are the attempts counted.
+        app.post("/api/sso/ping", (c) => c.text("ok"));
 
         const headers = { "x-forwarded-for": "10.0.0.1" };
 
         // The default budget is 20 requests per IP per window.
         let last = 200;
         for (let i = 0; i < 25; i++) {
-            last = (await app.request("/api/sso/ping", { headers })).status;
+            last = (await app.request("/api/sso/ping", { method: "POST", headers })).status;
         }
 
         // Once the budget is exhausted the IP must be throttled.
         expect(last).toBe(429);
     });
 
-    it("does not throttle a different IP", async () => {
-        const kernel = new Kernel();
+    it("does not throttle a different IP (behind a trusted proxy)", async () => {
+        const kernel = new Kernel({ trustProxy: true });
         kernel.registerFeature(new FakeDbFeature() as any);
         const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
         kernel.registerFeature(auth);
         await kernel.initialize();
 
         const app = kernel.getApp();
-        app.get("/api/sso/ping", (c) => c.text("ok"));
+        app.post("/api/sso/ping", (c) => c.text("ok"));
 
         // Exhaust the budget for one IP.
         for (let i = 0; i < 25; i++) {
-            await app.request("/api/sso/ping", { headers: { "x-forwarded-for": "10.0.0.1" } });
+            await app.request("/api/sso/ping", { method: "POST", headers: { "x-forwarded-for": "10.0.0.1" } });
         }
 
         // A fresh IP starts with a full budget and is not throttled.
-        const res = await app.request("/api/sso/ping", { headers: { "x-forwarded-for": "10.0.0.2" } });
+        const res = await app.request("/api/sso/ping", { method: "POST", headers: { "x-forwarded-for": "10.0.0.2" } });
         expect(res.status).toBe(200);
     });
 
@@ -95,5 +95,62 @@ describe("AuthFeature — per-IP auth-route rate limiting", () => {
             last = (await app.request("/public", { headers })).status;
         }
         expect(last).toBe(200);
+    });
+
+    it("cannot be bypassed by rotating X-Forwarded-For without trustProxy", async () => {
+        // Regression: the limiter keyed on the raw header, so a new value per
+        // request gave the attacker a fresh budget every time.
+        const kernel = new Kernel();
+        kernel.registerFeature(new FakeDbFeature() as any);
+        const auth = new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso" } as any, fakeCreateAuth);
+        kernel.registerFeature(auth);
+        await kernel.initialize();
+
+        const app = kernel.getApp();
+        app.post("/api/sso/ping", (c) => c.text("ok"));
+
+        const socket = { requestIP: () => ({ address: "203.0.113.9", family: "IPv4", port: 40000 }) };
+        let last = 200;
+        for (let i = 0; i < 25; i++) {
+            const headers = { "x-forwarded-for": `10.1.0.${i}` };
+            last = (await app.request("/api/sso/ping", { method: "POST", headers }, socket)).status;
+        }
+        expect(last).toBe(429);
+    });
+
+    it("honors a configured limit, and rateLimit: false disables it", async () => {
+        const build = async (rateLimit: any) => {
+            const kernel = new Kernel();
+            kernel.registerFeature(new FakeDbFeature() as any);
+            kernel.registerFeature(new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso", rateLimit } as any, fakeCreateAuth));
+            await kernel.initialize();
+            kernel.getApp().post("/api/sso/ping", (c) => c.text("ok"));
+            const statuses: number[] = [];
+            for (let i = 0; i < 25; i++) statuses.push((await kernel.getApp().request("/api/sso/ping", { method: "POST" })).status);
+            return statuses;
+        };
+        const limited = await build({ max: 3 });
+        expect(limited.slice(0, 4)).toEqual([200, 200, 200, 429]);
+        expect((await build(false)).every((s) => s === 200)).toBe(true);
+    });
+
+    it("does not count session reads, OAuth callbacks or sign-out", async () => {
+        const kernel = new Kernel();
+        kernel.registerFeature(new FakeDbFeature() as any);
+        kernel.registerFeature(new AuthFeature({ secret: VALID_SECRET, basePath: "/api/sso", rateLimit: { max: 3 } } as any, fakeCreateAuth));
+        await kernel.initialize();
+        const app = kernel.getApp();
+
+        // A SPA polling get-session used to lock its users out of signing in.
+        for (let i = 0; i < 10; i++) {
+            expect((await app.request("/api/sso/get-session")).status).toBe(200);
+            expect((await app.request("/api/sso/callback/oidc?code=x")).status).toBe(200);
+            expect((await app.request("/api/sso/sign-out", { method: "POST" })).status).toBe(200);
+        }
+        const attempts: number[] = [];
+        for (let i = 0; i < 4; i++) {
+            attempts.push((await app.request("/api/sso/sign-in/email", { method: "POST" })).status);
+        }
+        expect(attempts).toEqual([200, 200, 200, 429]);
     });
 });

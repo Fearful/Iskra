@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   deploy:
+    # A manual run from another branch would deploy it over the public docs.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,7 +31,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.1.38'
+          bun-version-file: .bun-version
+
+      # Astro 7 needs Node >= 22.12 (its CLI runs on node, even via bun run).
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Install website dependencies
         working-directory: website
@@ -57,7 +65,8 @@ jobs:
           fail: true
 
       - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        # Pinned: @master ran whatever that branch held, with the deploy token.
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
       - name: Deploy to Fly.io
         run: flyctl deploy ./website --remote-only

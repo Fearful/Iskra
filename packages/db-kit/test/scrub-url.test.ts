@@ -1,5 +1,6 @@
-import { describe, test, expect, mock, spyOn } from 'bun:test';
+import { describe, test, expect, spyOn } from 'bun:test';
 import { scrubUrl } from '../src/driver';
+import { scrubCredentials } from '../src/migrations';
 import { App } from '@iskra-bun/core';
 import { DbDriver } from '../src/driver';
 import { ConnectionError } from '../src/errors';
@@ -101,15 +102,12 @@ describe('DbDriver mysql branch uses createPool', () => {
             end: async () => {},
         };
 
-        const origCreatePool = mysql2Default.createPool.bind(mysql2Default);
-        const origCreateConnection = mysql2Default.createConnection.bind(mysql2Default);
-
-        const poolSpy = spyOn(mysql2Default, 'createPool').mockImplementation((...args: any[]) => {
+        const poolSpy = spyOn(mysql2Default, 'createPool').mockImplementation(() => {
             poolCalled = true;
             return fakePool as any;
         });
 
-        const connSpy = spyOn(mysql2Default, 'createConnection').mockImplementation((...args: any[]) => {
+        const connSpy = spyOn(mysql2Default, 'createConnection').mockImplementation(() => {
             connCalled = true;
             throw new Error('createConnection must not be called for mysql branch');
         });
@@ -134,5 +132,34 @@ describe('DbDriver mysql branch uses createPool', () => {
             poolSpy.mockRestore();
             connSpy.mockRestore();
         }
+    });
+});
+
+describe('secrets outside the userinfo', () => {
+    test('scrubUrl redacts secret query parameters such as libsql authToken', () => {
+        expect(scrubUrl('libsql://mydb.turso.io?authToken=eyJSECRET')).toBe('libsql://mydb.turso.io?authToken=***');
+        expect(scrubUrl('postgres://app@db:5432/x?password=S&sslmode=require')).toBe(
+            'postgres://***@db:5432/x?password=***&sslmode=require',
+        );
+    });
+
+    test('scrubCredentials redacts passwords with raw @ or / and secret parameters', () => {
+        expect(scrubCredentials('failed postgres://user:p@ss@db:5432/x')).toBe('failed postgres://***:***@db:5432/x');
+        expect(scrubCredentials('failed postgresql://user:pa/ss@db/x')).toBe('failed postgresql://***:***@db/x');
+        expect(scrubCredentials('error: libsql://db.turso.io?authToken=SECRET&x=1 down')).toBe(
+            'error: libsql://db.turso.io?authToken=***&x=1 down',
+        );
+    });
+
+    test('the connection error context does not carry the libsql authToken', async () => {
+        const app = new App({
+            name: 'ScrubTest',
+            logger: { level: 'silent' },
+            db: { driver: 'libsql', url: 'http://127.0.0.1:9/?authToken=TOPSECRET' },
+        } as any);
+        app.register(new DbDriver());
+        const error = await app.start().then(() => undefined, (e: unknown) => e);
+        expect(JSON.stringify(error)).not.toContain('TOPSECRET');
+        expect(String((error as any)?.context?.url ?? (error as any)?.cause?.context?.url)).toContain('authToken=***');
     });
 });

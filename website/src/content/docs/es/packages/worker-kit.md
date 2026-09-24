@@ -49,8 +49,9 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 
 | Opcion | Tipo | Default | Descripcion |
 |--------|------|---------|-------------|
-| `connection` | `string \| object` | **requerido** | URL de Redis o `{ host, port, password, db }` |
-| `concurrency` | `number` | `1` | Jobs procesados en paralelo |
+| `connection` | `string \| object` | **requerido** | URL de Redis (`redis://user:pass@host:6379/0`; `rediss://` activa TLS) o `{ host, port, username, password, db, tls }` |
+| `consume` | `boolean` | `true` | `false` = solo productor: no crea un Worker y `enqueue` acepta jobs sin handler local (los procesa otro proceso) |
+| `concurrency` | `number` | `1` | Jobs procesados en paralelo; `0` = solo productor, como `consume: false` |
 | `queueName` | `string` | `'iskra-jobs'` | Nombre de la queue en Redis |
 | `defaultJobOptions` | `JobOptions` | `undefined` | Opciones por defecto para todos los jobs |
 | `deadLetter` | `boolean` | `false` | Activa el ruteo a dead-letter (ver [Manejo de Dead-Letter](#manejo-de-dead-letter)) |
@@ -87,7 +88,7 @@ await worker.enqueue('payment.process', { orderId: 456 }, {
 
 `enqueue` valida la entrada **antes** de tocar Redis, para evitar que entrada no confiable inunde la queue o almacene payloads gigantes. Cualquier problema lanza `QueueError` y el job nunca llega a la queue:
 
-- **Handler desconocido:** el `name` debe corresponder a un handler ya registrado con `register`. Si no, lanza `QueueError` (`No handler registered for job "<name>"`).
+- **Handler desconocido:** el `name` debe corresponder a un handler ya registrado con `register` (salvo con `consume: false`). Si no, lanza `QueueError` (`No handler registered for job "<name>"`). Si igual llega a la queue un job que ningun worker sabe procesar, falla como irrecuperable (sin reintentos) y pasa por el dead-letter, en vez de marcarse como completado y perderse.
 - **Payload sobredimensionado:** `data` se serializa a JSON y se rechaza si supera el tope de ~1 MB (`Job "<name>" payload too large: <bytes> bytes (max 1048576)`). Un `data` no serializable tambien lanza `QueueError`.
 - **RepeatSpec invalida:** una spec de repeticion vacia, un `{ every }` no positivo o un cron en blanco lanzan `QueueError`.
 

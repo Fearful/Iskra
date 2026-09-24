@@ -2,6 +2,8 @@ package dev.iskra.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.iskra.client.auth.AuthClient;
+import dev.iskra.client.auth.Session;
+import dev.iskra.client.auth.Sessions;
 import dev.iskra.client.health.HealthClient;
 import dev.iskra.client.http.HttpClientWrapper;
 import dev.iskra.client.response.IskraResponse;
@@ -9,6 +11,11 @@ import dev.iskra.client.storage.StorageClient;
 
 import java.time.Duration;
 
+/**
+ * Entry point of the SDK. An instance is thread-safe and never stores cookies,
+ * so one client can serve every user of a backend; act as a user with
+ * {@link #withSession(Session)}.
+ */
 public class IskraClient {
 
     private final IskraConfig config;
@@ -18,11 +25,32 @@ public class IskraClient {
     private final StorageClient storageClient;
 
     private IskraClient(IskraConfig config) {
-        this.config = config;
-        this.http = new HttpClientWrapper(config);
+        this(new HttpClientWrapper(config));
+    }
+
+    private IskraClient(HttpClientWrapper http) {
+        this.config = http.getConfig();
+        this.http = http;
         this.authClient = new AuthClient(http, config);
         this.healthClient = new HealthClient(http);
-        this.storageClient = new StorageClient(http);
+        this.storageClient = new StorageClient(http, config.getStorageRoutePrefix());
+    }
+
+    /**
+     * A client that makes every request as the user of {@code session} (from
+     * {@code auth().signIn()} / {@code signUp()}). It shares this client's
+     * connections.
+     */
+    public IskraClient withSession(Session session) {
+        return withSession(Sessions.cookieOf(session));
+    }
+
+    /** Same as {@link #withSession(Session)} for a stored {@link Session#getCookie()} value. */
+    public IskraClient withSession(String sessionCookie) {
+        if (sessionCookie == null || sessionCookie.isEmpty()) {
+            throw new IllegalArgumentException("sessionCookie is required");
+        }
+        return new IskraClient(http.withCookie(sessionCookie));
     }
 
     public static Builder builder(String baseUrl) {
@@ -57,7 +85,15 @@ public class IskraClient {
         return http.post(path, body, responseType);
     }
 
+    public <T> IskraResponse<T> post(String path, Object body, TypeReference<T> responseType) {
+        return http.post(path, body, responseType);
+    }
+
     public <T> IskraResponse<T> put(String path, Object body, Class<T> responseType) {
+        return http.put(path, body, responseType);
+    }
+
+    public <T> IskraResponse<T> put(String path, Object body, TypeReference<T> responseType) {
         return http.put(path, body, responseType);
     }
 
@@ -95,6 +131,17 @@ public class IskraClient {
 
         public Builder authBasePath(String authBasePath) {
             configBuilder.authBasePath(authBasePath);
+            return this;
+        }
+
+        /** See {@link IskraConfig.Builder#origin(String)}. */
+        public Builder origin(String origin) {
+            configBuilder.origin(origin);
+            return this;
+        }
+
+        public Builder storageRoutePrefix(String storageRoutePrefix) {
+            configBuilder.storageRoutePrefix(storageRoutePrefix);
             return this;
         }
 

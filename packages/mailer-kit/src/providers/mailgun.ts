@@ -1,26 +1,8 @@
 import type { EmailAdapter, EmailMessage, EmailConfig, TemplateData } from "../types";
+import { ALLOWED_HEADERS, checkHeaders, formatAddress } from "../headers";
 
-/**
- * Outbound custom mail headers callers are permitted to set. Anything outside
- * this set is rejected so a caller cannot spoof Reply-To / Sender / routing
- * headers via the generic `headers` map.
- */
-const ALLOWED_HEADERS = new Set([
-    "reply-to",
-    "in-reply-to",
-    "references",
-    "list-unsubscribe",
-    "list-unsubscribe-post",
-    "list-id",
-    "x-mailgun-variables",
-    "x-mailgun-tag",
-]);
-
-/**
- * Truncate a header value at the first CR/LF. Anything after a line break is an
- * injected header (or folded continuation) and must be dropped, not preserved.
- */
-const stripCrlf = (value: string): string => value.split(/[\r\n]/)[0] ?? "";
+/** Mailgun's own headers, on top of the ones every provider allows. */
+const MAILGUN_HEADERS = [...ALLOWED_HEADERS, "x-mailgun-variables", "x-mailgun-tag"];
 
 export class MailgunEmailAdapter implements EmailAdapter {
     private apiKey: string;
@@ -43,7 +25,7 @@ export class MailgunEmailAdapter implements EmailAdapter {
 
         const from = message.from || this.defaultFrom;
         if (from) {
-            form.append("from", from.name ? `${from.name} <${from.email}>` : from.email);
+            form.append("from", formatAddress(from));
         }
 
         const to = Array.isArray(message.to) ? message.to.join(",") : message.to;
@@ -56,13 +38,8 @@ export class MailgunEmailAdapter implements EmailAdapter {
         if (message.bcc) form.append("bcc", Array.isArray(message.bcc) ? message.bcc.join(",") : message.bcc);
         if (message.replyTo) form.append("h:Reply-To", message.replyTo);
 
-        if (message.headers) {
-            for (const [key, value] of Object.entries(message.headers)) {
-                if (!ALLOWED_HEADERS.has(key.toLowerCase())) {
-                    throw new Error(`Header "${key}" is not allowed`);
-                }
-                form.append(`h:${key}`, stripCrlf(value));
-            }
+        for (const [key, value] of Object.entries(checkHeaders(message.headers, MAILGUN_HEADERS) ?? {})) {
+            form.append(`h:${key}`, value);
         }
 
         if (message.attachments) {

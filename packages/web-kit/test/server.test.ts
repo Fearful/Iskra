@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { WebDriver } from '../src/server';
 import { App } from '@iskra-bun/core';
 import { z } from 'zod';

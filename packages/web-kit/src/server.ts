@@ -40,7 +40,6 @@ export class WebDriver implements Driver {
             await next();
             c.res.headers.set('X-Frame-Options', 'SAMEORIGIN');
             c.res.headers.set('X-Content-Type-Options', 'nosniff');
-            c.res.headers.set('X-XSS-Protection', '1; mode=block');
             c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
         });
     }
@@ -92,7 +91,11 @@ export class WebDriver implements Driver {
                         'application/json': {
                             schema: route.schema.body
                         }
-                    }
+                    },
+                    // Validated whatever the Content-Type: when not required,
+                    // a text/plain or untyped body skipped validation and the
+                    // handler got an empty object.
+                    required: true,
                 };
             }
             if (route.schema?.query) {

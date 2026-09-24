@@ -1,4 +1,8 @@
 import type { KVAdapter } from '../types';
+import { checkTtl } from '../ttl';
+
+/** setTimeout's limit: a longer delay (a TTL over ~24.8 days) fires at once. */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 export class MemoryAdapter implements KVAdapter {
     id = 'memory';
@@ -22,6 +26,7 @@ export class MemoryAdapter implements KVAdapter {
     }
 
     async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
+        const seconds = checkTtl(ttl);
         // Note: storing `null`/`undefined` is undefined behavior across adapters.
         // This in-memory adapter stores the value verbatim (so `get` returns it
         // as-is), whereas the RedisAdapter normalizes both to "absent" because
@@ -37,17 +42,25 @@ export class MemoryAdapter implements KVAdapter {
 
         this.store.set(key, value);
 
-        if (ttl) {
-            const timer = setTimeout(() => {
-                this.store.delete(key);
-                this.timers.delete(key);
-            }, ttl * 1000);
+        if (seconds !== undefined) this.expireIn(key, seconds * 1000);
+    }
 
-            // Avoid keeping the process alive just for expiry timers
-            timer.unref?.();
+    /** Arms the expiry timer, in steps when the delay exceeds setTimeout's limit. */
+    private expireIn(key: string, ms: number) {
+        const step = Math.min(ms, MAX_TIMEOUT_MS);
+        const timer = setTimeout(() => {
+            if (ms > step) {
+                this.expireIn(key, ms - step);
+                return;
+            }
+            this.store.delete(key);
+            this.timers.delete(key);
+        }, step);
 
-            this.timers.set(key, timer);
-        }
+        // Avoid keeping the process alive just for expiry timers
+        timer.unref?.();
+
+        this.timers.set(key, timer);
     }
 
     async del(key: string): Promise<void> {

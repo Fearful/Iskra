@@ -2,11 +2,17 @@
 
 Template para aplicaciones multiplataforma que corren en **escritorio** (Tauri) y **movil** (Tauri mobile) desde un solo codebase. La logica de negocio se escribe una vez y cada plataforma aporta solo su capa de integracion.
 
+> ⚠️ **Experimental.** No incluye proyecto Tauri (`src-tauri/`) ni proyectos Android/iOS, y la
+> deteccion de movil (`platform.ts`) depende de `tauri-plugin-os`, que no esta instalado, asi que
+> `isMobile()` siempre devuelve `false`: la rama movil solo corre forzandola con
+> `FORCE_PLATFORM=mobile`. `@iskra-bun/desktop-kit` y `@iskra-bun/mobile-kit` son placeholders
+> que solo registran el ciclo de vida.
+
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/desktop-kit`](../../docs/desktop-kit.md) — Driver de escritorio (Tauri)
-- [`@iskra-bun/mobile-kit`](../../docs/mobile-kit.md) — Driver movil (Tauri mobile)
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/desktop-kit`](https://iskra-docs.fly.dev/es/packages/desktop-kit/) — Driver de escritorio (Tauri)
+- [`@iskra-bun/mobile-kit`](https://iskra-docs.fly.dev/es/packages/mobile-kit/) — Driver movil (Tauri mobile)
 
 ## Inicio rapido
 
@@ -66,7 +72,7 @@ import { DesktopDriver } from '@iskra-bun/desktop-kit';
 import { MobileDriver } from '@iskra-bun/mobile-kit';
 ```
 
-Consulta [docs/mobile-kit.md](../../docs/mobile-kit.md) para el detalle del `MobileDriver` y sus eventos.
+Consulta [@iskra-bun/mobile-kit](https://iskra-docs.fly.dev/es/packages/mobile-kit/) para el detalle del `MobileDriver` y sus eventos.
 
 ## Estructura del proyecto
 
@@ -94,4 +100,4 @@ src/
 2. Conecta los eventos nativos de cada plataforma a esa logica en `src/platforms/`.
 3. Para empaquetar como app real de escritorio/movil, integra [Tauri](https://tauri.app) sobre estos entry points.
 
-Para entender Drivers y ciclo de vida, revisa la [documentacion de arquitectura](../../docs/arquitectura.md) y el [Core](../../docs/core.md).
+Para entender Drivers y ciclo de vida, revisa la [documentacion de arquitectura](https://iskra-docs.fly.dev/es/concepts/architecture/) y el [Core](https://iskra-docs.fly.dev/es/packages/core/).

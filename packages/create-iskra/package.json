@@ -18,6 +18,9 @@
     },
     "homepage": "https://github.com/fearful/iskra/tree/main/packages/create-iskra#readme",
     "bugs": "https://github.com/fearful/iskra/issues",
+    "engines": {
+        "node": ">=18"
+    },
     "type": "module",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
@@ -36,12 +39,14 @@
     },
     "files": [
         "dist",
+        "src",
         "templates",
         "README.md",
         "CHANGELOG.md"
     ],
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "provenance": true
     },
     "scripts": {
         "test": "bun test",

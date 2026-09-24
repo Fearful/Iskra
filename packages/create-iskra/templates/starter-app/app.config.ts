@@ -1,6 +1,7 @@
 import type { AppConfig } from '@iskra-bun/core';
 
-// Typed application config. Imported by `src/main.ts` and passed to `new App(config)`.
+// Typed application config. `new App()` (src/main.ts) loads it from the working
+// directory at startup; run the app from this directory.
 
 const config: AppConfig = {
     name: 'StarterApp',

@@ -1,8 +1,45 @@
-import type { Feature, UploadConfig } from "../../types";
+import type { Feature, UploadAction, UploadConfig } from "../../types";
 import type { Kernel } from "../../kernel";
 import type { Hono, Context, Next } from "hono";
-import { UploadHelper } from "./helper";
+import { UploadHelper, safeBasename } from "./helper";
 import type { StorageFeature } from "../storage";
+
+// Room for multipart boundaries and part headers on top of the file itself.
+const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+/**
+ * Parses a multipart body, aborting as soon as more than `limit` bytes arrive
+ * instead of buffering an arbitrarily large request first. Returns null when
+ * the limit is exceeded.
+ */
+async function readFormDataWithin(req: Request, limit: number): Promise<FormData | null> {
+    if (!req.body) return req.formData();
+    let received = 0;
+    let exceeded = false;
+    const counter = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            received += chunk.byteLength;
+            if (received > limit) {
+                exceeded = true;
+                controller.error(new Error("payload too large"));
+            } else {
+                controller.enqueue(chunk);
+            }
+        },
+    });
+    const limited = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body.pipeThrough(counter),
+        duplex: "half",
+    } as RequestInit);
+    try {
+        return await limited.formData();
+    } catch (err) {
+        if (exceeded) return null;
+        throw err;
+    }
+}
 
 declare module "hono" {
     interface ContextVariableMap {
@@ -14,15 +51,24 @@ export class UploadFeature implements Feature {
     name = "upload";
     dependencies = ["storage"];
     private helper?: UploadHelper;
-    private config: Required<UploadConfig>;
+    private config: Required<Omit<UploadConfig, "authorize">> & Pick<UploadConfig, "authorize">;
 
     constructor(config: UploadConfig) {
+        if (config.exposeRoutes && !config.authorize) {
+            // The routes can list, read, overwrite and delete every file of the
+            // project; exposing them without a decision is never the safe default.
+            throw new Error(
+                "UploadFeature: exposeRoutes requires an `authorize(c, action)` callback " +
+                    "(pass `authorize: () => true` to make the upload routes public on purpose)",
+            );
+        }
         this.config = {
             projectName: config.projectName,
             maxFileSize: config.maxFileSize || 10 * 1024 * 1024,
             allowedExtensions: config.allowedExtensions || [],
             exposeRoutes: config.exposeRoutes || false,
-            routePrefix: config.routePrefix || "/upload"
+            routePrefix: config.routePrefix || "/upload",
+            authorize: config.authorize,
         };
     }
 
@@ -31,6 +77,18 @@ export class UploadFeature implements Feature {
         if (!storageFeature) throw new Error("Upload feature requires storage feature");
         const storage = storageFeature.getAdapter();
         if (!storage) throw new Error("Storage adapter not ready");
+
+        // Bun rejects a body above the Kernel's maxRequestBodySize (16 MiB by
+        // default) with a bare 413 before any route runs, so a larger
+        // maxFileSize would silently never be reachable.
+        const bodyLimit = kernel.getConfig().maxRequestBodySize;
+        if (this.config.exposeRoutes && bodyLimit !== undefined && this.config.maxFileSize + MULTIPART_OVERHEAD_BYTES > bodyLimit) {
+            throw new Error(
+                `UploadFeature: maxFileSize (${this.config.maxFileSize} bytes) plus multipart overhead ` +
+                    `(${MULTIPART_OVERHEAD_BYTES}) exceeds the Kernel's maxRequestBodySize (${bodyLimit}); ` +
+                    `raise maxRequestBodySize in the Kernel/WebPlugin config or lower maxFileSize`,
+            );
+        }
 
         this.helper = new UploadHelper(storage, this.config.projectName);
 
@@ -47,17 +105,39 @@ export class UploadFeature implements Feature {
         if (!this.config.exposeRoutes) return;
 
         const prefix = this.config.routePrefix;
+        const authorize = this.config.authorize!;
+        const guard = (action: UploadAction) => async (c: Context, next: Next) => {
+            if (!(await authorize(c, action))) return c.json({ error: "Forbidden" }, 403);
+            await next();
+        };
+        // Internal errors are logged, never echoed: storage errors can carry
+        // paths, bucket names or credentials hints.
+        const fail = (c: Context, action: UploadAction, e: unknown) => {
+            console.error(`[upload] ${action} failed:`, e);
+            return c.json({ error: `${action[0].toUpperCase()}${action.slice(1)} failed` }, 500);
+        };
 
         // POST — upload a file
-        app.post(`${prefix}`, async (c) => {
+        app.post(`${prefix}`, guard("upload"), async (c) => {
             const upload = c.get("upload");
+            const limit = this.config.maxFileSize + MULTIPART_OVERHEAD_BYTES;
+            if (Number(c.req.header("content-length")) > limit) {
+                return c.json({ error: "File too large" }, 413);
+            }
+            let formData: FormData | null;
+            try {
+                formData = await readFormDataWithin(c.req.raw, limit);
+            } catch {
+                return c.json({ error: "Invalid multipart body" }, 400);
+            }
+            if (!formData) return c.json({ error: "File too large" }, 413);
+
             try {
                 const subfolder = c.req.query("subfolder");
-                const formData = await c.req.formData();
                 const file = formData.get("file");
                 if (!file || !(file instanceof File)) return c.json({ error: "No file" }, 400);
 
-                if (file.size > this.config.maxFileSize) return c.json({ error: "File too large" }, 400);
+                if (file.size > this.config.maxFileSize) return c.json({ error: "File too large" }, 413);
                 if (this.config.allowedExtensions.length > 0) {
                     if (!this.config.allowedExtensions.some(e => file.name.toLowerCase().endsWith(e))) {
                         return c.json({ error: "Invalid extension" }, 400);
@@ -65,28 +145,28 @@ export class UploadFeature implements Feature {
                 }
 
                 const data = new Uint8Array(await file.arrayBuffer());
-                const result = await upload.upload(file.name, data, subfolder, { contentType: file.type });
+                const result = await upload.upload(safeBasename(file.name), data, subfolder, { contentType: file.type });
                 return c.json({ success: true, ...result });
 
-            } catch (e: any) {
-                return c.json({ error: e.message }, 500);
+            } catch (e) {
+                return fail(c, "upload", e);
             }
         });
 
         // GET — list files
-        app.get(`${prefix}`, async (c) => {
+        app.get(`${prefix}`, guard("list"), async (c) => {
             const upload = c.get("upload");
             try {
                 const subfolder = c.req.query("subfolder");
                 const files = await upload.list(subfolder);
                 return c.json({ success: true, files });
-            } catch (e: any) {
-                return c.json({ error: e.message }, 500);
+            } catch (e) {
+                return fail(c, "list", e);
             }
         });
 
         // GET — download a file
-        app.get(`${prefix}/*`, async (c) => {
+        app.get(`${prefix}/*`, guard("download"), async (c) => {
             const upload = c.get("upload");
             try {
                 const filePath = c.req.path.replace(`${prefix}/`, "");
@@ -112,17 +192,17 @@ export class UploadFeature implements Feature {
                 return new Response(body, {
                     headers: {
                         "Content-Type": contentType,
-                        "Content-Disposition": `inline; filename="${filename}"`,
+                        "Content-Disposition": `inline; filename="${safeBasename(filename)}"`,
                         "Content-Length": String(data.length),
                     },
                 });
-            } catch (e: any) {
-                return c.json({ error: e.message }, 500);
+            } catch (e) {
+                return fail(c, "download", e);
             }
         });
 
         // DELETE — delete a file
-        app.delete(`${prefix}/*`, async (c) => {
+        app.delete(`${prefix}/*`, guard("delete"), async (c) => {
             const upload = c.get("upload");
             try {
                 const filePath = c.req.path.replace(`${prefix}/`, "");
@@ -132,8 +212,8 @@ export class UploadFeature implements Feature {
 
                 await upload.delete(filename, subfolder);
                 return new Response(null, { status: 204 });
-            } catch (e: any) {
-                return c.json({ error: e.message }, 500);
+            } catch (e) {
+                return fail(c, "delete", e);
             }
         });
     }

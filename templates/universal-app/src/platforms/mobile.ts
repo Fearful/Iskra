@@ -6,7 +6,7 @@ import { createNote, addNote, summarize, type Note } from '../domain/notes.ts';
  * Rama movil.
  *
  * Registra el `MobileDriver` y conecta la logica compartida de notas a eventos
- * propios del movil (deep links, push notifications). Ver docs/mobile-kit.md.
+ * propios del movil (deep links, push notifications). Ver https://iskra-docs.fly.dev/es/packages/mobile-kit/
  */
 export function bootstrapMobile(app: App): void {
     app.register(new MobileDriver());

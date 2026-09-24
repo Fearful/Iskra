@@ -1,4 +1,4 @@
-import { describe, test, expect, afterAll, afterEach, spyOn } from "bun:test";
+import { describe, test, expect, afterEach, spyOn } from "bun:test";
 import { DbDriver } from "../src/driver";
 import { ConnectionError, QueryError } from "../src/errors";
 import { App, DriverError, IskraError } from "@iskra-bun/core";
@@ -147,25 +147,10 @@ describe("DbDriver.runMigrations", () => {
         }
     });
 
-    test("delegates to drizzle-kit migrate with the configured driver and url", async () => {
-        let cmd: string[] | null = null;
-        let opts: any = null;
-        spawnSpy = spyOn(Bun, "spawn").mockImplementation(((c: string[], o: any) => {
-            cmd = c;
-            opts = o;
-            return { exited: Promise.resolve(0), stdout: "", stderr: "" };
-        }) as any);
-
-        const app = new App({
-            name: "MigrateTest",
-            db: { driver: "postgres", url: "postgres://localhost/app" },
-        });
+    test("requires a started driver", async () => {
+        const app = new App({ name: "MigrateNotStarted", db: { driver: "sqlite", url: ":memory:" } });
         const driver = new DbDriver();
         await driver.init(app);
-
-        await driver.runMigrations("./schema.ts", "./migrations");
-
-        expect(cmd!).toEqual(["bunx", "drizzle-kit", "migrate"]);
-        expect(opts.env.DATABASE_URL).toBe("postgres://localhost/app");
+        await expect(driver.runMigrations(undefined, "./drizzle")).rejects.toThrow(/not started/);
     });
 });

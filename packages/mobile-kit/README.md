@@ -26,7 +26,7 @@ await app.start()
 
 ## Documentacion
 
-Guia completa: [docs/mobile-kit.md](../../docs/mobile-kit.md) · Ejemplo: [templates/universal-app](../../templates/universal-app/)
+Guia completa: [@iskra-bun/mobile-kit](https://iskra-docs.fly.dev/es/packages/mobile-kit/) · Ejemplo: [templates/universal-app](../../templates/universal-app/)
 
 ## Licencia
 

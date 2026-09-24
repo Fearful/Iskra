@@ -22,6 +22,10 @@ interface JsonSchemaProperty {
     minimum?: number;
     maximum?: number;
     enum?: string[];
+    const?: boolean;
+    items?: { type: 'string'; enum: string[] };
+    minItems?: number;
+    uniqueItems?: boolean;
     errorMessage: Record<string, string>;
 }
 
@@ -29,7 +33,18 @@ interface JsonSchema {
     type: 'object';
     properties: Record<string, JsonSchemaProperty>;
     required: string[];
+    /** Only the form's fields are accepted. */
+    additionalProperties: false;
+    /**
+     * Required-field messages by field name. They go on the object: AJV
+     * reports a missing property there, so a property's own
+     * `errorMessage.required` was never used.
+     */
+    errorMessage?: { required: Record<string, string> };
 }
+
+/** Longest accepted answer when the field sets no maxLength. */
+const DEFAULT_MAX_LENGTH = { text: 1000, textarea: 10000, email: 254 } as const;
 
 function buildErrorMessages(field: FieldDefinition): Record<string, string> {
     const custom = field.errorMessage;
@@ -67,9 +82,16 @@ function buildErrorMessages(field: FieldDefinition): Record<string, string> {
 export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
     const properties: Record<string, JsonSchemaProperty> = {};
     const required: string[] = [];
+    const requiredMessages: Record<string, string> = {};
 
     for (const field of fields) {
         const errorMessage = buildErrorMessages(field);
+        /** A required text answer must not be empty (`""` passed `required`). */
+        const nonEmpty = (prop: JsonSchemaProperty) => {
+            if (!field.required) return;
+            prop.minLength = 1;
+            errorMessage.minLength = errorMessage.required!;
+        };
 
         switch (field.fieldType) {
             case 'text':
@@ -78,7 +100,8 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
                     type: 'string',
                     errorMessage,
                 };
-                if (field.maxLength) prop.maxLength = field.maxLength;
+                prop.maxLength = field.maxLength || DEFAULT_MAX_LENGTH[field.fieldType];
+                nonEmpty(prop);
                 properties[field.name] = prop;
                 break;
             }
@@ -89,7 +112,7 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
                     format: 'email',
                     errorMessage,
                 };
-                if (field.maxLength) prop.maxLength = field.maxLength;
+                prop.maxLength = field.maxLength || DEFAULT_MAX_LENGTH.email;
                 properties[field.name] = prop;
                 break;
             }
@@ -127,19 +150,31 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
 
             case 'checkbox': {
                 if (field.options && field.options.length > 0) {
-                    // Multiple checkbox → array of strings
-                    properties[field.name] = {
-                        type: 'string',
+                    // Several options: the values checked (it was typed as a
+                    // single string, so checking two failed validation).
+                    const prop: JsonSchemaProperty = {
+                        type: 'array',
+                        items: { type: 'string', enum: field.options.map((o) => o.value) },
+                        uniqueItems: true,
                         errorMessage,
-                    } as any;
-                    // For array type, we'd need a more complex schema
-                    // For simplicity, treat as comma-separated or use array
+                    };
+                    if (field.required) {
+                        prop.minItems = 1;
+                        errorMessage.minItems = errorMessage.required!;
+                    }
+                    properties[field.name] = prop;
                 } else {
-                    // Single boolean checkbox
-                    properties[field.name] = {
+                    // Single boolean checkbox; required means checked (false
+                    // used to pass, e.g. for "I accept the terms").
+                    const prop: JsonSchemaProperty = {
                         type: 'boolean',
                         errorMessage,
                     };
+                    if (field.required) {
+                        prop.const = true;
+                        errorMessage.const = errorMessage.required!;
+                    }
+                    properties[field.name] = prop;
                 }
                 break;
             }
@@ -147,6 +182,7 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
 
         if (field.required) {
             required.push(field.name);
+            requiredMessages[field.name] = errorMessage.required!;
         }
     }
 
@@ -154,5 +190,7 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
         type: 'object',
         properties,
         required,
+        additionalProperties: false,
+        ...(required.length > 0 ? { errorMessage: { required: requiredMessages } } : {}),
     };
 }

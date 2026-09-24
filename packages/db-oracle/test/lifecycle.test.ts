@@ -34,7 +34,7 @@ describe("OracleDriver lifecycle", () => {
         await driver.start();
 
         // Sanity: it works while running.
-        await expect(driver.query("SELECT 1 FROM dual")).resolves.toEqual([
+        expect(await driver.query("SELECT 1 FROM dual")).toEqual([
             { echo: "SELECT 1 FROM dual", params: [] },
         ]);
 
@@ -81,7 +81,7 @@ describe("OracleDriver lifecycle", () => {
     test("uses the default bridge path when no override is given", () => {
         const driver = new OracleDriver();
         // Default name is unchanged regardless of bridge path resolution.
-        expect(driver.name).toBe("db");
+        expect(driver.name).toBe("OracleDriver");
     });
 });
 
@@ -102,7 +102,8 @@ describe("OracleDriver pending-promise rejection on fatal/exit", () => {
         try {
             // FATAL_TEST causes the bridge to emit { type: 'fatal' } without an id.
             // The driver must reject this (and all other) pending promises.
-            await expect(driver.query("FATAL_TEST")).rejects.toThrow(/fatal/i);
+            const err = (await driver.query("FATAL_TEST").then(() => null, (e: Error) => e)) as Error;
+            expect(err.message).toMatch(/fatal/i);
         } finally {
             errSpy.mockRestore();
             await driver.stop();
@@ -118,7 +119,8 @@ describe("OracleDriver pending-promise rejection on fatal/exit", () => {
         try {
             // EXIT_TEST causes the bridge to call process.exit(1) immediately.
             // The stream will close, triggering rejectAllPending in the finally block.
-            await expect(driver.query("EXIT_TEST")).rejects.toThrow(/exited|error/i);
+            const err = (await driver.query("EXIT_TEST").then(() => null, (e: Error) => e)) as Error;
+            expect(err.message).toMatch(/exited|error/i);
         } finally {
             errSpy.mockRestore();
             await driver.stop();

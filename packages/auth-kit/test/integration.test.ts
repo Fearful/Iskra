@@ -105,6 +105,34 @@ describe("createBetterAuth against a real sqlite database", () => {
 
         sqlite.close();
     });
+
+    it("rejects email sign-up when disableSignUp is set, but still allows sign-in", async () => {
+        const sqlite = new Database(":memory:");
+        sqlite.exec(SQLITE_DDL);
+        const db = drizzle(sqlite);
+        const base = { db, adapterType: "sqlite" as const, secret: SECRET, disableCSRFCheck: true };
+
+        // Provision an account while sign-up is allowed...
+        await createBetterAuth(base).api.signUpEmail({
+            body: { email: "bob@example.com", password: "super-secret-password", name: "Bob" },
+        });
+
+        // ...then the locked-down instance refuses new accounts.
+        const locked = createBetterAuth({ ...base, disableSignUp: true });
+        await expect(
+            locked.api.signUpEmail({
+                body: { email: "mallory@example.com", password: "super-secret-password", name: "Mallory" },
+            }),
+        ).rejects.toThrow();
+        expect(sqlite.query("SELECT email FROM user WHERE email = ?").get("mallory@example.com")).toBeNull();
+
+        const signedIn = await locked.api.signInEmail({
+            body: { email: "bob@example.com", password: "super-secret-password" },
+        });
+        expect(signedIn.user.email).toBe("bob@example.com");
+
+        sqlite.close();
+    });
 });
 
 // Real Postgres is gated: only runs when a credential-checked connection succeeds.

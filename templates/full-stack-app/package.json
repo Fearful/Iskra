@@ -1,6 +1,7 @@
 {
     "name": "full-stack-app",
     "version": "0.1.0",
+    "private": true,
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",
@@ -14,6 +15,6 @@
         "@iskra-bun/process-kit": "workspace:*",
         "@iskra-bun/socket-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
-        "drizzle-orm": "^0.45.1"
+        "drizzle-orm": "^0.45.2"
     }
 }

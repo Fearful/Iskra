@@ -38,9 +38,13 @@ await app.start();
 
 1. **`new App(config?)`** — Crea la instancia. Si no le pasas config, la carga automaticamente con c12.
 2. **`app.register(driver)`** — Registra un driver (no lo inicializa todavia).
-3. **`app.use(plugin)`** — Instala un plugin inmediatamente.
-4. **`app.start()`** — Llama `init()` en todos los drivers, despues `start()`.
-5. **`app.stop()`** — Llama `stop()` en todos los drivers. Si alguno falla, tira `LifecycleError`.
+3. **`app.use(plugin)`** — Instala un plugin inmediatamente (si `install` es async, `start()` espera a que termine y propaga su error).
+4. **`app.start()`** — Llama `init()` en todos los drivers y despues `start()` de a uno, en orden de registro. Si un driver falla al arrancar, detiene en orden inverso los que ya arrancaron y relanza el error.
+5. **`app.stop()`** — Llama `stop()` en orden inverso al de arranque (el servidor web antes que la base de datos), sigue aunque alguno falle y al final tira `LifecycleError` con todos los errores. Siempre cierra OpenTelemetry.
+
+#### Apagado por senales
+
+Despues de `start()`, `SIGTERM` y `SIGINT` ejecutan `app.stop()` y terminan el proceso con codigo 0 (o 1 si falla o supera `shutdownTimeoutMs`, 10 s por defecto). Una segunda senal mientras se detiene fuerza la salida con codigo 1. Las llamadas simultaneas a `app.stop()` (por ejemplo un handler de senales propio junto al del App) comparten un mismo stop: cada una resuelve cuando todos los drivers se detuvieron. Configurable con `shutdownSignals` (lista de senales, o `false` para desactivarlo); bajo `NODE_ENV=test` viene desactivado.
 
 ### Contexto (DI)
 
@@ -74,11 +78,13 @@ Se configura con `logger.level` en la config de la app.
 
 ### Redaccion de secretos
 
-El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Cualquier campo estructurado que coincida con estos paths se reemplaza por `[REDACTED]`:
+El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Un campo con alguno de estos nombres (sin importar mayusculas), a cualquier profundidad de un objeto plano o array, se reemplaza por `[REDACTED]`:
 
-`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
 
-Esto hace que sea seguro loguear objetos de config o de error completos: las credenciales se eliminan antes de escribir la linea.
+`config.env` y `*.data` tambien se censuran. El objeto que se pasa no se modifica: se escribe una copia censurada.
+
+Solo se miran los nombres de los campos, no los valores: una URL de conexion con la contrasena adentro (`postgres://user:pass@host/db`) se escribe tal cual, igual que los campos de instancias de clases (solo se recorren objetos planos y arrays). Hay que limpiarlos antes de loguearlos.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

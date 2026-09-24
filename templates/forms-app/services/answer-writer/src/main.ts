@@ -25,42 +25,35 @@ worker.register(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
     await WriterService.bufferAnswer(job.data);
 });
 
+// Drivers stop in reverse order: the worker first (it waits for its active
+// jobs, which wait for their answers to be flushed, so the flusher must still
+// be running), then the flusher (final flush), then the database. The App
+// handles SIGTERM/SIGINT; the handlers here used to flush before the worker
+// stopped and run app.stop() a second time.
 app.register(new DbDriver());
+app.register({
+    name: 'AnswerFlusher',
+    init() {},
+    async start() {
+        const dbDriver = app.context.get('db');
+        if (!dbDriver?.db) throw new Error('DB Driver not initialized');
+        WriterService.setDb(dbDriver.db);
+        WriterService.startFlushTimer();
+        console.log('Answer Writer services initialized');
+    },
+    async stop() {
+        await WriterService.shutdown();
+    },
+});
 app.register(worker);
-
-async function setup() {
-    const dbDriver = app.context.get('db');
-    if (!dbDriver?.db) {
-        console.error('DB Driver not initialized');
-        return;
-    }
-
-    WriterService.setDb(dbDriver.db);
-    WriterService.startFlushTimer();
-
-    console.log('Answer Writer services initialized');
-}
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully');
-    await WriterService.shutdown();
-    await app.stop();
-    process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-    console.log('SIGINT received, shutting down gracefully');
-    await WriterService.shutdown();
-    await app.stop();
-    process.exit(0);
-});
 
 async function main() {
     await app.start();
-    await setup();
     console.log(`Answer Writer running (consumers only, no HTTP)`);
     console.log(`Batch config: max=${config.batch.maxSize}, flush=${config.batch.flushIntervalMs}ms`);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});

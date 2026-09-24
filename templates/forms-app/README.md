@@ -53,11 +53,11 @@ En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegari
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, DI, logger, event bus
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono, features (Auth, CSRF, CORS, RateLimit)
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos con Drizzle ORM (PostgreSQL)
-- [`@iskra-bun/worker-kit`](../../docs/worker-kit.md) — Cola de jobs con BullMQ
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Key-Value store con Redis
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, DI, logger, event bus
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono, features (Auth, CSRF, CORS, RateLimit)
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos con Drizzle ORM (PostgreSQL)
+- [`@iskra-bun/worker-kit`](https://iskra-docs.fly.dev/es/packages/worker-kit/) — Cola de jobs con BullMQ
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store con Redis
 
 ## Servicios y paquetes
 
@@ -90,10 +90,37 @@ cd templates/forms-app
 docker compose up --build
 ```
 
+En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
+de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
+`02-auth.sql`, las tablas de Better Auth. Si cambias el schema, regenera el SQL con
+`bun run db:init-sql` en `packages/shared` (un test falla si quedo desactualizado) y
+recrea el volumen (`docker compose down -v`).
+
 La app queda accesible en:
 
 - **Admin**: http://localhost/admin/
 - **Formularios publicos**: http://localhost/formularios/{spaceSlug}/{formSlug}
+
+### Crear el primer admin
+
+El admin-api no permite registrarse publicamente: todas sus rutas requieren sesion y las cuentas se crean por linea de comandos. El script crea tambien las tablas de Better Auth (`user`, `session`, `account`, `verification`) si no existen:
+
+```bash
+cd services/admin-api
+DATABASE_URL=postgresql://forms:secret@localhost:5432/forms_app \
+  bun run create-admin admin@example.com 'una-contrasena-larga'
+```
+
+Despues inicia sesion en http://localhost/admin/login.
+
+### Envios de formularios y reCAPTCHA
+
+forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que con las claves de
+ejemplo (`your-site-key` / `your-secret-key`) todo envio se rechaza con 403. Para probar
+localmente, registra un par de claves v3 con el dominio `localhost` en
+https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
+`RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
+formulario, asi que re-publicalo despues de cambiarla).
 
 ## Variables de entorno
 
@@ -104,10 +131,14 @@ Copia `.env.example` a `.env`:
 | `DB_PASSWORD` | Password de PostgreSQL | `secret` |
 | `DATABASE_URL` | URL de conexion a Postgres | `postgresql://forms:secret@postgres:5432/forms_app` |
 | `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
-| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens) | `dev-secret-change-me` |
+| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens), 32+ caracteres | `dev-only-auth-secret-change-me-32chars` |
+| `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
+| `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
 | `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
 | `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
 | `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |
+| `IP_HASH_SECRET` | Clave del hash diario de IP de cada respuesta (sin ella el hash se puede revertir probando todas las IPv4) | `CSRF_SECRET` |
+| `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
 | `FORM_MANAGER_URL` | URL interna del form-manager | `http://form-manager:4001` |
 
 ## Estructura del proyecto
@@ -226,17 +257,17 @@ PostgreSQL 16 con Drizzle ORM. Cuatro tablas principales:
 | `form_fields` | Campos individuales: tipo (text/number/email/select/checkbox/radio/textarea/date), label, posicion, validaciones, opciones, mensaje de error custom. |
 | `answers` | Respuestas enviadas: datos (JSONB), hash del IP (SHA256 con salt diario), score de reCAPTCHA. |
 
-Las tablas de Better Auth (user, session, account, verification) se crean automaticamente por el AuthFeature.
+Las tablas de Better Auth (user, session, account, verification) las crea `bun run create-admin` (ver [Crear el primer admin](#crear-el-primer-admin)).
 
 ## Endpoints
 
 ### admin-api (puerto 4000) — via nginx `/admin/api/`
 
-Todos los endpoints excepto auth requieren sesion autenticada.
+Todos los endpoints excepto auth requieren sesion autenticada (401 sin sesion). El registro publico (`/api/auth/sign-up/email`) esta deshabilitado; las cuentas se crean con `bun run create-admin`.
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| `POST` | `/api/auth/*` | Rutas de Better Auth (login, registro, sesion) |
+| `POST` | `/api/auth/*` | Rutas de Better Auth (login, logout, sesion) |
 | `GET` | `/api/spaces` | Listar espacios |
 | `POST` | `/api/spaces` | Crear espacio |
 | `GET` | `/api/spaces/:id` | Obtener espacio |
@@ -375,7 +406,7 @@ No se guarda la IP cruda. Se hashea con SHA256 usando un salt que rota diariamen
 
 ### Secretos
 
-Todos los secretos (AUTH_SECRET, CSRF_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
+Todos los secretos (AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
 
 ## Escalabilidad
 
@@ -427,10 +458,14 @@ Cada servicio tiene su propio Dockerfile:
 |----------|-------------------|------|
 | admin-api | UBI9 minimal | Binary compilado con `bun build --compile` |
 | admin-frontend | nginx:alpine | Build de Vite → archivos estaticos servidos por nginx |
-| form-manager | oven/bun:1 | Necesita Vite en runtime, no se puede compilar a binario |
+| form-manager | oven/bun:1.3.14 | Necesita Vite en runtime, no se puede compilar a binario |
 | cron | UBI9 minimal | Binary compilado |
 | forms-api | UBI9 minimal | Binary compilado + volumen para archivos estaticos |
 | answer-writer | UBI9 minimal | Binary compilado, sin puerto expuesto |
+
+Los binarios se compilan con `NODE_ENV=production` (Bun lo fija al compilar), y todas
+las imagenes corren con un UID no root (1001, grupo 0). Detalles en la
+[guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
 # Build y levantar todo
@@ -460,21 +495,21 @@ cd services/answer-writer && bun dev
 
 A partir de aca podes:
 
-- Agregar migraciones con [Drizzle Kit](../../docs/migraciones.md) para manejar cambios de schema
+- Agregar migraciones con [Drizzle Kit](https://iskra-docs.fly.dev/es/guides/migrations/) para manejar cambios de schema
 - Configurar un CDN (CloudFront, Cloudflare) delante de nginx para cachear los formularios estaticos
-- Agregar notificaciones por email cuando se reciben respuestas usando el [EmailFeature](../../docs/web-kit.md)
+- Agregar notificaciones por email cuando se reciben respuestas usando el [EmailFeature](https://iskra-docs.fly.dev/es/packages/web-kit/)
 - Implementar exportacion de respuestas a CSV/Excel desde el admin
 - Agregar soporte de formularios multi-paso (wizard)
 - Configurar los dos nginx de produccion (DMZ + interno) segun tu infraestructura
-- Revisar las [features del Web Kit](../../docs/web-kit.md) para agregar mas funcionalidad (API keys, permisos, OpenAPI)
+- Revisar las [features del Web Kit](https://iskra-docs.fly.dev/es/packages/web-kit/) para agregar mas funcionalidad (API keys, permisos, OpenAPI)
 
 ## Despliegue
 
 Para produccion necesitas:
 
 1. Dos instancias de nginx: una en la DMZ (solo `/formularios/`) y otra en la red interna (`/admin/`)
-2. Secretos reales para AUTH_SECRET, CSRF_SECRET, RECAPTCHA_SECRET
+2. Secretos reales para AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET
 3. PostgreSQL y Redis en alta disponibilidad
 4. Al menos 2 replicas de forms-api y answer-writer
 
-Mas info general en la [guia de despliegue](../../docs/despliegue.md).
+Mas info general en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

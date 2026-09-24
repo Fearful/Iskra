@@ -1,5 +1,5 @@
 import { forms, spaces } from '@forms-app/shared/db';
-import { eq, and, lte, sql } from 'drizzle-orm';
+import { eq, and, lte, sql, or, isNull } from 'drizzle-orm';
 import { FormStatus } from '@forms-app/shared';
 import { config } from '../app.config.ts';
 
@@ -13,14 +13,16 @@ export class SchedulerService {
     static async checkAndOpenForms(): Promise<number> {
         const now = new Date();
 
-        // Find forms that should be opened: scheduled AND starts_at <= now
+        // Find forms that should be opened: scheduled AND (no start date, or
+        // starts_at <= now). Without a start date a form never opened: NULL
+        // <= now is not true in SQL.
         const formsToOpen = await this.db
             .select()
             .from(forms)
             .where(
                 and(
                     eq(forms.status, FormStatus.SCHEDULED),
-                    lte(forms.startsAt, now),
+                    or(isNull(forms.startsAt), lte(forms.startsAt, now)),
                 ),
             );
 

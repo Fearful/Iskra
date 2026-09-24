@@ -108,6 +108,15 @@ const auth = createBetterAuth({
 });
 ```
 
+## Rate limiting e IP del cliente
+
+En producción Better Auth limita sus rutas por IP del cliente, que por defecto lee de `X-Forwarded-For`. Si los requests le llegan sin ese header, todos los clientes comparten un mismo límite por ruta: pasa `ipAddressHeaders` con un header que tu servidor complete con la IP real del cliente (el `AuthFeature` de web-kit lo hace), o `rateLimit: false` para apagar el limitador de Better Auth cuando la app limita esas rutas por su cuenta:
+
+```typescript
+createBetterAuth({ db, adapterType: 'postgres', secret, ipAddressHeaders: ['x-client-ip'] });
+createBetterAuth({ db, adapterType: 'postgres', secret, rateLimit: false });
+```
+
 ## Esquema Drizzle
 
 Las tablas de autenticación (`user`, `session`, `account`, `verification`) se exportan por dialecto, junto con los diccionarios de esquema:
@@ -115,6 +124,8 @@ Las tablas de autenticación (`user`, `session`, `account`, `verification`) se e
 ```typescript
 import { pgSchema, mysqlSchema, sqliteSchema } from '@iskra-bun/auth-kit';
 ```
+
+En MySQL, `verification.value` es `text`: guarda el estado de OAuth, de más de 255 caracteres. Una tabla creada con una versión anterior (`varchar(255)`) necesita `ALTER TABLE verification MODIFY value TEXT NOT NULL` (o una migración generada con el esquema nuevo) para que funcione el login OIDC.
 
 ## Tipos
 

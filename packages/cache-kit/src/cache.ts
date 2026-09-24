@@ -7,34 +7,46 @@ const TAG_INDEX_PREFIX = '__cache_tag__:';
 /** Keys that enable prototype-pollution when an object is later deep-merged. */
 const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
 
-/**
- * Throw if `value` (or any nested object) carries a prototype-pollution key.
- *
- * Cached payloads can originate from untrusted writers; rejecting these keys at
- * the parse boundary stops a malicious value from reaching code that deep-merges
- * it. Reads the raw JSON text first so `__proto__` (which `JSON.parse` hides on
- * the resulting object) is detected before traversal.
- */
-function assertNoPollution(raw: string, value: unknown): void {
-    if (DANGEROUS_KEYS.some((k) => raw.includes(`"${k}"`))) {
-        for (const key of DANGEROUS_KEYS) {
-            if (containsKey(value, key)) {
-                throw new Error(
-                    `cache-kit: refusing to deserialize value containing the ` +
-                    `unsafe key "${key}" (prototype-pollution risk).`
-                );
-            }
-        }
-    }
+class PollutionError extends Error {}
+
+/** Pending tag-index updates per adapter (shared by its namespaced caches) and key. */
+const indexLocks = new WeakMap<object, Map<string, Promise<unknown>>>();
+
+/** Runs `fn` after the previous `fn` for the same adapter and key has settled. */
+function withLock<T>(adapter: object, key: string, fn: () => Promise<T>): Promise<T> {
+    let locks = indexLocks.get(adapter);
+    if (!locks) indexLocks.set(adapter, (locks = new Map()));
+    const previous = locks.get(key) ?? Promise.resolve();
+    const result = previous.then(fn, fn);
+    const settled = result.then(
+        () => undefined,
+        () => undefined,
+    );
+    locks.set(key, settled);
+    void settled.then(() => {
+        if (locks.get(key) === settled) locks.delete(key);
+    });
+    return result;
 }
 
-/** Recursively test whether `value` is/contains an object with own `key`. */
-function containsKey(value: unknown, key: string): boolean {
-    if (value === null || typeof value !== 'object') return false;
-    if (Object.prototype.hasOwnProperty.call(value, key)) return true;
-    return Object.values(value as Record<string, unknown>).some((child) =>
-        containsKey(child, key)
-    );
+/**
+ * Parses cached JSON, throwing if any object in it carries a
+ * prototype-pollution key. Cached payloads can originate from untrusted
+ * writers; rejecting these keys at the parse boundary stops a malicious value
+ * from reaching code that deep-merges it. The reviver sees every key as
+ * parsed, so an escaped spelling such as `"\u005f_proto__"` is caught too
+ * (a check of the raw text for `"__proto__"` missed it).
+ */
+function parseSafely(raw: string): unknown {
+    return JSON.parse(raw, function (key, value) {
+        if ((DANGEROUS_KEYS as readonly string[]).includes(key)) {
+            throw new PollutionError(
+                `cache-kit: refusing to deserialize value containing the ` +
+                `unsafe key "${key}" (prototype-pollution risk).`
+            );
+        }
+        return value;
+    });
 }
 
 /**
@@ -96,19 +108,15 @@ export class Cache {
         const raw = await this.adapter.get(this.prefixKey(key));
         if (raw === undefined || raw === null) return undefined;
 
-        const text = raw as string;
-        let parsed: unknown;
         try {
-            parsed = JSON.parse(text);
-        } catch {
+            return parseSafely(raw as string) as T;
+        } catch (error) {
+            if (error instanceof PollutionError) throw error;
             throw new Error(
                 `cache-kit: failed to deserialize value for key "${key}". ` +
                 'The stored value is not valid JSON.'
             );
         }
-
-        assertNoPollution(text, parsed);
-        return parsed as T;
     }
 
     /**
@@ -123,6 +131,9 @@ export class Cache {
         const { ttl, tags } = this.resolveSetOptions(options);
         const serialized = JSON.stringify(value);
         const effectiveTtl = ttl ?? this.defaultTtl;
+        if (effectiveTtl !== undefined && effectiveTtl !== 0 && !(effectiveTtl > 0 && Number.isFinite(effectiveTtl))) {
+            throw new RangeError(`cache-kit: invalid TTL ${String(effectiveTtl)}: expected a positive number of seconds`);
+        }
 
         await this.adapter.set(this.prefixKey(key), serialized, effectiveTtl);
 
@@ -180,6 +191,8 @@ export class Cache {
      * store the result with the given TTL, and return it.
      *
      * The fallback is called **exactly once** on a cache miss — never on a hit.
+     * An error it throws is rethrown as is (so its class, status or code still
+     * reach the caller's error handling) and nothing is cached.
      *
      * @param key      Cache key.
      * @param ttl      TTL in seconds for the stored value.
@@ -189,15 +202,7 @@ export class Cache {
         const cached = await this.get<T>(key);
         if (cached !== undefined) return cached;
 
-        let value: T;
-        try {
-            value = await fallback();
-        } catch (error) {
-            throw new Error(
-                `cache-kit: remember() fallback for key "${key}" threw: ${String(error)}`
-            );
-        }
-
+        const value = await fallback();
         await this.set(key, value, { ttl });
         return value;
     }
@@ -217,6 +222,10 @@ export class Cache {
      */
     async invalidateTag(tag: string): Promise<void> {
         const indexKey = this.tagIndexKey(tag);
+        await withLock(this.adapter, indexKey, () => this.invalidateIndex(indexKey));
+    }
+
+    private async invalidateIndex(indexKey: string): Promise<void> {
         const raw = await this.adapter.get(indexKey);
         if (raw === null || raw === undefined) return;
 
@@ -267,22 +276,32 @@ export class Cache {
         return options;
     }
 
+    /**
+     * Read-modify-write of each tag's index, one at a time per index key: two
+     * concurrent set() calls with the same tag used to both read the old index
+     * and one key was lost, so invalidateTag() missed it. The lock is
+     * per-process; instances sharing Redis can still race (see the docs).
+     */
     private async indexTags(key: string, tags: string[]): Promise<void> {
         await Promise.all(
-            tags.map(async (tag) => {
+            tags.map((tag) => {
                 const indexKey = this.tagIndexKey(tag);
-                const raw = await this.adapter.get(indexKey);
-                let keys: string[] = [];
-                if (raw !== null && raw !== undefined) {
-                    try {
-                        keys = JSON.parse(raw as string) as string[];
-                    } catch {
-                        keys = [];
-                    }
-                }
-                const updated = keys.includes(key) ? keys : [...keys, key];
-                await this.adapter.set(indexKey, JSON.stringify(updated));
+                return withLock(this.adapter, indexKey, () => this.addToIndex(indexKey, key));
             })
         );
+    }
+
+    private async addToIndex(indexKey: string, key: string): Promise<void> {
+        const raw = await this.adapter.get(indexKey);
+        let keys: string[] = [];
+        if (raw !== null && raw !== undefined) {
+            try {
+                keys = JSON.parse(raw as string) as string[];
+            } catch {
+                keys = [];
+            }
+        }
+        if (keys.includes(key)) return;
+        await this.adapter.set(indexKey, JSON.stringify([...keys, key]));
     }
 }

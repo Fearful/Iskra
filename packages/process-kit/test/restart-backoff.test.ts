@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, mock } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { App } from '@iskra-bun/core';
 import { ProcessManager } from '../src/spawner';
 
@@ -141,10 +141,6 @@ describe('ProcessManager restart backoff – unit (no real waits)', () => {
 
             for (let i = 0; i < 4; i++) {
                 // Re-seed with the latest backoff state before each simulated exit
-                const latestDelay = scheduledDelays.length > 0
-                    ? Math.min(scheduledDelays[scheduledDelays.length - 1] * 2, 32000)
-                    : 1000;
-
                 seedProcess(pm, 'crasher', {
                     currentBackoffMs: scheduledDelays.length > 0 ? scheduledDelays[scheduledDelays.length - 1] : 1000,
                     startedAt: Date.now() - 100,

@@ -65,4 +65,35 @@ describe('loadAppConfig', () => {
         expect(config.otel?.enabled).toBe(true);
         expect(config.otel?.serviceVersion).toBe('0.1.0');
     });
+
+    it('keeps the kit sections and custom keys from app.config.ts', async () => {
+        // Regression: the schema was a plain z.object(), which strips unknown
+        // keys, so db/kv/socket (and restart settings) never reached the kits.
+        const dir = makeConfigDir(`export default {
+            name: 'KitsApp',
+            db: { driver: 'sqlite', url: 'data.db' },
+            kv: { driver: 'redis', connection: { url: 'redis://cache:6379' } },
+            socket: { enabled: true, port: 3001 },
+            processes: {
+                worker: { command: 'python3', maxRestarts: 3, restartCooldown: 500, restartBackoff: { initialMs: 100 } },
+            },
+            payments: { provider: 'stripe' },
+        };`);
+        const config = await loadAppConfig(dir);
+
+        expect(config.db).toEqual({ driver: 'sqlite', url: 'data.db' });
+        expect(config.kv).toEqual({ driver: 'redis', connection: { url: 'redis://cache:6379' } });
+        expect(config.socket).toEqual({ enabled: true, port: 3001 });
+        expect(config.processes?.worker).toMatchObject({
+            maxRestarts: 3,
+            restartCooldown: 500,
+            restartBackoff: { initialMs: 100 },
+        });
+        expect(config.payments).toEqual({ provider: 'stripe' });
+    });
+
+    it('rejects a malformed kit section instead of dropping it', async () => {
+        const dir = makeConfigDir(`export default { db: { driver: 'oracle', url: 'x' } };`);
+        await expect(loadAppConfig(dir)).rejects.toThrow();
+    });
 });

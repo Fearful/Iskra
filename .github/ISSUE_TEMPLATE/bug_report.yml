@@ -52,7 +52,7 @@ body:
     attributes:
       label: Bun version
       description: Output of `bun --version`.
-      placeholder: 1.1.38
+      placeholder: 1.3.14
     validations:
       required: true
   - type: input

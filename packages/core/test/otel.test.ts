@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { initOtel, shutdownOtel } from '../src/otel';
+import { createResource, initOtel, shutdownOtel } from '../src/otel';
 import type { OtelConfig } from '../src/types';
 
 // The OTel SDK packages are optional peer deps. Detect whether they are
@@ -39,5 +39,23 @@ describe('OTel initialization', () => {
 
     it('shutdownOtel is a safe no-op when nothing was initialized', async () => {
         await expect(shutdownOtel()).resolves.toBeUndefined();
+    });
+
+    it('createResource works with @opentelemetry/resources 2.x', async () => {
+        // Regression: 2.x exports Resource as a type only, so `new Resource()`
+        // threw "undefined is not a constructor" and initOtel always failed.
+        const specifier = '@opentelemetry/resources';
+        const resources = await import(specifier);
+        expect(resources.Resource).toBeUndefined();
+
+        const resource = createResource(resources, { 'service.name': 'svc' });
+        expect(resource.attributes['service.name']).toBe('svc');
+    });
+
+    it('createResource still supports the 1.x Resource class', () => {
+        class Resource {
+            constructor(public attributes: Record<string, string>) {}
+        }
+        expect(createResource({ Resource }, { 'service.name': 'legacy' }).attributes).toEqual({ 'service.name': 'legacy' });
     });
 });

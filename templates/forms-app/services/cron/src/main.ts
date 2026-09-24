@@ -34,11 +34,14 @@ async function setup() {
         return;
     }
 
-    const kvDriver = app.context.get('kv');
+    // KVManager's ioredis client: without it these services cannot read or
+    // write the form keys, so fail instead of running without Redis.
+    const redis = app.context.get('kv')?.client;
+    if (!redis) throw new Error('Redis client not available (KVManager with the redis driver)');
 
     SchedulerService.setDb(dbDriver.db);
     RedisPopulatorService.setDb(dbDriver.db);
-    RedisPopulatorService.setRedis(kvDriver?.client);
+    RedisPopulatorService.setRedis(redis);
 }
 
 async function main() {
@@ -71,4 +74,7 @@ async function main() {
     console.log(`Cron service running on port ${config.web.port}`);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});

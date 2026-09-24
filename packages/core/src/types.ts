@@ -46,6 +46,13 @@ export interface AppConfig {
         level?: string;
     };
     otel?: OtelConfig;
+    /**
+     * Signals that trigger a graceful `stop()` and exit. Default
+     * `['SIGTERM', 'SIGINT']` (none under NODE_ENV=test); `false` disables.
+     */
+    shutdownSignals?: string[] | false;
+    /** Max time for a signal-triggered stop before forcing exit(1). Default 10000. */
+    shutdownTimeoutMs?: number;
     processes?: Record<string, ProcessConfig>;
     socket?: {
         enabled: boolean;
@@ -53,7 +60,8 @@ export interface AppConfig {
         adapter?: 'bun' | 'socket.io';
     };
     kv?: {
-        driver: 'memory' | 'redis' | 'libsql';
+        driver: 'memory' | 'redis';
+        /** Redis: a URL string, ioredis options, or ioredis options with `url`. */
         connection?: any;
     };
     db?: {

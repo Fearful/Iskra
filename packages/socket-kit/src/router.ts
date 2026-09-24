@@ -1,4 +1,4 @@
-import type { App, Context } from '@iskra-bun/core';
+import type { Context } from '@iskra-bun/core';
 import type { ServerWebSocket } from 'bun';
 
 /**
@@ -7,6 +7,8 @@ import type { ServerWebSocket } from 'bun';
  */
 export interface SocketData {
     connectionId: string;
+    /** Whatever `authenticate(req)` returned for this connection, if configured. */
+    auth?: unknown;
 }
 
 export interface SocketContext<TPayload = unknown, TData extends SocketData = SocketData> extends Context<TPayload> {

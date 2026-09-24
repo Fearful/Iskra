@@ -21,6 +21,7 @@ describe("Upload Feature Routes", () => {
         kernel.registerFeature(new UploadFeature({
             projectName: "test-project",
             exposeRoutes: true,
+            authorize: () => true,
             routePrefix: "/files",
         }));
         await kernel.initialize();
@@ -72,6 +73,7 @@ describe("Upload Feature Routes", () => {
         kernel2.registerFeature(new UploadFeature({
             projectName: "size-test",
             exposeRoutes: true,
+            authorize: () => true,
             maxFileSize: 10, // 10 bytes max
         }));
         await kernel2.initialize();
@@ -84,7 +86,7 @@ describe("Upload Feature Routes", () => {
         formData.append("file", new File(["This is way too long for 10 bytes"], "big.txt"));
 
         const res = await app.request("/upload", { method: "POST", body: formData });
-        expect(res.status).toBe(400);
+        expect(res.status).toBe(413);
         const json = await res.json() as any;
         expect(json.error).toContain("too large");
 
@@ -97,6 +99,7 @@ describe("Upload Feature Routes", () => {
         kernel3.registerFeature(new UploadFeature({
             projectName: "ext-test",
             exposeRoutes: true,
+            authorize: () => true,
             allowedExtensions: [".txt", ".pdf"],
         }));
         await kernel3.initialize();
@@ -122,6 +125,7 @@ describe("Upload Feature Routes", () => {
         kernel4.registerFeature(new UploadFeature({
             projectName: "no-file-test",
             exposeRoutes: true,
+            authorize: () => true,
         }));
         await kernel4.initialize();
 

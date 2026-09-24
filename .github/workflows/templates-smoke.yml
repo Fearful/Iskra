@@ -1,0 +1,51 @@
+# Smoke test of the templates' Docker images (scripts/smoke-templates.ts):
+# each template is built with its own Dockerfile, started as its README says
+# (forms-app with its docker compose) and probed over HTTP. Catches images
+# that build but cannot start, e.g. a SQLite file in a directory the runtime
+# user cannot write.
+#
+# Separate from ci.yml so it runs only when something a template image is
+# built from changes. Every Dockerfile shares the same first build steps
+# (COPY . . + bun install), so the install layer is reused across templates.
+name: Templates smoke test
+
+on:
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'templates/**'
+      - 'bun.lock'
+      - 'package.json'
+      - 'tsconfig.base.json'
+      - '.dockerignore'
+      - 'scripts/smoke-templates.ts'
+      - '.github/workflows/templates-smoke.yml'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Build and start every template image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Smoke test the template images
+        run: bun scripts/smoke-templates.ts

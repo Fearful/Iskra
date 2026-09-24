@@ -22,7 +22,7 @@ await app.start()
 
 ## Documentacion
 
-Guia completa: [docs/db-kit.md](../../docs/db-kit.md) · Migraciones: [docs/migraciones.md](../../docs/migraciones.md)
+Guia completa: [@iskra-bun/db-kit](https://iskra-docs.fly.dev/es/packages/db-kit/) · [Migraciones](https://iskra-docs.fly.dev/es/guides/migrations/)
 
 ## Licencia
 

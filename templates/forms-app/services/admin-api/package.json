@@ -1,19 +1,22 @@
 {
     "name": "@forms-app/admin-api",
     "version": "0.1.0",
+    "private": true,
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",
-        "start": "bun run src/main.ts"
+        "start": "bun run src/main.ts",
+        "create-admin": "bun run src/scripts/create-admin.ts"
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/auth-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "@iskra-bun/db-kit": "workspace:*",
         "@forms-app/shared": "workspace:*",
         "@hono/zod-validator": "^0.4.2",
-        "hono": "^4.6.14",
-        "drizzle-orm": "^0.45.1",
+        "hono": "^4.12.34",
+        "drizzle-orm": "^0.45.2",
         "postgres": "^3.4.5",
         "zod": "^3.24.1",
         "uuid": "^13.0.0"

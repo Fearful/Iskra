@@ -10,14 +10,27 @@
     ],
     "scripts": {
         "test": "bun test",
+        "ci": "bun run lint && bun run typecheck && bun test && bun run build",
         "build": "bun run scripts/build-packages.ts",
-        "version": "changeset version",
-        "release": "bun run build && changeset publish",
+        "version": "changeset version && bun run packages/create-iskra/scripts/sync.ts",
+        "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
         "typecheck": "tsc --noEmit",
-        "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
-        "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
+        "contract:server": "bun run sdks/contract/server.ts",
+        "smoke:templates": "bun run scripts/smoke-templates.ts",
+        "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",
+        "test:sdk:java": "cd sdks/java/iskra-client && mvn -q -B test",
+        "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
+        "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
         "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
         "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
+    },
+    "overrides": {
+        "hono": "^4.12.34",
+        "fast-uri": "^3.1.8",
+        "nanoid": "^3.3.16",
+        "postcss": "^8.5.23",
+        "browserslist": "^4.28.7",
+        "baseline-browser-mapping": "^2.11.0"
     },
     "devDependencies": {
         "@changesets/changelog-github": "^0.7.0",
@@ -29,5 +42,8 @@
         "tsup": "^8.3.0",
         "typescript-eslint": "^8.0.0"
     },
-    "license": "AGPL-3.0-or-later"
+    "license": "AGPL-3.0-or-later",
+    "engines": {
+        "bun": ">=1.3.0"
+    }
 }

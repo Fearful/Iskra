@@ -1,6 +1,19 @@
 /**
+ * Public path prefix of the forms: nginx routes /formularios/* to forms-api,
+ * which serves each form at /<space>/<form>/ and its API at /api/*.
+ */
+export const PUBLIC_FORMS_PATH = '/formularios';
+
+/** Where a form's page (and, under it, its assets) is served publicly. */
+export function publicFormBase(spaceSlug: string, formSlug: string): string {
+    return `${PUBLIC_FORMS_PATH}/${spaceSlug}/${formSlug}/`;
+}
+
+/**
  * Generates the vanilla JS/TS runtime code for a prerendered form.
- * This code is bundled by Vite into the static form page.
+ * This code is bundled by Vite into the static form page. Values are emitted
+ * as JSON string literals (and URL path segments encoded), never spliced into
+ * quotes, so they cannot break out of the generated code.
  */
 export function generateFormRuntime(
     formId: string,
@@ -8,9 +21,11 @@ export function generateFormRuntime(
     formSlug: string,
     recaptchaSiteKey: string,
 ): string {
-    return `import { formSchema } from 'virtual:form-validation/${formId}';
+    const js = (value: string) => JSON.stringify(value);
+    const submitUrl = `${PUBLIC_FORMS_PATH}/api/submit/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(formSlug)}`;
+    return `import { formSchema } from ${js(`virtual:form-validation/${formId}`)};
 
-const form = document.getElementById('form-${formId}');
+const form = document.getElementById(${js(`form-${formId}`)});
 const statusEl = document.getElementById('form-status');
 
 function showFieldError(fieldName, message) {
@@ -60,11 +75,21 @@ function getFormData() {
     form.querySelectorAll('input[type="checkbox"]:not([value])').forEach(el => {
         data[el.name] = el.checked;
     });
+    // A group of checkboxes is always a list, even with one or none checked.
+    form.querySelectorAll('input[type="checkbox"][value]').forEach(el => {
+        const value = data[el.name];
+        data[el.name] = value === undefined ? [] : Array.isArray(value) ? value : [value];
+    });
+    // An empty input means no answer: sent as "", an optional number, email,
+    // date or select failed validation.
+    for (const key of Object.keys(data)) {
+        if (data[key] === '') delete data[key];
+    }
     return data;
 }
 
 async function getCsrfToken() {
-    const res = await fetch('/formularios/api/csrf-token', { credentials: 'include' });
+    const res = await fetch(${js(`${PUBLIC_FORMS_PATH}/api/csrf-token`)}, { credentials: 'include' });
     const json = await res.json();
     return json.token;
 }
@@ -72,7 +97,7 @@ async function getCsrfToken() {
 async function getRecaptchaToken() {
     return new Promise((resolve) => {
         grecaptcha.ready(() => {
-            grecaptcha.execute('${recaptchaSiteKey}', { action: 'submit' }).then(resolve);
+            grecaptcha.execute(${js(recaptchaSiteKey)}, { action: 'submit' }).then(resolve);
         });
     });
 }
@@ -103,7 +128,7 @@ form.addEventListener('submit', async (e) => {
             getRecaptchaToken(),
         ]);
 
-        const res = await fetch('/formularios/api/submit/${spaceSlug}/${formSlug}', {
+        const res = await fetch(${js(submitUrl)}, {
             method: 'POST',
             credentials: 'include',
             headers: {

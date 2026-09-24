@@ -96,3 +96,17 @@ describe("createBetterAuth", () => {
         expect(typeof auth.handler).toBe("function");
     });
 });
+
+describe("createBetterAuth rate limiting and client IP", () => {
+    it("passes rateLimit: false and the client IP headers to better-auth", () => {
+        const auth = createBetterAuth({
+            db: fakeDb,
+            adapterType: "sqlite",
+            secret: SECRET,
+            rateLimit: false,
+            ipAddressHeaders: ["x-client-ip"],
+        }) as unknown as { options: { rateLimit?: { enabled?: boolean }; advanced?: { ipAddress?: { ipAddressHeaders?: string[] } } } };
+        expect(auth.options.rateLimit?.enabled).toBe(false);
+        expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual(["x-client-ip"]);
+    });
+});

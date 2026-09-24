@@ -149,13 +149,10 @@ See [Migrations](/guides/migrations/) for the full guide.
 
 ```typescript
 // Run migrations programmatically
-await db.runMigrations('./src/db/schema.ts', './drizzle');
+await db.runMigrations(undefined, './drizzle');
 ```
 
-`runMigrations` delegates to `MigrationHelper`, which now correctly passes
-`--schema` and `--out` flags to `drizzle-kit generate` and `--config` to all
-commands. Previously, `schemaPath` and `migrationsDir` were silently ignored
-unless a `drizzle.config.ts` was present in the working directory.
+`runMigrations` applies the migrations generated in `migrationsDir` with Drizzle's migrator, over the connection opened by `start()` (it used to run `drizzle-kit migrate`, which ignored both arguments and failed without a `drizzle.config.ts`). `MigrationHelper` still passes `--schema` and `--out` to `drizzle-kit generate` and `--config` to every command.
 
 When a migration command exits non-zero, the captured `drizzle-kit` stderr is
 **scrubbed of credentials** before it is attached to `MigrationError.context.stderr`.

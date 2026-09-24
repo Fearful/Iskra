@@ -19,13 +19,17 @@ export interface TestServerClient {
     delete(path: string, init?: RequestInit): Promise<Response>;
 }
 
+/**
+ * `init` with `body` as JSON. The caller's headers may be a `Headers`, tuples or
+ * a record (spreading the first two lost them), and their `Content-Type`, in
+ * any case, wins over the JSON default instead of being sent next to it.
+ */
 function buildJsonInit(body: unknown, base: RequestInit = {}): RequestInit {
+    const headers = new Headers(base.headers);
+    if (!headers.has('content-type')) headers.set('content-type', 'application/json');
     return {
         ...base,
-        headers: {
-            'content-type': 'application/json',
-            ...base.headers,
-        },
+        headers,
         body: JSON.stringify(body),
     };
 }

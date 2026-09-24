@@ -49,5 +49,11 @@ jobs:
         run: |
           set -euo pipefail
           git remote add codeberg git@codeberg.org:fearful/iskra.git
-          # --mirror force-pushes all refs (branches + tags) to match local.
-          git push --mirror --force codeberg
+          # The checkout has one local branch; the others are origin/* remote
+          # refs. `git push --mirror` pushed exactly that: it deleted every
+          # other branch on Codeberg and created refs/remotes/origin/* there.
+          # Push origin's branches as branches, and the tags, pruning the rest.
+          git remote set-head origin --delete || true
+          git push --force --prune codeberg \
+            'refs/remotes/origin/*:refs/heads/*' \
+            'refs/tags/*:refs/tags/*'

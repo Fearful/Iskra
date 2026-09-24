@@ -1,7 +1,6 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { WorkerManager } from "../src/index";
 import { QueueError } from "../src/errors";
-import { App } from "@iskra-bun/core";
 
 // Note: These tests verify the WorkerManager API and error handling.
 // Full BullMQ integration tests require a running Redis instance.
@@ -89,12 +88,29 @@ describe("WorkerManager.parseConnection", () => {
     const parse = (connection: any) =>
         (new WorkerManager({ connection }) as any).parseConnection();
 
+    it("strips the brackets of an IPv6 host", () => {
+        expect(parse("redis://[::1]:6380").host).toBe("::1");
+    });
+
     it("parses a full redis URL into connection parts", () => {
+        // The ACL username used to be dropped, so authenticated Redis 6+ users failed.
         expect(parse("redis://user:pass@redis.example.com:6380/2")).toEqual({
             host: "redis.example.com",
             port: 6380,
+            username: "user",
             password: "pass",
             db: 2,
+        });
+    });
+
+    it("percent-decodes credentials and enables TLS for rediss://", () => {
+        expect(parse("rediss://svc%40acct:p%40ss%2Fw0rd@cache.example.com:6380/0")).toEqual({
+            host: "cache.example.com",
+            port: 6380,
+            username: "svc@acct",
+            password: "p@ss/w0rd",
+            db: 0,
+            tls: {},
         });
     });
 
@@ -142,15 +158,11 @@ describe("WorkerManager.mapJobOptions", () => {
         expect(map(opts)).toEqual(opts);
     });
 
-    it("preserves undefined for unspecified options", () => {
-        expect(map({ attempts: 2 })).toEqual({
-            attempts: 2,
-            delay: undefined,
-            priority: undefined,
-            backoff: undefined,
-            removeOnComplete: undefined,
-            removeOnFail: undefined,
-        });
+    it("omits unspecified options so the queue defaults still apply", () => {
+        // toEqual ignores undefined-valued keys, so check the keys themselves:
+        // BullMQ spreads these over defaultJobOptions and an undefined erased them.
+        expect(Object.keys(map({ attempts: 2 }))).toEqual(["attempts"]);
+        expect(Object.keys(map({ repeat: "0 9 * * *" }))).toEqual(["repeat"]);
     });
 });
 

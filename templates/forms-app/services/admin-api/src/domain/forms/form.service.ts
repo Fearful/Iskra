@@ -87,11 +87,13 @@ export class FormService {
             updatedAt: new Date(),
         };
 
-        await this.db.insert(forms).values(form);
-
-        if (fieldRecords.length > 0) {
-            await this.db.insert(formFields).values(fieldRecords);
-        }
+        // One transaction: a failed field insert used to leave a form without fields.
+        await this.db.transaction(async (tx: any) => {
+            await tx.insert(forms).values(form);
+            if (fieldRecords.length > 0) {
+                await tx.insert(formFields).values(fieldRecords);
+            }
+        });
 
         return { ...form, fields: fieldRecords };
     }
@@ -110,11 +112,9 @@ export class FormService {
         if (input.startsAt !== undefined) updates.startsAt = new Date(input.startsAt);
         if (input.endsAt !== undefined) updates.endsAt = new Date(input.endsAt);
 
+        let fieldRecords: FormField[] | undefined;
         if (input.fields) {
-            // Replace all fields
-            await this.db.delete(formFields).where(eq(formFields.formId, id));
-
-            const fieldRecords: FormField[] = input.fields.map((f) => {
+            fieldRecords = input.fields.map((f): FormField => {
                 const enforced = enforceConstraints(f.fieldType as FieldType, {
                     maxLength: f.maxLength,
                     min: f.min,
@@ -140,16 +140,22 @@ export class FormService {
                 };
             });
 
-            if (fieldRecords.length > 0) {
-                await this.db.insert(formFields).values(fieldRecords);
-            }
-
             // Regenerate validation schema
             updates.validationSchema = generateJsonSchema(fieldRecords);
             updates.schema = input.fields as any;
         }
 
-        await this.db.update(forms).set(updates).where(eq(forms.id, id));
+        // One transaction: the fields used to be deleted first, so a failed
+        // insert left the form with none.
+        await this.db.transaction(async (tx: any) => {
+            if (fieldRecords) {
+                await tx.delete(formFields).where(eq(formFields.formId, id));
+                if (fieldRecords.length > 0) {
+                    await tx.insert(formFields).values(fieldRecords);
+                }
+            }
+            await tx.update(forms).set(updates).where(eq(forms.id, id));
+        });
 
         return this.findById(id);
     }

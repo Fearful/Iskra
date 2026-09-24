@@ -1,6 +1,7 @@
 {
     "name": "job-worker",
     "version": "0.1.0",
+    "private": true,
     "main": "src/main.ts",
     "scripts": {
         "dev": "bun run --watch src/main.ts",
@@ -10,7 +11,7 @@
         "@iskra-bun/core": "workspace:*",
         "@iskra-bun/worker-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
-        "hono": "^4.6.14",
+        "hono": "^4.12.34",
         "zod": "^3.24.1"
     }
 }

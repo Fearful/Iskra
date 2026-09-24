@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Kernel } from "../src/kernel";
 import { ErrorHandlerFeature } from "../src/features/error-handler";
 import { HttpError, NotFoundError, ValidationError, AuthError, ForbiddenError } from "../src/errors";
-import { IskraError, ErrorCodes, DriverError } from "@iskra-bun/core";
+import { DriverError } from "@iskra-bun/core";
 import { HTTPException } from "hono/http-exception";
 
 describe("Error Handler Feature", () => {
@@ -43,6 +43,7 @@ describe("Error Handler Feature", () => {
         const json = await res.json() as any;
         expect(json.error).toBe("Invalid input");
         expect(json.code).toBe("VALIDATION_ERROR");
+        expect(json.details).toEqual({ field: "email", issue: "required" });
 
         await kernel.shutdown();
     });

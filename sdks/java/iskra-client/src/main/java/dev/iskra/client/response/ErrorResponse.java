@@ -12,6 +12,12 @@ public class ErrorResponse {
     @JsonProperty("error")
     private String error;
 
+    @JsonProperty("message")
+    private String message;
+
+    @JsonProperty("context")
+    private Object context;
+
     @JsonProperty("code")
     private String code;
 
@@ -32,6 +38,14 @@ public class ErrorResponse {
 
     public String getError() {
         return error;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public Object getContext() {
+        return context;
     }
 
     public String getCode() {
@@ -56,6 +70,14 @@ public class ErrorResponse {
 
     public void setError(String error) {
         this.error = error;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public void setContext(Object context) {
+        this.context = context;
     }
 
     public void setCode(String code) {

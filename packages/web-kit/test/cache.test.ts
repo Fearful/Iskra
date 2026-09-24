@@ -115,6 +115,20 @@ describe("Cache Feature", () => {
         await kernel.shutdown();
     });
 
+    it("incrementWithTtl creates the counter with an expiry and resets after it", async () => {
+        const kernel = new Kernel();
+        const cache = new CacheFeature({ adapter: "memory" });
+        kernel.registerFeature(cache);
+        await kernel.initialize();
+
+        expect(await cache.client.incrementWithTtl!("rl", 50)).toBe(1);
+        expect(await cache.client.incrementWithTtl!("rl", 50)).toBe(2);
+        await new Promise((r) => setTimeout(r, 80));
+        expect(await cache.client.incrementWithTtl!("rl", 50)).toBe(1);
+
+        await kernel.shutdown();
+    });
+
     it("returns 0 when incrementing an expired key", async () => {
         const kernel = new Kernel();
         const cache = new CacheFeature({ adapter: "memory" });

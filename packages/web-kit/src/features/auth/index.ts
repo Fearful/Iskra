@@ -1,6 +1,7 @@
 import type { AuthConfig, Feature, Kernel } from "../../types";
 import type { Context, Hono, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { getClientIp } from "../../client-ip";
 import { type Auth, createBetterAuth } from "@iskra-bun/auth-kit";
 import { z } from "@hono/zod-openapi";
 import type { DbFeature } from "../db";
@@ -44,6 +45,54 @@ const SessionResponseSchema = z.object({
 
 // ─── Auth Feature ────────────────────────────────────────────────────────────
 
+/**
+ * Carries the client IP, as resolved with the kernel's `trustProxy`, to
+ * better-auth (its rate limiter and the sessions' `ipAddress`). Set on every
+ * request handed to it, replacing any value the client sent.
+ */
+const CLIENT_IP_HEADER = "x-iskra-client-ip";
+
+/**
+ * The origin better-auth runs on. It decides the cookies' `Secure` flag and
+ * is a trusted origin, so production may not fall back to
+ * `http://localhost:3000` (cookies without `Secure`, localhost trusted).
+ */
+function resolveBaseURL(baseURL: string | undefined): string {
+    const resolved = baseURL || process.env.BETTER_AUTH_URL;
+    if (resolved) return resolved;
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "AuthFeature: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, " +
+                "e.g. \"https://app.example.com\"; without it cookies are sent without Secure.",
+        );
+    }
+    return "http://localhost:3000";
+}
+
+/**
+ * better-auth ignores `basePath` when `baseURL` has a path and serves its
+ * routes under that path instead, while the feature mounts them at
+ * `basePath`: every auth request then 404s. A reverse-proxy prefix belongs in
+ * the proxy, not in `baseURL` (e.g. `http://localhost`, not
+ * `http://localhost/admin/api`).
+ */
+function assertBaseURLMatchesBasePath(baseURL: string | undefined, basePath: string): void {
+    if (!baseURL) return;
+    let pathname: string;
+    try {
+        pathname = new URL(baseURL).pathname.replace(/\/+$/, "");
+    } catch {
+        throw new Error(`AuthFeature: invalid baseURL "${baseURL}"`);
+    }
+    if (pathname && pathname !== basePath.replace(/\/+$/, "")) {
+        throw new Error(
+            `AuthFeature: baseURL "${baseURL}" has the path "${pathname}", so better-auth would serve its routes ` +
+                `there instead of at basePath "${basePath}" and every auth request would 404. ` +
+                `Use the origin only (e.g. "${new URL(baseURL).origin}").`,
+        );
+    }
+}
+
 export class AuthFeature implements Feature {
     name = "auth";
     dependencies = ["db"];
@@ -60,10 +109,12 @@ export class AuthFeature implements Feature {
     // be restored, which would otherwise leak into auth-kit's own test suite).
     constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
         this.createAuth = createAuth;
+        const baseURL = resolveBaseURL(config.baseURL);
+        assertBaseURLMatchesBasePath(baseURL, config.basePath || "/api/sso");
         this.config = {
             ...config,
             basePath: config.basePath || "/api/sso",
-            baseURL: config.baseURL || "http://localhost:3000",
+            baseURL,
         };
 
         if (config.authMode === "oidc" || config.authMode === "email") {
@@ -101,17 +152,23 @@ export class AuthFeature implements Feature {
             baseURL: this.config.baseURL,
             basePath: this.config.basePath,
             trustedOrigins: this.config.trustedOrigins,
-            enableEmailPassword: true,
+            enableEmailPassword: this.config.enableEmailPassword ?? this.authMode === "email",
+            disableSignUp: this.config.enableSelfRegistration === false,
             disableCSRFCheck,
             socialProviders: this.config.socialProviders,
             oidcConfig: this.config.oidcConfig,
+            // `rateLimit: false` turns off both limiters, as documented.
+            ...(this.config.rateLimit === false ? { rateLimit: false as const } : {}),
+            ipAddressHeaders: [CLIENT_IP_HEADER],
         });
 
         const app = kernel.getApp();
 
         // Per-IP rate limiting on the auth routes by default, throttling
         // credential-stuffing / brute-force against sign-in and sign-up.
-        app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+        if (this.config.rateLimit !== false) {
+            app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+        }
 
         app.use("*", async (c: Context, next: Next) => {
             try {
@@ -138,15 +195,37 @@ export class AuthFeature implements Feature {
 
     // ─── Auth-route rate limiting ────────────────────────────────────────────
     private authRateLimitHits = new Map<string, { count: number; expiresAt: number }>();
-    private readonly authRateLimitWindowMs = 15 * 60 * 1000;
-    private readonly authRateLimitMax = 20;
+    private authRateLimitLastSweep = 0;
+    private get authRateLimitWindowMs(): number {
+        return (this.config.rateLimit || undefined)?.windowMs ?? 15 * 60 * 1000;
+    }
+    private get authRateLimitMax(): number {
+        return (this.config.rateLimit || undefined)?.max ?? 20;
+    }
 
+    /**
+     * Counts sign-in, sign-up, password-reset and other POST attempts per
+     * client. Session reads, OAuth callbacks (GET) and sign-out are not
+     * attempts: counting them locked out a SPA polling get-session, and its
+     * users out of signing in or out.
+     */
     private authRateLimitMiddleware() {
         return async (c: Context, next: Next) => {
-            const ip = c.req.header("x-forwarded-for")
-                || c.req.header("x-real-ip")
-                || "unknown";
+            if (c.req.method !== "POST" || /\/sign-out\/?$/.test(c.req.path)) {
+                await next();
+                return;
+            }
+            // Socket address unless the kernel is configured with `trustProxy`:
+            // a raw X-Forwarded-For is client-controlled and would let an
+            // attacker rotate it to bypass the limit (and grow this map).
+            const ip = getClientIp(c, this.kernel?.getConfig().trustProxy) ?? "unknown";
             const now = Date.now();
+            if (now - this.authRateLimitLastSweep >= this.authRateLimitWindowMs) {
+                this.authRateLimitLastSweep = now;
+                for (const [key, hit] of this.authRateLimitHits) {
+                    if (now > hit.expiresAt) this.authRateLimitHits.delete(key);
+                }
+            }
             const entry = this.authRateLimitHits.get(ip);
 
             const next_entry = !entry || now > entry.expiresAt
@@ -190,7 +269,7 @@ export class AuthFeature implements Feature {
                         401: { description: "Invalid credentials" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -212,7 +291,7 @@ export class AuthFeature implements Feature {
                         400: { description: "Validation error" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -225,7 +304,7 @@ export class AuthFeature implements Feature {
                         200: { description: "Signed out" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -241,13 +320,35 @@ export class AuthFeature implements Feature {
                         },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
         }
 
         // Catch-all for all other auth routes (OAuth callbacks, etc.)
-        app.on(["POST", "GET"], `${base}/*`, (c) => {
-            return this.auth!.handler(c.req.raw);
+        app.on(["POST", "GET"], `${base}/*`, async (c) => {
+            return this.auth!.handler(await this.withClientIp(c));
+        });
+    }
+
+    /**
+     * The request with {@link CLIENT_IP_HEADER} set to the resolved client IP.
+     * The body is re-read through Hono when a validator (the OpenAPI routes)
+     * already consumed the original one.
+     */
+    private async withClientIp(c: Context): Promise<Request> {
+        const raw = c.req.raw;
+        const headers = new Headers(raw.headers);
+        const ip = getClientIp(c, this.kernel?.getConfig().trustProxy);
+        if (ip) headers.set(CLIENT_IP_HEADER, ip);
+        else headers.delete(CLIENT_IP_HEADER);
+        // Only a request that had one gets a body: an empty one made
+        // better-auth answer 415 to a body-less POST such as sign-out.
+        const body = raw.body !== null ? await c.req.arrayBuffer() : null;
+        return new Request(raw.url, {
+            method: raw.method,
+            headers,
+            body: body && body.byteLength > 0 ? body : undefined,
+            signal: raw.signal,
         });
     }
 

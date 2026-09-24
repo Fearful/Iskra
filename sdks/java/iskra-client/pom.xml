@@ -6,17 +6,19 @@
 
     <groupId>dev.iskra</groupId>
     <artifactId>iskra-client</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <packaging>jar</packaging>
 
     <name>Iskra Java Client SDK</name>
     <description>Java client library for interacting with Iskra framework services over HTTP</description>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jackson.version>2.17.0</jackson.version>
+        <jackson.version>2.18.9</jackson.version>
+        <junit.version>5.11.4</junit.version>
+        <!-- Where the SDK contract server lives (see src/test/.../ContractServer.java). -->
+        <iskra.repoRoot>${project.basedir}/../../..</iskra.repoRoot>
     </properties>
 
     <dependencies>
@@ -30,6 +32,12 @@
             <artifactId>jackson-core</artifactId>
             <version>${jackson.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -38,9 +46,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
+                    <systemPropertyVariables>
+                        <iskra.repoRoot>${iskra.repoRoot}</iskra.repoRoot>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

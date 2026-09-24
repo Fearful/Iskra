@@ -1,7 +1,6 @@
-import { describe, it, expect, mock, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { ProcessManager } from '../src/spawner';
 import { App } from '@iskra-bun/core';
-import { join } from 'path';
 
 describe('ProcessManager', () => {
     let app: App;

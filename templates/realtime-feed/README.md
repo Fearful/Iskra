@@ -4,10 +4,10 @@ Template para una aplicacion de feed social con actualizaciones en tiempo real. 
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, eventos
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono
-- [`@iskra-bun/socket-kit`](../../docs/socket-kit.md) — WebSocket nativo de Bun
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Almacenamiento en memoria
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, eventos
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono
+- [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket nativo de Bun
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Almacenamiento en memoria
 
 ## Inicio rapido
 
@@ -66,9 +66,10 @@ src/
 
 ## Despliegue
 
-El `Dockerfile` expone ambos puertos (HTTP y WebSocket). Mas info en la [guia de despliegue](../../docs/despliegue.md).
+El `Dockerfile` expone ambos puertos (HTTP y WebSocket). Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t realtime-feed .
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/realtime-feed/Dockerfile -t realtime-feed .
 docker run -p 3000:3000 -p 3001:3001 realtime-feed
 ```

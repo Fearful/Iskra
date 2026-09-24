@@ -150,6 +150,21 @@ router.on('subscribe:me', async (ctx) => {
 socketDriver.broadcastTo(connectionId, 'inbox:new', { unread: 3 });
 ```
 
+## Handshake: origen y autenticacion
+
+Sin configuracion, el driver acepta conexiones de cualquier origen y sin autenticar (y lo avisa con un warning al arrancar). Un navegador envia las cookies del usuario en el handshake de WebSocket, asi que cualquier sitio podria abrir una conexion en su nombre (cross-site WebSocket hijacking).
+
+```typescript
+const driver = new SocketDriver({
+    port: 3001,
+    router,
+    // Handshakes con otro header Origin reciben 403; sin Origin (clientes no-navegador) se aceptan.
+    allowedOrigins: ['https://app.example.com'],
+    // Lo que devuelva queda en ctx.socket.data.auth; null/undefined/false (o un throw) => 401.
+    authenticate: async (req) => verifyToken(new URL(req.url).searchParams.get('token')),
+});
+```
+
 ## Autorizacion
 
 El driver acepta hooks opcionales `canJoin` y `canPublish` que controlan las uniones a salas y las publicaciones por conexion. Ambos permiten todo por defecto cuando se omiten.
@@ -181,7 +196,7 @@ El driver acota el trabajo entrante de dos formas, ambas configurables en `Socke
 
 | Opcion | Por defecto | Efecto |
 | --- | --- | --- |
-| `maxPayloadLength` | `16 * 1024` (16 KiB) | Tamano maximo del frame entrante en bytes, conectado a `websocket.maxPayloadLength` de Bun. Bun descarta los frames mas grandes, acotando el costo de `JSON.parse`. |
+| `maxPayloadLength` | `16 * 1024` (16 KiB) | Tamano maximo del frame entrante en bytes, conectado a `websocket.maxPayloadLength` de Bun. Un frame mas grande hace que Bun cierre la conexion, acotando el costo de `JSON.parse`. |
 | `rateLimit` | `100` | Maximo de mensajes entrantes aceptados por conexion por ventana. Los frames sobre el presupuesto se descartan (el handler no se invoca) y se registra un warning. |
 | `rateWindowMs` | `1000` | Duracion de la ventana de rate-limit en milisegundos. El presupuesto se reinicia al terminar la ventana. |
 
@@ -211,13 +226,15 @@ const driver = new SocketDriver({
 
 ## IDs de conexion
 
+Una request que no es un handshake WebSocket (un `GET` comun de un navegador o de un health check) recibe `426 Upgrade Required`.
+
 Cada conexion recibe un `connectionId` unico (UUID) en el momento del upgrade, almacenado en los datos tipados del socket (`ws.data.connectionId`). Es un identificador confiable por cliente — a diferencia de `remoteAddress`, esta garantizado ser unico entre reconexiones.
 
 El `connectionId` es el payload de los eventos del ciclo de vida:
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(connectionId); // ej. "a3f1c2d0-..."
+app.on('socket:connected', (ctx) => {
+    console.log(ctx.payload.connectionId); // ej. "a3f1c2d0-..."
 });
 ```
 
@@ -227,15 +244,15 @@ El driver emite eventos automaticamente:
 
 - `socket:connected` — cuando se conecta un cliente (payload: `{ connectionId }`)
 - `socket:disconnected` — cuando se desconecta un cliente (payload: `{ connectionId }`)
-- `socket:${event}` — fallback cuando no hay handler en el router (sujeto a `allowedEvents`)
+- `socket:${event}` — fallback cuando no hay handler en el router (sujeto a `allowedEvents`); los nombres reservados `connected` y `disconnected` nunca se reemiten desde un cliente
 
 ```typescript
-app.on('socket:connected', ({ connectionId }) => {
-    console.log(`Cliente ${connectionId} conectado`);
+app.on('socket:connected', (ctx) => {
+    console.log(`Cliente ${ctx.payload.connectionId} conectado`);
 });
 
-app.on('socket:disconnected', ({ connectionId }) => {
-    console.log(`Cliente ${connectionId} desconectado`);
+app.on('socket:disconnected', (ctx) => {
+    console.log(`Cliente ${ctx.payload.connectionId} desconectado`);
 });
 ```
 

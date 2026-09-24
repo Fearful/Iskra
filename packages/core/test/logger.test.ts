@@ -142,4 +142,36 @@ describe('createLogger', () => {
             }
         });
     });
+
+    describe('secrets at any depth', () => {
+        it('censors nested and top-level secret keys without touching the caller\'s object', () => {
+            process.env.NODE_ENV = 'production';
+            const logger = createLogger('redact-deep');
+            const config = {
+                name: 'x',
+                db: { driver: 'libsql', url: 'libsql://db.turso.io', authToken: 'TURSO-SECRET' },
+                kv: { connection: { host: 'h', password: 'REDIS-SECRET' } },
+                list: [{ clientSecret: 'LIST-SECRET' }],
+                a: { b: { c: { d: { privateKey: 'DEEP-SECRET' } } } },
+            };
+            const json = captureLog(logger, (l) => {
+                l.info({ config }, 'Config loaded');
+                l.info({ authToken: 'TOP-AUTHTOKEN', apiSecret: 'TOP-APISECRET', Authorization: 'Bearer X' }, 'top');
+            });
+            for (const secret of ['TURSO-SECRET', 'REDIS-SECRET', 'LIST-SECRET', 'DEEP-SECRET', 'TOP-AUTHTOKEN', 'TOP-APISECRET', 'Bearer X']) {
+                expect(json).not.toContain(secret);
+            }
+            expect(json).toContain('"host":"h"');
+            expect(config.db.authToken).toBe('TURSO-SECRET');
+        });
+
+        it('handles circular objects', () => {
+            process.env.NODE_ENV = 'production';
+            const logger = createLogger('redact-cycle');
+            const obj: Record<string, unknown> = { password: 'CYCLE-SECRET' };
+            obj.self = obj;
+            const json = captureLog(logger, (l) => l.info({ obj }, 'cycle'));
+            expect(json).not.toContain('CYCLE-SECRET');
+        });
+    });
 });

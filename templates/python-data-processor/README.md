@@ -4,9 +4,9 @@ Template que muestra como integrar scripts de Python con una app Iskra. Usa el P
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, eventos
-- [`@iskra-bun/process-kit`](../../docs/process-kit.md) — Gestion de procesos externos
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, eventos
+- [`@iskra-bun/process-kit`](https://iskra-docs.fly.dev/es/packages/process-kit/) — Gestion de procesos externos
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono
 
 ## Requisitos
 
@@ -58,9 +58,10 @@ scripts/
 
 ## Despliegue
 
-El `Dockerfile` incluido instala Python 3 en el container. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+El `Dockerfile` incluido instala Python 3 en el container. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t python-data-processor .
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/python-data-processor/Dockerfile -t python-data-processor .
 docker run -p 3000:3000 python-data-processor
 ```

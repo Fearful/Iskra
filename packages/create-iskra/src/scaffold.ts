@@ -1,13 +1,44 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
+import { ISKRA_VERSIONS } from './versions.ts';
 
 /**
- * The semver range that bundled `@iskra-bun/*` workspace dependencies are
- * rewritten to when a template is scaffolded into a standalone project. The
+ * Installable range for a bundled `@iskra-bun/*` workspace dependency. The
  * template `package.json` files use `workspace:*` (valid only inside the
- * monorepo); a generated project needs a real, installable range.
+ * monorepo); a generated project needs a real range. Each package gets a caret
+ * range on its own current version (`src/versions.ts`, kept in sync by
+ * `scripts/sync.ts`): on 0.x a single shared range such as `^0.1.0` would
+ * exclude the 0.2 line of the kits that are already there.
  */
-export const WORKSPACE_REPLACEMENT_RANGE = '^0.1.0';
+export function workspaceRange(name: string, versions: Readonly<Record<string, string>> = ISKRA_VERSIONS): string {
+    const version = versions[name];
+    if (!version) {
+        throw new Error(`No se conoce la version publicada de ${name}; no se puede generar un rango instalable.`);
+    }
+    return `^${version}`;
+}
+
+/**
+ * A valid npm package name for a project created in `targetDir`, taken from
+ * the directory's own name: `my-app/` and `.` used to yield `my-app/` and `.`,
+ * which `bun install` rejects.
+ */
+export function packageNameFor(targetDir: string): string {
+    const name = basename(resolve(targetDir))
+        .toLowerCase()
+        .replace(/[^a-z0-9._~-]+/g, '-')
+        .replace(/^[._-]+/, '')
+        .replace(/-+$/, '')
+        .slice(0, 214);
+    return name || 'iskra-app';
+}
+
+/**
+ * Written as the new project's `.gitignore` when the template has none: npm
+ * leaves `.gitignore` files out of published packages, so a bundled one never
+ * reached the generated project.
+ */
+export const DEFAULT_GITIGNORE = ['node_modules/', 'dist/', '.env', '.env.*', '!.env.example', '*.log', '.DS_Store', ''].join('\n');
 
 /** Directories that must never be copied from a template into a new project. */
 export const EXCLUDED_ENTRIES: readonly string[] = ['node_modules', 'dist', '.git'];
@@ -55,13 +86,13 @@ export function isEmptyDir(dir: string): boolean {
 /**
  * Rewrites a parsed `package.json` object for a standalone project: sets the
  * package name and replaces every `@iskra-bun/* : workspace:*` dependency with
- * a real semver range. Returns a NEW object (no mutation of the input) plus the
- * count of rewritten dependencies.
+ * a real semver range (see `workspaceRange`). Returns a NEW object (no mutation
+ * of the input) plus the count of rewritten dependencies.
  */
 export function rewritePackageJson(
     pkg: Record<string, unknown>,
     projectName: string,
-    range = WORKSPACE_REPLACEMENT_RANGE,
+    versions: Readonly<Record<string, string>> = ISKRA_VERSIONS,
 ): { readonly pkg: Record<string, unknown>; readonly rewrittenDeps: number } {
     let rewrittenDeps = 0;
 
@@ -71,7 +102,7 @@ export function rewritePackageJson(
         const next: Record<string, string> = {};
         for (const [name, version] of Object.entries(source)) {
             if (name.startsWith('@iskra-bun/') && version.startsWith('workspace:')) {
-                next[name] = range;
+                next[name] = workspaceRange(name, versions);
                 rewrittenDeps += 1;
             } else {
                 next[name] = version;
@@ -150,6 +181,8 @@ export function scaffold(options: ScaffoldOptions): ScaffoldResult {
 
     mkdirSync(targetDir, { recursive: true });
     copyTemplateTree(templateDir, targetDir);
+    const gitignore = join(targetDir, '.gitignore');
+    if (!existsSync(gitignore)) writeFileSync(gitignore, DEFAULT_GITIGNORE, 'utf8');
     const rewrittenDeps = rewriteTargetPackageJson(targetDir, projectName);
 
     return { targetDir, projectName, template, rewrittenDeps };

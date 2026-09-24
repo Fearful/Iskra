@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { Kernel } from "../src/kernel";
 import { CorsFeature } from "../src/features/cors";
 import { RequestIdFeature } from "../src/features/request-id";

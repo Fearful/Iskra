@@ -1,8 +1,9 @@
+import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createInterface, type Interface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { listTemplates, scaffold } from './scaffold.ts';
+import { listTemplates, packageNameFor, scaffold } from './scaffold.ts';
 import { blank, error, info } from './print.ts';
 
 const DEFAULT_TEMPLATE = 'starter-app';
@@ -77,20 +78,35 @@ function printHelp(templatesRoot: string): void {
  */
 /** Sentinel resolved when the readline interface closes mid-prompt (EOF). */
 const EOF = Symbol('eof');
+/** Sentinel resolved on Ctrl-C at a prompt. */
+const CANCEL = Symbol('cancel');
 
-async function ask(rl: Interface, question: string, fallback: string): Promise<string | undefined> {
+/** @internal Exported for tests. */
+export async function ask(rl: Interface, question: string, fallback: string): Promise<string | undefined> {
     // Stdin already closed (an earlier prompt hit EOF) — take the default.
     // `closed` exists at runtime but is absent from these @types/node; narrow.
     if ((rl as { closed?: boolean }).closed) return fallback;
-    const onClose = new Promise<typeof EOF>((resolve) => rl.once('close', () => resolve(EOF)));
+    let onClose!: () => void;
+    let onSigint!: () => void;
+    const closed = new Promise<typeof EOF>((resolve) => rl.once('close', (onClose = () => resolve(EOF))));
+    // Without a SIGINT listener readline closed the interface on Ctrl-C, which
+    // read as EOF: the defaults were taken and the project scaffolded anyway.
+    const cancelled = new Promise<typeof CANCEL>((resolve) => rl.once('SIGINT', (onSigint = () => resolve(CANCEL))));
+    const pending = rl.question(`${question} (${fallback}) `);
+    // Left pending when the race is decided otherwise; it rejects on close.
+    pending.catch(() => {});
     try {
-        const answer = await Promise.race([rl.question(`${question} (${fallback}) `), onClose]);
+        const answer = await Promise.race([pending, closed, cancelled]);
+        if (answer === CANCEL) return undefined;
         if (answer === EOF) return fallback;
         const trimmed = answer.trim();
         return trimmed === '' ? fallback : trimmed;
     } catch {
-        // Cancelled (Ctrl-C / abort) — let the caller abort cleanly.
+        // Cancelled (abort) — let the caller abort cleanly.
         return undefined;
+    } finally {
+        rl.off('close', onClose);
+        rl.off('SIGINT', onSigint);
     }
 }
 
@@ -140,7 +156,7 @@ export async function run(argv: readonly string[]): Promise<number> {
             return 1;
         }
 
-        const projectName = targetDir.replace(/^.*[\\/]/, '') || targetDir;
+        const projectName = packageNameFor(targetDir);
 
         const result = scaffold({ template, targetDir, projectName, templatesRoot });
         printNextSteps(result.targetDir, result.template);
@@ -167,13 +183,16 @@ function printNextSteps(targetDir: string, template: string): void {
 
 /**
  * Auto-run only when this module is the program entry point (i.e. invoked as
- * the `create-iskra` bin), never when imported by tests or the barrel.
+ * the `create-iskra` bin), never when imported by tests or the barrel. Paths
+ * are compared after resolving symlinks: `npm create`, `npx` and `bunx` run
+ * the bin through `node_modules/.bin/create-iskra`, a link to this file, and
+ * comparing that path with this module's did nothing at all.
  */
 function isMainEntry(): boolean {
     const entry = process.argv[1];
     if (!entry) return false;
     try {
-        return import.meta.url === pathToFileURL(entry).href;
+        return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
     } catch {
         return false;
     }

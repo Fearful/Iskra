@@ -7,10 +7,24 @@ Guia para construir imagenes Docker y entender la pipeline de CI/CD en GitHub Ac
 
 ## Docker
 
-Cada template incluye un `Dockerfile` que usa builds multi-stage:
+Cada template incluye un `Dockerfile` multi-stage que se construye desde la raiz del
+repositorio (el `.dockerignore` de la raiz limita el contexto al workspace):
 
-1. **Stage 1 (Builder):** Usa `oven/bun:1` para instalar dependencias y compilar a binario standalone con `bun build --compile`.
-2. **Stage 2 (Runtime):** Usa `ubi9/ubi-minimal` de Red Hat como imagen minima de produccion.
+1. **Build:** `oven/bun`, en la version de `.bun-version`, corre
+   `bun install --frozen-lockfile` sobre todo el workspace (el lockfile cubre todos los
+   workspaces, asi que copiar solo algunos falla) y compila un binario standalone con
+   `bun build --compile`.
+2. **Runtime:** `ubi9/ubi-minimal` de Red Hat. El binario solo necesita glibc, asi que
+   esta etapa no instala nada (se construye sin red o detras de un proxy que inspecciona
+   TLS) y corre con un UID no root en el grupo 0.
+
+:::caution[`NODE_ENV` se fija al compilar]
+`bun build` reemplaza `process.env.NODE_ENV` en el codigo (`"development"` salvo que
+este definido al compilar), asi que un binario compilado ignora el valor de runtime.
+Compila con `NODE_ENV=production`, como hacen los Dockerfiles de los templates: si no,
+la app corre en modo desarrollo en produccion (stack traces en las respuestas de error,
+cookies de sesion sin `Secure`).
+:::
 
 ### Construir una Imagen
 

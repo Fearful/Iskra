@@ -15,7 +15,7 @@ By participating in this project you agree to abide by our
 
   ```bash
   bun --version
-  # e.g. 1.1.x
+  # e.g. 1.3.x
   ```
 
   If your version is older than the pinned one, upgrade with `bun upgrade`.
@@ -42,8 +42,66 @@ bun run lint      # ESLint — 0 errors
 bun run typecheck # tsc --noEmit — 0 errors
 ```
 
+`bun run ci` runs all of them plus `bun run build` (the tsup/`.d.ts` build that
+only runs at release time), in the same order as the CI pipeline.
+
 If you only touched one package you can scope `bun test` to it (for example
 `bun test packages/core`), but the full suite must still pass before you submit.
+
+### Dependency audit
+
+`bun audit` lists known vulnerabilities in the resolved tree (`bun.lock`). Security fixes in transitive dependencies are pinned with
+`overrides` in the root `package.json`; accepted findings (with a reason and
+expiry) live in `osv-scanner.toml`, which the CI audit job reads.
+
+### Integration tests
+
+The Redis, PostgreSQL and MySQL integration suites are skipped unless their
+service is reachable. To run them locally, start the services with the same
+credentials CI uses and export the URLs before `bun test`:
+
+```bash
+docker run -d --name iskra-redis -p 6379:6379 redis:7
+docker run -d --name iskra-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+docker run -d --name iskra-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=mysql -e MYSQL_DATABASE=test mysql:8
+
+export TEST_REDIS_URL=redis://127.0.0.1:6379
+export TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres
+export TEST_MYSQL_URL=mysql://root:mysql@127.0.0.1:3306/test
+bun run ci
+```
+
+### Template images
+
+`bun run smoke:templates` builds every template's Docker image with its own
+Dockerfile, starts it (forms-app with its `docker compose`) and probes it over
+HTTP, as the *Templates smoke test* workflow does on pull requests that touch
+packages or templates. Pass template names to run only those
+(`bun run smoke:templates cms-starter forms-app`). It needs Docker with Compose
+v2 and port 80 free for forms-app's nginx.
+
+### SDK contract tests
+
+The Python and Java SDKs are tested against a real Iskra service:
+`sdks/contract/server.ts` (auth on in-memory SQLite, health, uploads, typical
+success/error responses). `bun test` only checks that it boots; the SDK suites
+start it themselves and need `bun` on `PATH` (or `BUN=/path/to/bun`):
+
+```bash
+# Python (3.9+)
+cd sdks/python/iskra-client
+python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+pytest                                   # or `bun run test:sdk:python` from the root
+
+# Java (JDK 11+, Maven)
+cd sdks/java/iskra-client
+mvn test                                 # or `bun run test:sdk:java` from the root
+
+# Run the server by hand (prints ISKRA_CONTRACT_READY {"port":...,"baseUrl":...})
+bun run contract:server
+```
+
+Changing a response shape of web-kit or auth-kit? Run these suites too.
 
 ## Project layout
 
@@ -54,11 +112,24 @@ The repository is a Bun workspace monorepo:
 | `packages/`   | The kits — the framework's modular building blocks (`@iskra-bun/core`, `@iskra-bun/web-kit`, `@iskra-bun/db-kit`, etc.). |
 | `templates/`  | Ready-to-use example apps that show how the kits fit together (e.g. `simple-server`, `chat-app`, `full-stack-app`). |
 | `sdks/`       | Client SDKs for other languages (`java`, `python`) that integrate with Iskra over HTTP. |
-| `docs/`       | Architecture and per-kit documentation. |
+| `website/`    | The documentation site (Astro + Starlight): the only copy of the docs. |
 
 > **Experimental kits:** `desktop-kit`, `mobile-kit`, and `db-oracle` are
 > experimental. Their APIs may change without notice — contributions are welcome,
 > but expect rougher edges than the stable kits.
+
+## Documentation
+
+The docs live only in the site's sources: `website/src/content/docs/` (English)
+and `website/src/content/docs/es/` (Spanish, same file names). Change a page and
+its translation in the same PR; `bun test` fails if a page exists in only one
+language or if a README links to the removed `docs/*.md` copies. READMEs link to
+the published site (`https://iskra-docs.fly.dev/...`): the package READMEs ship
+to npm, where relative links break.
+
+```bash
+cd website && bun install && bun run dev   # preview at http://localhost:4321
+```
 
 ## Changesets
 

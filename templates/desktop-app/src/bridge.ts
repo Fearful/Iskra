@@ -13,7 +13,7 @@
 
 import type { App } from '@iskra-bun/core';
 
-const inTauri = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
+const inTauri = '__TAURI_INTERNALS__' in globalThis;
 
 export class DesktopBridge {
     constructor(private readonly app: App) {}

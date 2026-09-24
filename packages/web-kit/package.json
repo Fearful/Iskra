@@ -20,6 +20,9 @@
     },
     "homepage": "https://github.com/fearful/iskra/tree/main/packages/web-kit#readme",
     "bugs": "https://github.com/fearful/iskra/issues",
+    "engines": {
+        "bun": ">=1.3.0"
+    },
     "type": "module",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
@@ -40,7 +43,8 @@
         "CHANGELOG.md"
     ],
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "provenance": true
     },
     "scripts": {
         "test": "bun test",
@@ -53,13 +57,13 @@
         "@iskra-bun/auth-kit": "workspace:*",
         "@iskra-bun/mailer-kit": "workspace:*",
         "@iskra-bun/storage-kit": "workspace:*",
-        "better-auth": "^1.4.18",
-        "drizzle-orm": "^0.45.1",
-        "hono": "^4.6.14",
+        "better-auth": "^1.6.33",
+        "drizzle-orm": "^0.45.2",
+        "hono": "^4.12.34",
         "ioredis": "^5.8.2",
-        "mysql2": "^3.16.0",
+        "mysql2": "^3.24.4",
         "postgres": "^3.4.7",
-        "ajv": "^8.18.0",
+        "ajv": "^8.20.0",
         "ajv-errors": "^3.0.0",
         "ajv-formats": "^3.0.1",
         "zod": "^3.24.1",

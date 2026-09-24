@@ -37,3 +37,12 @@ describe("auth schema", () => {
         expect(sqliteSchema.user).toBe(sqliteUser);
     });
 });
+
+describe("mysql verification table", () => {
+    it("stores values as text: OAuth state JSON exceeds 255 characters", async () => {
+        const { getTableConfig } = await import("drizzle-orm/mysql-core");
+        const value = getTableConfig(mysqlSchema.verification).columns.find((c) => c.name === "value")!;
+        // varchar(255) made MySQL strict mode reject the OIDC state and every OIDC sign-in failed.
+        expect(value.getSQLType()).toBe("text");
+    });
+});

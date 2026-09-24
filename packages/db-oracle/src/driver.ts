@@ -1,31 +1,43 @@
 import type { Driver, App } from '@iskra-bun/core';
 import { spawn, type Subprocess, type FileSink } from 'bun';
+import { existsSync } from 'fs';
 import { resolve } from 'path';
 
 type PendingEntry = {
-    resolve: (val: any) => void;
-    reject: (err: any) => void;
+    resolve: (val: unknown) => void;
+    reject: (err: unknown) => void;
     timer: ReturnType<typeof setTimeout> | null;
 };
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_START_TIMEOUT_MS = 30_000;
+
+/** Settles once when the bridge reports `ready`, a fatal error, or exits. */
+type ReadyWaiter = { resolve: () => void; reject: (err: Error) => void };
 
 export class OracleDriver implements Driver {
-    name = 'db'; // Replaces standard db driver if used, or can be 'oracle'
+    name = 'OracleDriver';
     private proc: Subprocess | null = null;
     private reqId = 0;
+    // Replaced on every start(): each bridge process owns its own pending map,
+    // so the reader of a previous (stopped) bridge can never reject queries
+    // sent to the new one.
     private pending = new Map<number, PendingEntry>();
     private bridgePath: string;
     private timeoutMs: number;
+    private startTimeoutMs: number;
     private app: App | null = null;
 
-    constructor(bridgePath?: string, timeoutMs: number = DEFAULT_TIMEOUT_MS) {
-        // Allow overriding path for flexibility (absolute path)
-        // Defaults to calculating relative to this file in a built package structure
-        // Adjust logic if needed based on where this file ends up (dist vs src)
-        // For dev (src), it's ../bridge/runner.js
+    /**
+     * @param bridgePath Path to the bridge script; defaults to the `bridge/runner.js`
+     *   shipped with this package (it is resolved next to both `src/` and `dist/`).
+     * @param timeoutMs Per-query timeout.
+     * @param startTimeoutMs How long start() waits for the bridge to connect.
+     */
+    constructor(bridgePath?: string, timeoutMs: number = DEFAULT_TIMEOUT_MS, startTimeoutMs: number = DEFAULT_START_TIMEOUT_MS) {
         this.bridgePath = bridgePath || resolve(import.meta.dir, '../bridge/runner.js');
         this.timeoutMs = timeoutMs;
+        this.startTimeoutMs = startTimeoutMs;
     }
 
     async init(app: App) {
@@ -43,26 +55,71 @@ export class OracleDriver implements Driver {
             return;
         }
 
-        this.proc = spawn(['node', this.bridgePath], {
+        if (!existsSync(this.bridgePath)) {
+            throw new Error(`Oracle bridge script not found at ${this.bridgePath}`);
+        }
+
+        const pending = new Map<number, PendingEntry>();
+        this.pending = pending;
+        const proc = spawn(['node', this.bridgePath], {
             stdin: 'pipe',
             stdout: 'pipe',
             env: { ...process.env },
         });
 
-        if (!this.proc.stdout) {
+        if (!proc.stdout) {
+            proc.kill();
             throw new Error('Failed to spawn Oracle bridge process (no stdout)');
         }
 
-        this.readStream(this.proc.stdout as ReadableStream);
+        // start() only resolves once the bridge has connected to Oracle, so a
+        // bad connect string or missing oracledb fails the app's start instead
+        // of surfacing later as failed queries.
+        let waiter!: ReadyWaiter;
+        const ready = new Promise<void>((res, rej) => {
+            let settled = false;
+            waiter = {
+                resolve: () => { if (!settled) { settled = true; res(); } },
+                reject: (err) => { if (!settled) { settled = true; rej(err); } },
+            };
+        });
+        this.readStream(proc.stdout as ReadableStream, pending, waiter);
 
-        // Wait for ready signal?
-        // For now we assume optimistic start or we could wait for 'ready' message
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            await Promise.race([
+                ready,
+                new Promise<never>((_, rej) => {
+                    timer = setTimeout(
+                        () => rej(new Error(`Oracle bridge did not become ready within ${this.startTimeoutMs}ms`)),
+                        this.startTimeoutMs,
+                    );
+                }),
+            ]);
+        } catch (err) {
+            proc.kill();
+            throw err;
+        } finally {
+            clearTimeout(timer);
+        }
+        this.proc = proc;
     }
 
     async stop() {
         if (this.proc) {
-            this.proc.kill();
+            const proc = this.proc;
             this.proc = null;
+            // Closing stdin lets the bridge close its Oracle connection and exit;
+            // kill it if it has not exited shortly after.
+            try {
+                (proc.stdin as FileSink).end();
+            } catch {
+                // already closed
+            }
+            const exited = proc.exited
+                ? await Promise.race([proc.exited.then(() => true), Bun.sleep(2000).then(() => false)])
+                : false;
+            if (!exited) proc.kill();
         }
     }
 
@@ -77,37 +134,36 @@ export class OracleDriver implements Driver {
         }
     }
 
-    private settle(id: number, action: (entry: PendingEntry) => void) {
-        const entry = this.pending.get(id);
+    private settle(pending: Map<number, PendingEntry>, id: number, action: (entry: PendingEntry) => void) {
+        const entry = pending.get(id);
         if (!entry) return;
         if (entry.timer) clearTimeout(entry.timer);
-        this.pending.delete(id);
+        pending.delete(id);
         action(entry);
     }
 
-    private rejectAllPending(err: Error) {
-        if (this.pending.size === 0) return;
-        const ids = Array.from(this.pending.keys());
-        for (const id of ids) {
-            this.settle(id, ({ reject }) => reject(err));
+    private rejectAllPending(err: Error, pending: Map<number, PendingEntry>) {
+        for (const id of Array.from(pending.keys())) {
+            this.settle(pending, id, ({ reject }) => reject(err));
         }
     }
 
-    async query(sql: string, params: any[] = []) {
+    async query(sql: string, params: unknown[] = []) {
         if (!this.proc || !this.proc.stdin) {
             throw new Error('Oracle driver not started');
         }
 
         const id = this.reqId++;
+        const pending = this.pending;
 
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
-                this.settle(id, ({ reject: rej }) =>
+                this.settle(pending, id, ({ reject: rej }) =>
                     rej(new Error(`Oracle query timed out after ${this.timeoutMs}ms`)),
                 );
             }, this.timeoutMs);
 
-            this.pending.set(id, { resolve, reject, timer });
+            pending.set(id, { resolve, reject, timer });
 
             const msg = JSON.stringify({ id, sql, params }) + '\n';
             const stdin = this.proc!.stdin as FileSink;
@@ -116,14 +172,14 @@ export class OracleDriver implements Driver {
                 stdin.flush();
             } else {
                 // No writable stdin: do not leave the request hanging in pending.
-                this.settle(id, ({ reject: rej }) =>
+                this.settle(pending, id, ({ reject: rej }) =>
                     rej(new Error('Oracle bridge stdin is not writable')),
                 );
             }
         });
     }
 
-    private async readStream(stream: ReadableStream) {
+    private async readStream(stream: ReadableStream, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -138,34 +194,37 @@ export class OracleDriver implements Driver {
                 buffer = lines.pop() || ''; // Keep incomplete line
 
                 for (const line of lines) {
-                    this.handleLine(line);
+                    this.handleLine(line, pending, waiter);
                 }
             }
         } catch (err) {
             this.log('error', { err }, 'Error reading from Oracle bridge');
-            this.rejectAllPending(new Error('Oracle bridge stream error'));
+            this.rejectAllPending(new Error('Oracle bridge stream error'), pending);
         } finally {
             reader.releaseLock();
-            this.rejectAllPending(new Error('Oracle bridge process exited'));
+            waiter.reject(new Error('Oracle bridge process exited before it was ready'));
+            this.rejectAllPending(new Error('Oracle bridge process exited'), pending);
         }
     }
 
-    private handleLine(line: string) {
+    private handleLine(line: string, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {
         if (!line.trim()) return;
         try {
             const msg = JSON.parse(line);
 
             if (msg.type === 'ready') {
+                waiter.resolve();
                 return;
             }
             if (msg.type === 'fatal') {
                 this.log('error', { error: msg.error }, 'Oracle Bridge Fatal Error');
-                this.rejectAllPending(new Error(`Oracle bridge fatal: ${msg.error}`));
+                waiter.reject(new Error(`Oracle bridge fatal: ${msg.error}`));
+                this.rejectAllPending(new Error(`Oracle bridge fatal: ${msg.error}`), pending);
                 return;
             }
 
-            if (msg.id !== undefined && this.pending.has(msg.id)) {
-                this.settle(msg.id, ({ resolve, reject }) => {
+            if (msg.id !== undefined) {
+                this.settle(pending, msg.id, ({ resolve, reject }) => {
                     if (msg.error) {
                         reject(new Error(msg.error));
                     } else {

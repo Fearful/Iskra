@@ -1,5 +1,6 @@
 package dev.iskra.client.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -15,12 +16,20 @@ public class IskraResponse<T> {
     @JsonProperty("message")
     private String message;
 
+    @JsonIgnore
+    private int statusCode;
+
     public IskraResponse() {}
 
     public IskraResponse(boolean success, T data, String message) {
+        this(success, data, message, 0);
+    }
+
+    public IskraResponse(boolean success, T data, String message, int statusCode) {
         this.success = success;
         this.data = data;
         this.message = message;
+        this.statusCode = statusCode;
     }
 
     public boolean isSuccess() {
@@ -33,6 +42,11 @@ public class IskraResponse<T> {
 
     public String getMessage() {
         return message;
+    }
+
+    /** The HTTP status of the response. */
+    public int getStatusCode() {
+        return statusCode;
     }
 
     public void setSuccess(boolean success) {

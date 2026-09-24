@@ -31,7 +31,7 @@ Bun carga `.env` automaticamente en `process.env`, por lo que `loadConfig` lo re
 
 ## Documentacion
 
-Guia completa: [docs/config-kit.md](../../docs/config-kit.md)
+Guia completa: [@iskra-bun/config-kit](https://iskra-docs.fly.dev/es/packages/config-kit/)
 
 ## Licencia
 

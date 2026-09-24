@@ -9,8 +9,11 @@
 #
 #   2. If there are NO pending changesets (i.e. the version PR was just
 #      merged), it runs the `release` script — which builds every package
-#      to `dist/` and then `changeset publish`es each public package to npm
-#      with provenance, and creates the matching GitHub Releases.
+#      to `dist/`, rewrites `workspace:` dependency ranges to real versions
+#      (scripts/pin-workspace-deps.ts; npm publish does not understand the
+#      protocol), and then `changeset publish`es each public package to npm
+#      with a provenance attestation (publishConfig.provenance), and creates
+#      the matching GitHub Releases.
 #
 # Versions and changelogs are therefore never hand-edited; they flow from the
 # changeset files contributors add (see CONTRIBUTING.md / VERSIONING.md).
@@ -54,6 +57,11 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted publishing (OIDC, no long-lived npm token) needs npm >= 11.5.1;
+      # Node 22 ships npm 10.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -61,10 +69,14 @@ jobs:
         uses: changesets/action@v1
         with:
           version: bun run version # `changeset version` — bumps + writes CHANGELOGs
-          publish: bun run release # `bun run build && changeset publish`
+          publish: bun run release # build, pin workspace deps, `changeset publish`
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only needed until every package has this workflow configured as its
+          # trusted publisher on npmjs.com (see VERSIONING.md); then delete the
+          # NPM_TOKEN secret and npm authenticates with the job's OIDC token.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Every package also sets publishConfig.provenance.
           NPM_CONFIG_PROVENANCE: "true"

@@ -57,11 +57,35 @@ bumps the recorded dependency range of its dependents by a **patch** by default
 
 ## What gets published
 
-Only the ten `@iskra-bun/*` packages are published (`access: "public"`). The
-example apps and templates are listed in `.changeset/config.json`'s `ignore`
-array and are never versioned or published.
+Only the packages under `packages/` are published (`access: "public"`). The
+example apps and templates are marked `"private": true` — which is what makes
+`changeset publish` skip them — and are also listed in `.changeset/config.json`'s
+`ignore` array so they are never versioned.
 
 Each published package ships a compiled `dist/` (ESM JS + `.d.ts`, built with
 [tsup](https://tsup.egoist.dev/)). The `exports` map resolves to `dist/` for
 npm/Node consumers, while a `source`/`bun` condition points back at `src/` so
 Bun workspace development and type-checking need no build step.
+
+## Provenance and trusted publishing
+
+Every package sets `publishConfig.provenance: true`, so npm attaches a
+[provenance attestation](https://docs.npmjs.com/generating-provenance-statements)
+that links each published version to the commit and the `release.yml` run that
+built it. npm only issues it from a supported CI provider, so a publish from a
+laptop fails instead of shipping an unattested version (pass `--no-provenance`
+if you ever must publish by hand).
+
+The workflow authenticates with a long-lived `NPM_TOKEN` secret until
+[trusted publishing](https://docs.npmjs.com/trusted-publishers) is configured;
+after that, npm exchanges the job's OIDC token and no npm secret exists at all:
+
+1. On npmjs.com, open each package's **Settings → Trusted publishing** and add a
+   GitHub Actions publisher: organization/user `fearful`, repository `iskra`,
+   workflow filename `release.yml` (no environment).
+2. Run a release to confirm it publishes, then delete the `NPM_TOKEN` repository
+   secret (and revoke the token on npmjs.com).
+
+To check a published version, `npm view <package>@<version> dist.attestations`
+lists its attestations, and `npm audit signatures` in a project that depends on
+it verifies the signatures of everything installed.

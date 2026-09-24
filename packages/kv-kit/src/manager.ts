@@ -1,4 +1,5 @@
 import type { App, Driver } from '@iskra-bun/core';
+import type { Redis } from 'ioredis';
 import type { KVAdapter } from './types';
 import { MemoryAdapter } from './adapters/memory';
 import { RedisAdapter } from './adapters/redis';
@@ -26,14 +27,22 @@ export class KVManager implements Driver, KVAdapter {
 
     init(app: App) {
         this.app = app;
+        // Like db-kit's 'db': services look the store up as app.context.get('kv').
+        app.context.set('kv', this);
         const config = app.config.kv;
 
         if (config?.driver === 'redis') {
             app.logger.info('Initializing KV with Redis');
-            this.adapter = new RedisAdapter(config.connection);
-        } else {
+            this.adapter = new RedisAdapter(config.connection ?? {}, {
+                onError: (err) => app.logger.warn({ err }, 'KV Redis connection error'),
+            });
+        } else if (!config?.driver || config.driver === 'memory') {
             app.logger.info('Initializing KV with Memory');
             this.adapter = new MemoryAdapter();
+        } else {
+            // Unknown drivers (e.g. 'libsql') used to fall back to memory
+            // silently, losing every value on restart.
+            throw new Error(`Unsupported KV driver "${config.driver}" (supported: "memory", "redis")`);
         }
     }
 
@@ -53,6 +62,16 @@ export class KVManager implements Driver, KVAdapter {
 
     async stop() {
         await this.disconnect();
+    }
+
+    /**
+     * The underlying ioredis client with the "redis" driver, once started: for
+     * commands the KV API does not cover (sets, sorted sets, pipelines). It
+     * bypasses `namespace` and the JSON codec. `undefined` with the memory
+     * driver or before start().
+     */
+    get client(): Redis | undefined {
+        return this.adapter instanceof RedisAdapter ? this.adapter.nativeClient ?? undefined : undefined;
     }
 
     private prefixed(key: string): string {

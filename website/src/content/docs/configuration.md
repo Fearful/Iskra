@@ -95,6 +95,6 @@ cp .env.example .env
 | `db.url` | `string` | Connection URL |
 | `socket.enabled` | `boolean` | Enable WebSocket |
 | `socket.port` | `number` | WebSocket port |
-| `kv.driver` | `string` | KV driver (`memory`, `redis`, `libsql`) |
+| `kv.driver` | `string` | KV driver (`memory`, `redis`) |
 | `kv.connection` | `any` | KV connection config |
 | `processes` | `Record<string, ProcessConfig>` | External processes |

@@ -1,7 +1,12 @@
 export interface WorkerManagerOptions {
-    /** URL de conexión a Redis (ej: 'redis://localhost:6379') */
-    connection: string | { host: string; port: number; password?: string; db?: number };
-    /** Cantidad de jobs que se procesan en paralelo (default: 1) */
+    /** URL de conexión a Redis (ej: 'redis://user:pass@localhost:6379/0'; `rediss://` activa TLS) */
+    connection: string | { host: string; port: number; username?: string; password?: string; db?: number; tls?: object };
+    /**
+     * `false` = solo productor: `start()` no crea un Worker y `enqueue` acepta
+     * jobs sin handler local (los procesa otro proceso). Default: true.
+     */
+    consume?: boolean;
+    /** Cantidad de jobs que se procesan en paralelo (default: 1). `0` = solo productor, como `consume: false`. */
     concurrency?: number;
     /** Nombre de la queue en Redis (default: 'iskra-jobs') */
     queueName?: string;

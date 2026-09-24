@@ -1,5 +1,6 @@
 import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from "../types";
 import * as nodemailer from "nodemailer";
+import { checkEmail, checkHeaders, cleanName } from "../headers";
 
 export class SmtpEmailAdapter implements EmailAdapter {
     private transporter: nodemailer.Transporter;
@@ -27,7 +28,9 @@ export class SmtpEmailAdapter implements EmailAdapter {
         if (!from) throw new Error("From address required");
 
         const info = await this.transporter.sendMail({
-            from: from.name ? `"${from.name}" <${from.email}>` : from.email,
+            // An address object: nodemailer quotes or encodes the name, which
+            // interpolated into `"name" <email>` could add another sender.
+            from: { name: from.name ? cleanName(from.name) : "", address: checkEmail(from.email) },
             to: Array.isArray(message.to) ? message.to.join(", ") : message.to,
             subject: message.subject,
             text: message.text,
@@ -39,10 +42,13 @@ export class SmtpEmailAdapter implements EmailAdapter {
                 filename: a.filename,
                 content: typeof a.content === 'string' ? a.content : Buffer.from(a.content),
                 contentType: a.contentType
-            }))
+            })),
+            // Forwarded with the same allowlist as the other providers (it
+            // used to be dropped).
+            headers: checkHeaders(message.headers),
         });
 
-        return { messageId: (info as any).messageId, success: true };
+        return { messageId: info.messageId, success: true };
     }
 
     async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {

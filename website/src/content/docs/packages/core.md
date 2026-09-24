@@ -38,9 +38,13 @@ await app.start();
 
 1. **`new App(config?)`** — Creates the instance. If you don't pass a config, it is loaded automatically with c12.
 2. **`app.register(driver)`** — Registers a driver (does not initialize it yet).
-3. **`app.use(plugin)`** — Installs a plugin immediately.
-4. **`app.start()`** — Calls `init()` on every driver, then `start()`.
-5. **`app.stop()`** — Calls `stop()` on every driver. If one fails, it throws a `LifecycleError`.
+3. **`app.use(plugin)`** — Installs a plugin immediately (if `install` is async, `start()` waits for it and propagates its error).
+4. **`app.start()`** — Calls `init()` on every driver, then `start()` one at a time in registration order. If a driver fails to start, the ones already started are stopped in reverse order and the error is rethrown.
+5. **`app.stop()`** — Calls `stop()` in reverse start order (the web server before the database), continues past failures, and then throws a `LifecycleError` with all of them. OpenTelemetry is always shut down.
+
+#### Shutdown on signals
+
+After `start()`, `SIGTERM` and `SIGINT` run `app.stop()` and exit with code 0 (or 1 if it fails or exceeds `shutdownTimeoutMs`, 10 s by default). A second signal while it stops forces exit with code 1. Concurrent `app.stop()` calls (say, your own signal handler next to the App's) share one stop: each resolves once every driver has stopped. Configure with `shutdownSignals` (a list of signals, or `false` to disable); it is off under `NODE_ENV=test`.
 
 ### Context (DI)
 
@@ -74,11 +78,13 @@ Configured with `logger.level` in the app config.
 
 ### Secret redaction
 
-The logger automatically censors sensitive fields in its output (in both development and production). Any structured field matching these paths is replaced with `[REDACTED]`:
+The logger automatically censors sensitive fields in its output (in both development and production). A field with one of these names (in any case), at any depth of a plain object or array, is replaced with `[REDACTED]`:
 
-`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
 
-This makes it safe to log full config or error objects: credentials are scrubbed before the line is written.
+`config.env` and `*.data` are censored too. The object you pass is not modified: the censored copy is what gets written.
+
+Only field names are checked, not values: a connection URL with a password in it (`postgres://user:pass@host/db`) is written as is, and so are the fields of class instances (only plain objects and arrays are walked). Scrub those before logging them.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

@@ -1,8 +1,13 @@
 import type { Plugin } from 'vite';
+import { fileURLToPath } from 'node:url';
 import { transformJsonSchemaToZod } from './transform.ts';
 
 const VIRTUAL_PREFIX = 'virtual:form-validation/';
 const RESOLVED_PREFIX = '\0virtual:form-validation/';
+// Bare imports of the generated modules (zod) resolve from this package: the
+// build root is often a temp directory without node_modules (form-manager's
+// pre-render builds in /tmp/form-builds/<id>).
+const RESOLVE_FROM = fileURLToPath(import.meta.url);
 
 export interface JsonSchemaPluginOptions {
     schemas: Array<{
@@ -23,14 +28,18 @@ export default function jsonSchemaPlugin(options: JsonSchemaPluginOptions): Plug
 
         buildStart() {
             for (const entry of options.schemas) {
-                const zodSource = transformJsonSchemaToZod(entry.schema as any);
+                // Plain JS: Vite does not transpile virtual modules.
+                const zodSource = transformJsonSchemaToZod(entry.schema as any, { typeExport: false });
                 generated.set(entry.id, zodSource);
             }
         },
 
-        resolveId(source) {
+        resolveId(source, importer, options) {
             if (source.startsWith(VIRTUAL_PREFIX)) {
                 return '\0' + source;
+            }
+            if (importer?.startsWith(RESOLVED_PREFIX)) {
+                return this.resolve(source, RESOLVE_FROM, { ...options, skipSelf: true });
             }
         },
 
@@ -45,6 +54,6 @@ export default function jsonSchemaPlugin(options: JsonSchemaPluginOptions): Plug
     };
 }
 
-export { transformJsonSchemaToZod } from './transform.ts';
+export { transformJsonSchemaToZod, type TransformOptions } from './transform.ts';
 export type { SchemaEntry } from './codegen.ts';
 export { generateZodFile } from './codegen.ts';

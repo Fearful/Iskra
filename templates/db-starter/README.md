@@ -4,10 +4,10 @@ Template con CRUD de usuarios usando SQLite (via Drizzle ORM) y soporte opcional
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos SQL con Drizzle ORM
-- [`@iskra-bun/db-oracle`](../../docs/db-kit.md) — Oracle Database (opcional, via Bridge/Sidecar)
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQL con Drizzle ORM
+- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Oracle Database (opcional, via Bridge/Sidecar)
 
 ## Inicio rapido
 
@@ -60,11 +60,11 @@ Si configuras las variables `ORACLE_*` en `.env`, el `OracleDriver` se conecta a
 
 A partir de aca podes:
 
-- Agregar migraciones con [Drizzle Kit](../../docs/migraciones.md)
+- Agregar migraciones con [Drizzle Kit](https://iskra-docs.fly.dev/es/guides/migrations/)
 - Cambiar a PostgreSQL o MySQL modificando la config de `db`
 - Agregar validacion con Zod en las rutas
-- Sumar cache con [`@iskra-bun/kv-kit`](../../docs/kv-kit.md)
+- Sumar cache con [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/)
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

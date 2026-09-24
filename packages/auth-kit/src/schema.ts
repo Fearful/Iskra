@@ -103,7 +103,9 @@ export const mysqlAccount = mysqlTable("account", {
 export const mysqlVerification = mysqlTable("verification", {
     id: varchar("id", { length: 36 }).primaryKey(),
     identifier: varchar("identifier", { length: 255 }).notNull(),
-    value: varchar("value", { length: 255 }).notNull(),
+    // text: better-auth stores OAuth state here (JSON longer than 255 characters),
+    // which MySQL strict mode rejected, failing every OIDC sign-in.
+    value: mysqlText("value").notNull(),
     expiresAt: mysqlTimestamp("expiresAt").notNull(),
     createdAt: mysqlTimestamp("createdAt"),
     updatedAt: mysqlTimestamp("updatedAt")

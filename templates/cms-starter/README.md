@@ -6,9 +6,9 @@ slugs con validacion** (Zod). Persistencia real con Drizzle ORM via `@iskra-bun/
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos SQLite con Drizzle ORM
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQLite con Drizzle ORM
 
 ## Inicio rapido
 
@@ -29,7 +29,7 @@ El servidor levanta en `http://localhost:3000`. Por defecto usa el archivo SQLit
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
-| `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `cms.db` |
+| `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `cms.db` (en la imagen Docker, `/app/data/cms.db`) |
 
 ## Funcionalidades
 
@@ -109,9 +109,11 @@ src/
 ## Despliegue
 
 Incluye un `Dockerfile` con build multi-stage. Mas detalles en la
-[guia de despliegue](../../docs/despliegue.md).
+[guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t cms-starter .
-docker run -p 3000:3000 cms-starter
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/cms-starter/Dockerfile -t cms-starter .
+# La base SQLite queda en /app/data: con un volumen sobrevive a los reinicios
+docker run -p 3000:3000 -v cms-starter-data:/app/data cms-starter
 ```

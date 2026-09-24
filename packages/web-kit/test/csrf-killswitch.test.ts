@@ -54,7 +54,8 @@ describe("AuthFeature — CSRF kill-switch production guard", () => {
         const kernel = new Kernel();
         kernel.registerFeature(new FakeDbFeature() as any);
         kernel.registerFeature(
-            new AuthFeature({ secret: VALID_SECRET, disableCSRFCheck: true } as any, fakeCreateAuth),
+            // baseURL is required in production.
+            new AuthFeature({ secret: VALID_SECRET, baseURL: "https://app.example.com", disableCSRFCheck: true } as any, fakeCreateAuth),
         );
         await kernel.initialize();
 

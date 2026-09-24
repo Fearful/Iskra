@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// The messages never include the value: it may be a secret (a password put in
+// the wrong variable), and loadConfig() reports them in errors and logs.
+
 /**
  * Coerce a string env var to boolean.
  * Accepts "true"/"1"/"yes" as true, "false"/"0"/"no" as false.
@@ -13,7 +16,7 @@ export const envBool = z
         if (lower === 'false' || lower === '0' || lower === 'no') return false;
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `Expected boolean-like string ("true"/"1"/"yes"/"false"/"0"/"no"), received "${val}"`,
+            message: 'Expected boolean-like string ("true"/"1"/"yes"/"false"/"0"/"no")',
         });
         return z.NEVER;
     })
@@ -30,7 +33,7 @@ export const envNumber = z
         if (trimmed === '' || !Number.isFinite(n)) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
-                message: `Expected a finite number, received "${val}"`,
+                message: 'Expected a finite number',
             });
             return z.NEVER;
         }
@@ -48,7 +51,7 @@ export const envPort = z
         if (!Number.isInteger(n) || n < 1 || n > 65535) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
-                message: `Expected a port number (1–65535), received "${val}"`,
+                message: 'Expected a port number (1–65535)',
             });
             return z.NEVER;
         }
@@ -67,7 +70,7 @@ export function envEnum<T extends string>(values: readonly [T, ...T[]]) {
             if (!(values as readonly string[]).includes(val)) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    message: `Expected one of [${values.map(v => `"${v}"`).join(', ')}], received "${val}"`,
+                    message: `Expected one of [${values.map(v => `"${v}"`).join(', ')}]`,
                 });
                 return z.NEVER;
             }

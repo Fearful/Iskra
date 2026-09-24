@@ -1,0 +1,23 @@
+# Build context for the template Dockerfiles (docker build -f templates/<name>/Dockerfile .).
+# Allowlist: the builder installs the whole Bun workspace with --frozen-lockfile,
+# so it needs every workspace manifest the lockfile lists, but nothing else.
+*
+!package.json
+!bun.lock
+!tsconfig.base.json
+!packages/
+!templates/
+
+# Never send local installs, build output, secrets or runtime data.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/storage
+# ...but not source directories named `storage` (web-kit's storage feature).
+!**/src/**/storage
+**/*.db
+**/*.sqlite
+**/*.log
+**/.git

@@ -2,7 +2,6 @@ import type { Feature, ApiKeyConfig, ApiKeyMetadata, ApiKeyValidationResult } fr
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createHash } from "crypto";
 
 // Resolved config: scalar/array fields are always populated by the constructor
 // defaults, while the genuinely optional callbacks stay optional. This replaces
@@ -14,22 +13,20 @@ type ResolvedApiKeyConfig =
 
 // --- ApiKeyStore ---
 
+/**
+ * Validates keys against the configured `staticKeys`, on every request.
+ *
+ * Validated keys used to be cached (with `enableCache`, through the cache
+ * feature): the cached entry held the plaintext key, and on a hit its scopes
+ * and expiry were used instead of the current config, so a key revoked or
+ * narrowed in the config kept working for `cacheTtl` on every instance
+ * sharing the cache. A lookup in the in-memory map needs no cache.
+ */
 export class ApiKeyStore {
     private staticKeysMap: Map<string, ApiKeyMetadata> = new Map();
-    private cache?: any;
 
-    constructor(private config: ResolvedApiKeyConfig, private kernel: Kernel) {
+    constructor(private config: ResolvedApiKeyConfig, _kernel?: Kernel) {
         this.initializeStaticKeys();
-    }
-
-    private getCache() {
-        if (!this.cache && this.config.enableCache) {
-            const cacheFeature = this.kernel.getFeature<any>('cache');
-            if (cacheFeature) {
-                this.cache = cacheFeature.client;
-            }
-        }
-        return this.cache;
     }
 
     private initializeStaticKeys(): void {
@@ -58,7 +55,7 @@ export class ApiKeyStore {
     private generateId(_key: string): string {
         // Derive the id independently of the secret key material so it can never
         // leak a usable prefix of the key. Lookup is keyed by the plaintext key
-        // (staticKeysMap / cache), never by id, so a random id is sufficient.
+        // (staticKeysMap), never by id, so a random id is sufficient.
         return crypto.randomUUID();
     }
 
@@ -76,32 +73,9 @@ export class ApiKeyStore {
         return new Date() > expiresAt;
     }
 
-    private cacheKeyFor(key: string): string {
-        // Hash the key before using it as a cache key so the plaintext secret is
-        // never persisted (e.g. in Redis) where it could leak via cache dumps.
-        const hash = createHash("sha256").update(key).digest("hex");
-        return `apikey:${hash}`;
-    }
-
     async validate(key: string): Promise<ApiKeyValidationResult> {
         if (!key) return { isValid: false, error: "API key is required" };
 
-        const cache = this.getCache();
-        const cacheKey = this.cacheKeyFor(key);
-
-        if (cache) {
-            try {
-                const cached = await cache.get(cacheKey);
-                if (cached) {
-                    const metadata = typeof cached === 'string' ? JSON.parse(cached) : cached;
-                    return { isValid: true, key: metadata };
-                }
-            } catch (err) {
-                // Cache error, ignore
-            }
-        }
-
-        // Check static keys
         for (const [staticKey, metadata] of this.staticKeysMap) {
             if (this.compareKeys(key, staticKey)) {
                 if (this.isExpired(metadata.expiresAt)) {
@@ -109,18 +83,7 @@ export class ApiKeyStore {
                 }
                 // Build a derived object instead of mutating the metadata held in
                 // staticKeysMap (immutability — the stored object must stay intact).
-                const usedMetadata: ApiKeyMetadata = { ...metadata, lastUsedAt: new Date() };
-
-                if (cache) {
-                    const ttl = this.config.cacheTtl ? Math.floor(this.config.cacheTtl / 1000) : 300;
-                    try {
-                        await cache.set(cacheKey, JSON.stringify(usedMetadata), ttl);
-                    } catch {
-                        // ignore cache write failures — validation already succeeded
-                    }
-                }
-
-                return { isValid: true, key: usedMetadata };
+                return { isValid: true, key: { ...metadata, lastUsedAt: new Date() } };
             }
         }
 
@@ -155,6 +118,8 @@ declare module "hono" {
         hasScope?: (scope: string) => boolean;
         hasAnyScope?: (...scopes: string[]) => boolean;
         hasAllScopes?: (...scopes: string[]) => boolean;
+        /** Why a Bearer token was not accepted as an API key (see requireApiKey). */
+        apiKeyError?: string;
     }
 }
 
@@ -194,22 +159,36 @@ export class ApiKeyFeature implements Feature {
                 return;
             }
 
-            const apiKey = this.extractApiKey(c);
-            if (!apiKey) {
+            const extracted = this.extractApiKey(c);
+            if (!extracted) {
                 c.set("apiKey", undefined);
                 c.set("apiKeyScopes", undefined);
                 await next();
                 return;
             }
 
-            const result = await this.store!.validate(apiKey);
+            const result = await this.store!.validate(extracted.key);
             if (!result.isValid) {
-                throw new HTTPException(401, { message: result.error || "Invalid API key" });
+                const error = result.error || "Invalid API key";
+                if (extracted.strategy === "bearer") {
+                    // A Bearer token may belong to another auth scheme (a JWT, a
+                    // session token). Rejecting it here would 401 every such
+                    // request app-wide, public routes included; routes that need
+                    // an API key enforce it with requireApiKey()/requireScope().
+                    c.set("apiKey", undefined);
+                    c.set("apiKeyScopes", undefined);
+                    c.set("apiKeyError", error);
+                    await next();
+                    return;
+                }
+                if (this.config.onError) return this.config.onError(error, c);
+                throw new HTTPException(401, { message: error });
             }
 
             // When requireScopes is enabled, a validated key that carries no scope
             // is treated as insufficiently privileged and rejected.
             if (this.config.requireScopes && !(result.key?.scopes && result.key.scopes.length > 0)) {
+                if (this.config.onError) return this.config.onError("API key has no scopes", c);
                 throw new HTTPException(403, { message: "API key has no scopes" });
             }
 
@@ -220,6 +199,7 @@ export class ApiKeyFeature implements Feature {
             c.set("hasAnyScope", (...scopes: string[]) => scopes.some(s => this.store!.hasScopes(result.key!, [s])));
             c.set("hasAllScopes", (...scopes: string[]) => this.store!.hasScopes(result.key!, scopes));
 
+            if (this.config.onValidated) await this.config.onValidated(result.key!, c);
             await next();
         });
 
@@ -234,7 +214,7 @@ export class ApiKeyFeature implements Feature {
         });
     }
 
-    private extractApiKey(c: Context): string | null {
+    private extractApiKey(c: Context): { key: string; strategy: string } | null {
         for (const strategy of (this.config.extractStrategies || [])) {
             let key: string | null = null;
             switch (strategy) {
@@ -249,8 +229,11 @@ export class ApiKeyFeature implements Feature {
                 case "query":
                     key = c.req.query(this.config.queryParamName) || null;
                     break;
+                case "custom":
+                    key = this.config.customExtractor?.(c) || null;
+                    break;
             }
-            if (key) return key;
+            if (key) return { key, strategy };
         }
         return null;
     }
@@ -258,7 +241,7 @@ export class ApiKeyFeature implements Feature {
 
 export function requireApiKey() {
     return async (c: Context, next: Next) => {
-        if (!c.get("apiKey")) throw new HTTPException(401, { message: "API key is required" });
+        if (!c.get("apiKey")) throw new HTTPException(401, { message: c.get("apiKeyError") || "API key is required" });
         await next();
     };
 }
@@ -266,7 +249,7 @@ export function requireApiKey() {
 export function requireScope(...scopes: string[]) {
     return async (c: Context, next: Next) => {
         const hasAll = c.get("hasAllScopes");
-        if (!c.get("apiKey")) throw new HTTPException(401, { message: "API key is required" });
+        if (!c.get("apiKey")) throw new HTTPException(401, { message: c.get("apiKeyError") || "API key is required" });
         if (!hasAll || !hasAll(...scopes)) throw new HTTPException(403, { message: "Insufficient scopes" });
         await next();
     };

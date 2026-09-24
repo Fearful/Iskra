@@ -2,7 +2,7 @@ import type { Feature, SessionConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { sql, eq } from "drizzle-orm";
 import { pgTable, text as pgText, bigint as pgBigint } from "drizzle-orm/pg-core";
 import { mysqlTable, varchar as myVarchar, text as myText, bigint as myBigint } from "drizzle-orm/mysql-core";
@@ -18,6 +18,12 @@ interface SessionStore {
 
 // ─── Memory Store ────────────────────────────────────────────────────────────
 
+/**
+ * Keeps a copy of the data and hands out copies (data must be
+ * structured-cloneable, as it already had to be JSON for the other stores):
+ * handing every request the stored object let one request's changes (a login
+ * setting `userId`) reach another request's session and be saved under its ID.
+ */
 class MemorySessionStore implements SessionStore {
     private store = new Map<string, { data: Record<string, any>; expiresAt: number }>();
     private cleanupInterval: ReturnType<typeof setInterval>;
@@ -33,11 +39,11 @@ class MemorySessionStore implements SessionStore {
             this.store.delete(id);
             return null;
         }
-        return entry.data;
+        return structuredClone(entry.data);
     }
 
     async set(id: string, data: Record<string, any>, ttl: number) {
-        this.store.set(id, { data, expiresAt: Date.now() + ttl * 1000 });
+        this.store.set(id, { data: structuredClone(data), expiresAt: Date.now() + ttl * 1000 });
     }
 
     async destroy(id: string) {
@@ -58,16 +64,17 @@ class MemorySessionStore implements SessionStore {
 
 // ─── Cache Store ─────────────────────────────────────────────────────────────
 
+/** Copies in and out for the same reason as MemorySessionStore: the cache's memory adapter keeps references. */
 class CacheSessionStore implements SessionStore {
     constructor(private cache: any) { }
 
     async get(id: string) {
         const data = await this.cache.get(`session:${id}`);
-        return data || null;
+        return data ? structuredClone(data) : null;
     }
 
     async set(id: string, data: Record<string, any>, ttl: number) {
-        await this.cache.set(`session:${id}`, data, ttl);
+        await this.cache.set(`session:${id}`, structuredClone(data), ttl);
     }
 
     async destroy(id: string) {
@@ -116,8 +123,17 @@ class DbSessionStore implements SessionStore {
         this.table = sessionTables[this.dialect];
     }
 
+    /** No new CREATE TABLE attempt before this time, after a failed one. */
+    private retryAt = 0;
+
+    /**
+     * Creates the table once. A failure (the database not reachable yet, say)
+     * is retried on a later request, at most every 5 s: it used to be marked
+     * done anyway, so the table was never created and every login set a cookie
+     * for a session that could not be stored.
+     */
     private async ensureTable() {
-        if (this.initialized) return;
+        if (this.initialized || Date.now() < this.retryAt) return;
         try {
             const ddl = sql.raw(createTableDdl[this.dialect]);
             // sqlite drivers expose run(); postgres/mysql expose execute().
@@ -126,10 +142,11 @@ class DbSessionStore implements SessionStore {
             } else {
                 await this.db.execute(ddl);
             }
+            this.initialized = true;
         } catch (err) {
+            this.retryAt = Date.now() + 5000;
             console.error("[session] Failed to ensure sessions table:", err);
         }
-        this.initialized = true;
     }
 
     async get(id: string) {
@@ -193,9 +210,14 @@ function verifySignedValue(signed: string, secret: string): string | null {
     const signature = signed.substring(lastDot + 1);
     const expected = createHmac("sha256", secret).update(value).digest("base64url");
 
-    if (signature !== expected) return null;
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
     return value;
 }
+
+/** Minimum length, in characters, for the cookie-signing secret (same bar as auth-kit). */
+const MIN_SECRET_LENGTH = 32;
 
 // ─── Session Feature ─────────────────────────────────────────────────────────
 
@@ -204,6 +226,12 @@ declare module "hono" {
         session: Record<string, any>;
         sessionId: string;
         destroySession: () => Promise<void>;
+        /**
+         * Issues a new session ID for the current data and invalidates the old
+         * one. Call it right after login (or any privilege change) so an ID the
+         * client had before authenticating cannot be reused (session fixation).
+         */
+        regenerateSession: () => Promise<void>;
     }
 }
 
@@ -214,8 +242,15 @@ export class SessionFeature implements Feature {
     private store?: SessionStore;
     private ttl: number;
     private cookieName: string;
+    private secureDefault = false;
 
     constructor(private config: SessionConfig) {
+        // The secret signs session cookies; a short one can be brute-forced offline.
+        if (!config.secret || config.secret.length < MIN_SECRET_LENGTH) {
+            throw new Error(
+                `session secret must be at least ${MIN_SECRET_LENGTH} characters; received ${config.secret ? config.secret.length : 0}`,
+            );
+        }
         this.ttl = config.ttl || 86400; // 24 hours default
         this.cookieName = config.cookieName || "sid";
 
@@ -229,6 +264,8 @@ export class SessionFeature implements Feature {
 
     async initialize(kernel: Kernel): Promise<void> {
         console.log(`⚙️ Initializing Session: store=${this.config.store}`);
+        // Cookies are Secure by default in production (override with cookieOptions.secure).
+        this.secureDefault = (kernel.getConfig().environment ?? process.env.NODE_ENV) === "production";
 
         switch (this.config.store) {
             case "memory":
@@ -274,18 +311,32 @@ export class SessionFeature implements Feature {
                 }
             }
 
+            // Whether a stored session backs this request (and must be cleaned
+            // up if the handler empties it).
+            let persisted = sessionId !== null;
             if (!sessionId) {
                 sessionId = crypto.randomUUID();
             }
 
             let destroyed = false;
+            const opts = this.config.cookieOptions || {};
+            const cookieOptions = {
+                domain: opts.domain,
+                path: opts.path || "/",
+            };
 
             c.set("session", session);
             c.set("sessionId", sessionId);
             c.set("destroySession", async () => {
                 destroyed = true;
                 await this.store!.destroy(sessionId!);
-                deleteCookie(c, this.cookieName);
+                deleteCookie(c, this.cookieName, cookieOptions);
+            });
+            c.set("regenerateSession", async () => {
+                if (persisted) await this.store!.destroy(sessionId!);
+                persisted = false;
+                sessionId = crypto.randomUUID();
+                c.set("sessionId", sessionId);
             });
 
             await next();
@@ -297,17 +348,27 @@ export class SessionFeature implements Feature {
             // Save session after response
             const currentSession = c.get("session");
             if (currentSession && Object.keys(currentSession).length > 0) {
+                // A session this request loaded but another request destroyed
+                // meanwhile (a logout, a login's regenerateSession) must stay
+                // gone: re-saving it undid the logout, or revived the ID an
+                // attacker fixed before the victim logged in. The cookie is left
+                // alone, since the other request may have just set a new one.
+                if (persisted && !(await this.store!.get(sessionId))) return;
                 await this.store!.set(sessionId, currentSession, this.ttl);
                 const signed = signValue(sessionId, this.config.secret);
-                const opts = this.config.cookieOptions || {};
                 setCookie(c, this.cookieName, signed, {
+                    ...cookieOptions,
                     httpOnly: true,
                     sameSite: opts.sameSite || "Lax",
-                    secure: opts.secure ?? false,
-                    domain: opts.domain,
-                    path: opts.path || "/",
+                    secure: opts.secure ?? (this.secureDefault || opts.sameSite === "None"),
                     maxAge: this.ttl,
                 });
+            } else if (persisted) {
+                // The handler cleared the session (e.g. `delete session.userId`
+                // on logout, or `c.set("session", {})`): drop the stored copy,
+                // or the old data would load again on the next request.
+                await this.store!.destroy(sessionId);
+                deleteCookie(c, this.cookieName, cookieOptions);
             }
         });
 

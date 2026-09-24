@@ -1,7 +1,7 @@
 {
     "name": "@iskra-bun/desktop-kit",
     "version": "0.1.1",
-    "description": "Soporte para apps de escritorio con Tauri en Iskra.",
+    "description": "Experimental placeholder for Tauri desktop apps in Iskra: registers a driver in the App lifecycle but does not wrap any Tauri API yet.",
     "keywords": [
         "iskra",
         "bun",
@@ -19,6 +19,9 @@
     },
     "homepage": "https://github.com/fearful/iskra/tree/main/packages/desktop-kit#readme",
     "bugs": "https://github.com/fearful/iskra/issues",
+    "engines": {
+        "bun": ">=1.3.0"
+    },
     "type": "module",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
@@ -39,15 +42,15 @@
         "CHANGELOG.md"
     ],
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "provenance": true
     },
     "scripts": {
         "test": "bun test",
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
-        "@tauri-apps/api": "^2.0.0"
+        "@iskra-bun/core": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.10.2"

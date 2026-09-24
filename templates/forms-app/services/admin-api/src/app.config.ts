@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+// The documented dev flow serves the admin SPA from Vite on :5173, whose proxy
+// forwards the browser's Origin unchanged: better-auth rejected every sign-in
+// from it with 403 INVALID_ORIGIN. Production (and compose) use nginx's origin.
+const DEFAULT_ORIGINS =
+    process.env.NODE_ENV === 'production' ? 'http://localhost' : 'http://localhost,http://localhost:5173';
+
 export const AppConfigSchema = z.object({
     web: z.object({
         port: z.number().default(4000),
@@ -11,9 +17,10 @@ export const AppConfigSchema = z.object({
     auth: z.object({
         secret: z.string(),
         baseURL: z.string().default('http://localhost:4000'),
+        basePath: z.string().default('/api/auth'),
     }),
     cors: z.object({
-        origins: z.string().default('http://localhost'),
+        origins: z.string().default(DEFAULT_ORIGINS),
     }),
     formManagerUrl: z.string().default('http://form-manager:4001'),
 });
@@ -31,9 +38,10 @@ export const config: AppConfig = AppConfigSchema.parse({
     auth: {
         secret: process.env.AUTH_SECRET || 'dev-secret-change-me-min-32-characters-long',
         baseURL: process.env.AUTH_BASE_URL || 'http://localhost:4000',
+        basePath: '/api/auth',
     },
     cors: {
-        origins: process.env.CORS_ORIGINS || 'http://localhost',
+        origins: process.env.CORS_ORIGINS || DEFAULT_ORIGINS,
     },
     formManagerUrl: process.env.FORM_MANAGER_URL || 'http://form-manager:4001',
 });

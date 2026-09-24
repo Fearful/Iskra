@@ -1,28 +1,41 @@
 import os
-
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
+from contextlib import asynccontextmanager
 from typing import Optional
 
+from fastapi import Cookie, FastAPI, HTTPException, Response
+from pydantic import BaseModel
+
 from iskra_client import (
+    AuthException,
     IskraClient,
     IskraException,
-    AuthException,
+    Session,
     ValidationException,
 )
 
-# ── App ──────────────────────────────────────────────────────────────────
+# The Iskra session cookie is kept in this app's own HttpOnly cookie and sent
+# back to Iskra on each request with IskraClient.with_session().
+SESSION_COOKIE = "iskra_session"
+COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
 
-app = FastAPI(title="Iskra FastAPI Auth Example")
+
+# ── Iskra client ─────────────────────────────────────────────────────────
+# One client for the whole app: it pools connections and never stores
+# cookies, so requests of different users cannot leak into each other.
+
+iskra = IskraClient(
+    base_url=os.environ.get("ISKRA_BASE_URL", "http://localhost:3000"),
+    api_key=os.environ.get("ISKRA_API_KEY"),
+)
 
 
-# ── Iskra client dependency ──────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    await iskra.aclose()
 
-def get_iskra() -> IskraClient:
-    return IskraClient(
-        base_url=os.environ.get("ISKRA_BASE_URL", "http://localhost:3000"),
-        api_key=os.environ.get("ISKRA_API_KEY"),
-    )
+
+app = FastAPI(title="Iskra FastAPI Auth Example", lifespan=lifespan)
 
 
 # ── Request models ───────────────────────────────────────────────────────
@@ -38,84 +51,82 @@ class SignUpRequest(BaseModel):
     name: Optional[str] = None
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+def _start_session(response: Response, session: Session) -> dict:
+    if session.cookie:
+        response.set_cookie(
+            SESSION_COOKIE,
+            session.cookie,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+        )
+    user = session.user
+    return {"id": user.id, "email": user.email, "name": user.name} if user else {}
+
+
+def _server_error(e: IskraException) -> HTTPException:
+    return HTTPException(status_code=502, detail={"error": "Error del servicio Iskra", "detail": str(e)})
+
+
 # ── Auth routes ──────────────────────────────────────────────────────────
 
 @app.post("/auth/sign-in")
-async def sign_in(body: SignInRequest, iskra: IskraClient = Depends(get_iskra)):
+async def sign_in(body: SignInRequest, response: Response):
     try:
         resp = await iskra.auth.async_sign_in(body.email, body.password)
-        return resp.data
     except AuthException as e:
-        raise HTTPException(status_code=401, detail={
-            "error": "Credenciales invalidas",
-            "detail": str(e),
-            "code": e.error_code,
-        })
+        raise HTTPException(status_code=401, detail={"error": "Credenciales invalidas", "code": e.error_code})
     except ValidationException as e:
-        raise HTTPException(status_code=400, detail={
-            "error": "Datos invalidos",
-            "detail": str(e),
-            "details": e.details,
-        })
+        raise HTTPException(status_code=400, detail={"error": "Datos invalidos", "details": e.details})
     except IskraException as e:
-        raise HTTPException(status_code=500, detail={
-            "error": "Error del servidor",
-            "detail": str(e),
-        })
+        raise _server_error(e)
+    return _start_session(response, resp.data)
 
 
 @app.post("/auth/sign-up", status_code=201)
-async def sign_up(body: SignUpRequest, iskra: IskraClient = Depends(get_iskra)):
+async def sign_up(body: SignUpRequest, response: Response):
     try:
         resp = await iskra.auth.async_sign_up(body.email, body.password, name=body.name)
-        return resp.data
     except ValidationException as e:
-        raise HTTPException(status_code=400, detail={
-            "error": "Datos invalidos",
-            "detail": str(e),
-            "details": e.details,
-        })
+        raise HTTPException(status_code=400, detail={"error": "Datos invalidos", "details": e.details})
     except IskraException as e:
-        raise HTTPException(status_code=500, detail={
-            "error": "Error del servidor",
-            "detail": str(e),
-        })
+        raise _server_error(e)
+    return _start_session(response, resp.data)
 
 
 @app.post("/auth/sign-out")
-async def sign_out(iskra: IskraClient = Depends(get_iskra)):
-    try:
-        await iskra.auth.async_sign_out()
-        return {"message": "Sesion cerrada"}
-    except IskraException as e:
-        raise HTTPException(status_code=500, detail={
-            "error": "Error al cerrar sesion",
-            "detail": str(e),
-        })
+async def sign_out(response: Response, iskra_session: Optional[str] = Cookie(None)):
+    if iskra_session:
+        try:
+            await iskra.auth.async_sign_out(iskra_session)
+        except IskraException as e:
+            raise _server_error(e)
+    response.delete_cookie(SESSION_COOKIE)
+    return {"message": "Sesion cerrada"}
 
 
 @app.get("/auth/session")
-async def get_session(iskra: IskraClient = Depends(get_iskra)):
+async def get_session(iskra_session: Optional[str] = Cookie(None)):
+    if not iskra_session:
+        raise HTTPException(status_code=401, detail={"error": "No hay sesion activa"})
     try:
-        resp = await iskra.auth.async_get_session()
-        return resp.data
-    except AuthException as e:
-        raise HTTPException(status_code=401, detail={
-            "error": "No hay sesion activa",
-            "detail": str(e),
-        })
+        resp = await iskra.auth.async_get_session(iskra_session)
     except IskraException as e:
-        raise HTTPException(status_code=500, detail={
-            "error": "Error del servidor",
-            "detail": str(e),
-        })
+        raise _server_error(e)
+    if resp.data is None or resp.data.user is None:
+        raise HTTPException(status_code=401, detail={"error": "No hay sesion activa"})
+    user = resp.data.user
+    return {"user": {"id": user.id, "email": user.email, "name": user.name}}
 
 
 @app.get("/auth/health")
-async def health(iskra: IskraClient = Depends(get_iskra)):
+async def health():
     try:
-        return await iskra.health.async_check()
+        status = await iskra.health.async_check()
     except IskraException:
-        raise HTTPException(status_code=503, detail={
-            "error": "Iskra no disponible",
-        })
+        raise HTTPException(status_code=503, detail={"error": "Iskra no disponible"})
+    if status.get("status") != "ok":
+        raise HTTPException(status_code=503, detail=status)
+    return status

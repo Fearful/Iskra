@@ -4,10 +4,10 @@ Template para un backend de e-commerce con catalogo de productos, gestion de ord
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP con Hono
-- [`@iskra-bun/db-kit`](../../docs/db-kit.md) — Base de datos con Drizzle ORM (SQLite por defecto)
-- [`@iskra-bun/kv-kit`](../../docs/kv-kit.md) — Cache en memoria o Redis
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP con Hono
+- [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos con Drizzle ORM (SQLite por defecto)
+- [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Cache en memoria o Redis
 
 ## Inicio rapido
 
@@ -28,7 +28,7 @@ Copia `.env.example` a `.env`:
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
-| `DATABASE_URL` | Ruta o URL de la base de datos | `ecommerce.db` |
+| `DATABASE_URL` | Ruta o URL de la base de datos | `ecommerce.db` (en la imagen Docker, `/app/data/ecommerce.db`) |
 
 ## Endpoints
 
@@ -67,15 +67,17 @@ src/
 
 ## Base de datos
 
-Por defecto usa SQLite (`ecommerce.db`), pero podes cambiar a PostgreSQL o MySQL modificando la configuracion del driver. Mira la [documentacion de DB Kit](../../docs/db-kit.md) para los drivers disponibles.
+Por defecto usa SQLite (`ecommerce.db`), pero podes cambiar a PostgreSQL o MySQL modificando la configuracion del driver. Mira la [documentacion de DB Kit](https://iskra-docs.fly.dev/es/packages/db-kit/) para los drivers disponibles.
 
-Para manejar migraciones de schema, revisa la [guia de migraciones](../../docs/migraciones.md).
+Para manejar migraciones de schema, revisa la [guia de migraciones](https://iskra-docs.fly.dev/es/guides/migrations/).
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).
 
 ```bash
-docker build -t ecommerce-api .
-docker run -p 3000:3000 ecommerce-api
+# Desde la raiz del monorepo: el Dockerfile necesita todo el workspace
+docker build -f templates/ecommerce-api/Dockerfile -t ecommerce-api .
+# La base SQLite queda en /app/data: con un volumen sobrevive a los reinicios
+docker run -p 3000:3000 -v ecommerce-api-data:/app/data ecommerce-api
 ```

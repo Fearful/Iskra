@@ -4,9 +4,9 @@ El template mas basico de Iskra. Un servidor web minimo con gestion de usuarios 
 
 ## Kits utilizados
 
-- [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger
-- [`@iskra-bun/web-kit`](../../docs/web-kit.md) — Servidor HTTP
-- [`@iskra-bun/process-kit`](../../docs/process-kit.md) — Gestion de procesos externos
+- [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
+- [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP
+- [`@iskra-bun/process-kit`](https://iskra-docs.fly.dev/es/packages/process-kit/) — Gestion de procesos externos
 
 ## Inicio rapido
 
@@ -49,12 +49,12 @@ src/
 
 A partir de aca podes:
 
-- Agregar una base de datos con [`@iskra-bun/db-kit`](../../docs/db-kit.md)
-- Sumar WebSockets con [`@iskra-bun/socket-kit`](../../docs/socket-kit.md)
-- Configurar cache con [`@iskra-bun/kv-kit`](../../docs/kv-kit.md)
-- Revisar las [features del Web Kit](../../docs/web-kit.md) (auth, CORS, rate limit, etc.)
-- Configurar el [sistema de configuracion](../../docs/configuracion.md) con `app.config.ts`
+- Agregar una base de datos con [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/)
+- Sumar WebSockets con [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/)
+- Configurar cache con [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/)
+- Revisar las [features del Web Kit](https://iskra-docs.fly.dev/es/packages/web-kit/) (auth, CORS, rate limit, etc.)
+- Configurar el [sistema de configuracion](https://iskra-docs.fly.dev/es/configuration/) con `app.config.ts`
 
 ## Despliegue
 
-Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](../../docs/despliegue.md).
+Incluye `Dockerfile` con build multi-stage. Mas info en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

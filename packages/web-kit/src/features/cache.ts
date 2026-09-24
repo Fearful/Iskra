@@ -10,6 +10,11 @@ export interface CacheAdapter {
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
     increment?(key: string): Promise<number>;
+    /**
+     * Atomically increments a counter, creating it with `ttlMs` expiry when it
+     * does not exist (or has lost its expiry). Used by rate limiting.
+     */
+    incrementWithTtl?(key: string, ttlMs: number): Promise<number>;
     disconnect?(): Promise<void>;
 }
 
@@ -49,7 +54,27 @@ class MemoryAdapter implements CacheAdapter {
         item.value = newVal;
         return newVal;
     }
+
+    async incrementWithTtl(key: string, ttlMs: number): Promise<number> {
+        const item = this.store.get(key);
+        if (!item || (item.expires && item.expires < Date.now())) {
+            this.store.set(key, { value: 1, expires: Date.now() + ttlMs });
+            return 1;
+        }
+        item.value = Number(item.value) + 1;
+        item.expires ??= Date.now() + ttlMs;
+        return item.value;
+    }
 }
+
+// INCR, then (re)apply the expiry if the key is new or has none, in one atomic step.
+const INCREMENT_WITH_TTL_SCRIPT = `
+local n = redis.call('INCR', KEYS[1])
+if n == 1 or redis.call('PTTL', KEYS[1]) == -1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return n
+`;
 
 // Redis Adapter
 class RedisAdapter implements CacheAdapter {
@@ -90,6 +115,10 @@ class RedisAdapter implements CacheAdapter {
         return await this.client.incr(key);
     }
 
+    async incrementWithTtl(key: string, ttlMs: number): Promise<number> {
+        return Number(await this.client.eval(INCREMENT_WITH_TTL_SCRIPT, 1, key, Math.max(1, Math.ceil(ttlMs))));
+    }
+
     async disconnect() {
         await this.client.quit();
     }
@@ -119,7 +148,7 @@ export class CacheFeature implements Feature {
                     password: conn.password,
                     db: conn.db || 0
                 });
-            } catch (err) {
+            } catch {
                 console.warn("⚠️ Redis connection failed, falling back to memory cache");
                 this.client = new MemoryAdapter();
             }

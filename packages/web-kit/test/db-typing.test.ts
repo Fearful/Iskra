@@ -16,13 +16,14 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
  * Drizzle's `$drizzleTypeError` marker — exactly today's untyped behavior.
  */
 
+// Only its type is used: these tests check what the schema type infers.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const users = sqliteTable("users", {
     id: integer("id").primaryKey(),
     name: text("name").notNull(),
 });
 
-const schema = { users };
-type Schema = typeof schema;
+type Schema = { users: typeof users };
 
 type Expect<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -31,11 +32,7 @@ type PgMember<TS extends Record<string, unknown>> = Extract<WebKitDrizzleDb<TS>,
 
 describe("DbFeature typing", () => {
     test("a typed schema flows through to feature.db.query", () => {
-        const feature = new DbFeature<Schema>({
-            adapter: "sqlite",
-            connection: { database: ":memory:" },
-        });
-        type Db = typeof feature.db;
+        type Db = DbFeature<Schema>["db"];
         type _dbIsUnion = Expect<Equal<Db, WebKitDrizzleDb<Schema>>>;
         const _assertUnion: _dbIsUnion = true;
 
@@ -47,11 +44,7 @@ describe("DbFeature typing", () => {
     });
 
     test("default DbFeature reproduces the historical untyped (no relations) behavior", () => {
-        const feature = new DbFeature({
-            adapter: "sqlite",
-            connection: { database: ":memory:" },
-        });
-        type Db = typeof feature.db;
+        type Db = DbFeature["db"];
         type _defaultUnion = Expect<Equal<Db, WebKitDrizzleDb<Record<string, never>>>>;
         const _assertDefault: _defaultUnion = true;
 

@@ -28,7 +28,7 @@ npm create iskra@latest my-app
 ## What it does
 
 1. Copies the chosen template into `my-app/`, excluding `node_modules`, `dist`, and `.git`.
-2. Rewrites `package.json`: sets `name` to the target directory's basename and replaces every `@iskra-bun/* : workspace:*` dependency with a real semver range (`^0.1.0`).
+2. Rewrites `package.json`: sets `name` to the target directory's basename and replaces every `@iskra-bun/* : workspace:*` dependency with a caret range on that package's current version (e.g. `^0.2.0` for `web-kit`, `^0.1.1` for `core`).
 3. Prints the next steps (`cd`, `bun install`, `bun start`).
 
 If the target directory already exists and is non-empty, the command aborts without touching anything.
