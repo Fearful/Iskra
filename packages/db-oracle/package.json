@@ -36,6 +36,8 @@
     "files": [
         "dist",
         "src",
+        "bridge/runner.js",
+        "bridge/package.json",
         "README.md",
         "CHANGELOG.md"
     ],
@@ -48,6 +50,9 @@
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:*"
+    },
+    "peerDependencies": {
+        "oracledb": "^6.3.0"
     },
     "devDependencies": {
         "@types/node": "^22.10.2",

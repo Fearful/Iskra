@@ -3,7 +3,19 @@
 // SQL string so tests can exercise success, error, fatal and malformed paths.
 const readline = require('readline');
 
-process.stdout.write(JSON.stringify({ type: 'ready' }) + '\n');
+// FAKE_BRIDGE_MODE simulates startup failures: `fatal` (cannot connect),
+// `exit` (dies before ready), `silent` (never becomes ready).
+const mode = process.env.FAKE_BRIDGE_MODE;
+if (mode === 'fatal') {
+    process.stdout.write(JSON.stringify({ type: 'fatal', error: 'ORA-12541: no listener' }) + '\n');
+    process.exit(1);
+} else if (mode === 'exit') {
+    process.exit(1);
+} else if (mode === 'silent') {
+    setInterval(() => {}, 1000);
+} else {
+    process.stdout.write(JSON.stringify({ type: 'ready' }) + '\n');
+}
 
 const rl = readline.createInterface({ input: process.stdin });
 

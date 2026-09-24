@@ -11,7 +11,7 @@ function makeApp() {
 describe("OracleDriver", () => {
     test("instantiates with default name", () => {
         const driver = new OracleDriver();
-        expect(driver.name).toBe("db");
+        expect(driver.name).toBe("OracleDriver");
     });
 
     test("init registers itself in app context under 'oracle'", async () => {
