@@ -55,6 +55,6 @@
         "bullmq": "^5.0.0"
     },
     "devDependencies": {
-        "@types/node": "^22.10.2"
+        "@types/node": "^26.6.2"
     }
 }
