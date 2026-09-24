@@ -1,5 +1,8 @@
 export * from "./types";
 export * from "./kernel";
+// types.ts also re-exports Kernel (type-only, for features); without this the
+// two `export *` collide and TypeScript users could not `new Kernel()`.
+export { Kernel } from "./kernel";
 export * from "./driver";
 export * from "./server";
 export * from "./router";

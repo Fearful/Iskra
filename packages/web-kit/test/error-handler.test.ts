@@ -43,6 +43,7 @@ describe("Error Handler Feature", () => {
         const json = await res.json() as any;
         expect(json.error).toBe("Invalid input");
         expect(json.code).toBe("VALIDATION_ERROR");
+        expect(json.details).toEqual({ field: "email", issue: "required" });
 
         await kernel.shutdown();
     });
