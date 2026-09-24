@@ -102,7 +102,7 @@ describe("OracleDriver pending-promise rejection on fatal/exit", () => {
         try {
             // FATAL_TEST causes the bridge to emit { type: 'fatal' } without an id.
             // The driver must reject this (and all other) pending promises.
-            const err = await driver.query("FATAL_TEST").catch((e) => e);
+            const err = (await driver.query("FATAL_TEST").then(() => null, (e: Error) => e)) as Error;
             expect(err.message).toMatch(/fatal/i);
         } finally {
             errSpy.mockRestore();
@@ -119,7 +119,7 @@ describe("OracleDriver pending-promise rejection on fatal/exit", () => {
         try {
             // EXIT_TEST causes the bridge to call process.exit(1) immediately.
             // The stream will close, triggering rejectAllPending in the finally block.
-            const err = await driver.query("EXIT_TEST").catch((e) => e);
+            const err = (await driver.query("EXIT_TEST").then(() => null, (e: Error) => e)) as Error;
             expect(err.message).toMatch(/exited|error/i);
         } finally {
             errSpy.mockRestore();
