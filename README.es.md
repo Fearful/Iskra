@@ -33,8 +33,8 @@ Para un analisis mas detallado de las capas, interfaces y patrones de diseno, re
 | `@iskra-bun/storage-kit` | Almacenamiento de archivos (local, S3/MinIO) con streaming. | [Storage Kit](./docs/storage-kit.md) |
 | `@iskra-bun/process-kit` | Gestion de procesos externos (Python, binarios) | [Process Kit](./docs/process-kit.md) |
 | `@iskra-bun/testing-kit` | Utilidades de testing (createTestApp, mocks de logger/driver, withTempDir). | [Testing Kit](./docs/testing-kit.md) |
-| `@iskra-bun/desktop-kit` | Soporte para apps de escritorio con Tauri | [Desktop Kit](./docs/desktop-kit.md) |
-| `@iskra-bun/mobile-kit` | Soporte para plataformas moviles | [Mobile Kit](./docs/mobile-kit.md) |
+| `@iskra-bun/desktop-kit` | Placeholder experimental para apps de escritorio con Tauri (todavia sin integracion con Tauri) | [Desktop Kit](./docs/desktop-kit.md) |
+| `@iskra-bun/mobile-kit` | Placeholder experimental para apps moviles (todavia sin integracion con plataformas) | [Mobile Kit](./docs/mobile-kit.md) |
 | `create-iskra` | CLI de andamiaje de proyectos (`bun create iskra`). | [create-iskra](./docs/create-iskra.md) |
 
 ## Templates
@@ -53,8 +53,8 @@ Templates listos para usar como punto de partida. Cada uno incluye su propio REA
 | [full-stack-app](./templates/full-stack-app/) | App completa combinando todos los kits |
 | [job-worker](./templates/job-worker/) | Procesador de tareas en segundo plano con colas |
 | [python-data-processor](./templates/python-data-processor/) | Puente Node.js ↔ Python para procesamiento de datos |
-| [desktop-app](./templates/desktop-app/) | App de escritorio con Tauri |
-| [universal-app](./templates/universal-app/) | App multiplataforma (escritorio + movil) |
+| [desktop-app](./templates/desktop-app/) | App de escritorio con Tauri (experimental: la capa Bun no se comunica todavia con Tauri) |
+| [universal-app](./templates/universal-app/) | App multiplataforma (experimental: sin proyecto movil real) |
 | [plugin-starter](./templates/plugin-starter/) | Scaffolding para crear plugins/drivers reutilizables |
 
 ## Primeros pasos

@@ -1,6 +1,6 @@
 # @iskra-bun/desktop-kit
 
-> ⚠️ **Alpha (no funcional aún).** El `DesktopDriver` actual solo registra el ciclo de vida; los wrappers reales de las APIs de Tauri (ventanas, IPC, menús) llegan en **v0.2**. Los ejemplos describen la API planificada y todavía no son utilizables.
+> ⚠️ **Placeholder experimental (sin funcionalidad).** El `DesktopDriver` solo se registra en el ciclo de vida de la `App` y avisa con un warning al arrancar; no envuelve ninguna API de Tauri (ventanas, IPC, menús) y no hay fecha para hacerlo. Los ejemplos de abajo describen una API planificada que todavía no existe.
 
 Soporte para aplicaciones de escritorio con [Tauri](https://tauri.app). Expone un `DesktopDriver` que se registra en el Core y actua como puente entre la logica de tu App de Iskra y las APIs nativas de Tauri (ventanas, IPC, menus).
 
@@ -15,7 +15,7 @@ const app = new App({ name: 'MiAppDeEscritorio' });
 app.register(new DesktopDriver());
 
 await app.start();
-// El log "DesktopDriver started (Tauri bridge active)" confirma que el puente esta activo.
+// Al arrancar solo registra un warning: todavia no hay integracion con Tauri.
 ```
 
 El `DesktopDriver` implementa la interfaz `Driver` del Core, asi que participa del ciclo de vida estandar: se inicializa en `app.start()` y se libera en `app.stop()`.

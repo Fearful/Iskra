@@ -4,7 +4,7 @@ description: Driver para ejecutar una App de Iskra en plataformas moviles (iOS /
 ---
 
 :::caution[Experimental]
-`@iskra-bun/mobile-kit` es experimental. Sus APIs pueden cambiar entre versiones.
+`@iskra-bun/mobile-kit` es un **placeholder experimental sin funcionalidad**. El `MobileDriver` solo se registra en el ciclo de vida de la `App` y avisa con un warning al arrancar; no integra ninguna plataforma movil (deep links, notificaciones, orientacion/barra de estado) y no hay fecha para hacerlo. Los ejemplos de abajo describen una API planificada que todavia no existe.
 :::
 
 Driver para ejecutar una App de Iskra en plataformas moviles (iOS / Android) sobre el bridge de [Tauri](https://tauri.app). Comparte el mismo modelo de ciclo de vida que el resto de los Drivers del framework.

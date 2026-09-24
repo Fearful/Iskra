@@ -12,6 +12,16 @@ function makeApp() {
 }
 
 describe("MobileDriver", () => {
+    it("warns on start that it is a placeholder (it used to claim an active bridge)", async () => {
+        const app = makeApp();
+        const warnings: string[] = [];
+        app.logger.warn = ((msg: string) => { warnings.push(msg); }) as any;
+        const driver = new MobileDriver();
+        await driver.init(app);
+        await driver.start();
+        expect(warnings.join("\n")).toContain("does not integrate with any mobile platform");
+    });
+
     it("exposes the expected driver name", () => {
         expect(new MobileDriver().name).toBe("MobileDriver");
     });

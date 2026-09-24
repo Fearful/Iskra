@@ -12,6 +12,16 @@ function makeApp() {
 }
 
 describe("DesktopDriver", () => {
+    it("warns on start that it is a placeholder (it used to claim an active bridge)", async () => {
+        const app = makeApp();
+        const warnings: string[] = [];
+        app.logger.warn = ((msg: string) => { warnings.push(msg); }) as any;
+        const driver = new DesktopDriver();
+        await driver.init(app);
+        await driver.start();
+        expect(warnings.join("\n")).toContain("does not integrate with Tauri");
+    });
+
     it("exposes the expected driver name", () => {
         expect(new DesktopDriver().name).toBe("DesktopDriver");
     });

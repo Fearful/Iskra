@@ -1,7 +1,7 @@
 {
     "name": "@iskra-bun/mobile-kit",
     "version": "0.1.1",
-    "description": "Soporte para plataformas moviles en Iskra.",
+    "description": "Experimental placeholder for mobile apps in Iskra: registers a driver in the App lifecycle but does not integrate with any mobile platform yet.",
     "keywords": [
         "iskra",
         "bun",
@@ -46,8 +46,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
-        "@tauri-apps/api": "^2.0.0"
+        "@iskra-bun/core": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.10.2"

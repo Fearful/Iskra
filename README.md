@@ -38,8 +38,8 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | `@iskra-bun/storage-kit` | File storage (local, S3/MinIO) with streaming | [Storage Kit](./docs/storage-kit.md) |
 | `@iskra-bun/process-kit` | External process management (Python, binaries) | [Process Kit](./docs/process-kit.md) |
 | `@iskra-bun/testing-kit` | Test utilities (createTestApp, mock logger/driver, withTempDir) | [Testing Kit](./docs/testing-kit.md) |
-| `@iskra-bun/desktop-kit` | Desktop app support with Tauri | [Desktop Kit](./docs/desktop-kit.md) |
-| `@iskra-bun/mobile-kit` | Mobile platform support | [Mobile Kit](./docs/mobile-kit.md) |
+| `@iskra-bun/desktop-kit` | Experimental placeholder for Tauri desktop apps (no Tauri integration yet) | [Desktop Kit](./docs/desktop-kit.md) |
+| `@iskra-bun/mobile-kit` | Experimental placeholder for mobile apps (no platform integration yet) | [Mobile Kit](./docs/mobile-kit.md) |
 | `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](./docs/create-iskra.md) |
 
 ## Quick start
@@ -90,8 +90,8 @@ Ready-to-use templates as a starting point. Each one ships with its own README a
 | [full-stack-app](./templates/full-stack-app/) | Full app combining all the kits |
 | [job-worker](./templates/job-worker/) | Background task processor with queues |
 | [python-data-processor](./templates/python-data-processor/) | Node.js ↔ Python bridge for data processing |
-| [desktop-app](./templates/desktop-app/) | Desktop app with Tauri |
-| [universal-app](./templates/universal-app/) | Cross-platform app (desktop + mobile) |
+| [desktop-app](./templates/desktop-app/) | Desktop app with Tauri (experimental: the Bun side does not talk to Tauri yet) |
+| [universal-app](./templates/universal-app/) | Cross-platform app (experimental: no real mobile project) |
 | [plugin-starter](./templates/plugin-starter/) | Scaffolding for building reusable plugins/drivers |
 
 To run a template from a clone of the monorepo:

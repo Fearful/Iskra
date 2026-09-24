@@ -2,6 +2,12 @@
 
 Template para aplicaciones multiplataforma que corren en **escritorio** (Tauri) y **movil** (Tauri mobile) desde un solo codebase. La logica de negocio se escribe una vez y cada plataforma aporta solo su capa de integracion.
 
+> ⚠️ **Experimental.** No incluye proyecto Tauri (`src-tauri/`) ni proyectos Android/iOS, y la
+> deteccion de movil (`platform.ts`) depende de `tauri-plugin-os`, que no esta instalado, asi que
+> `isMobile()` siempre devuelve `false`: la rama movil solo corre forzandola con
+> `FORCE_PLATFORM=mobile`. `@iskra-bun/desktop-kit` y `@iskra-bun/mobile-kit` son placeholders
+> que solo registran el ciclo de vida.
+
 ## Kits utilizados
 
 - [`@iskra-bun/core`](../../docs/core.md) — Clase App, ciclo de vida, logger

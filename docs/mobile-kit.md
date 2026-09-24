@@ -1,6 +1,6 @@
 # @iskra-bun/mobile-kit
 
-> ⚠️ **Alpha (no funcional aún).** El `MobileDriver` actual solo registra el ciclo de vida; los puentes reales de los plugins móviles de Tauri v2 (deep links, notificaciones, orientación/barra de estado) llegan en **v0.2**. Los ejemplos describen la API planificada y todavía no son utilizables.
+> ⚠️ **Placeholder experimental (sin funcionalidad).** El `MobileDriver` solo se registra en el ciclo de vida de la `App` y avisa con un warning al arrancar; no integra ninguna plataforma móvil (deep links, notificaciones, orientación/barra de estado) y no hay fecha para hacerlo. Los ejemplos de abajo describen una API planificada que todavía no existe.
 
 Driver para ejecutar una App de Iskra en plataformas moviles (iOS / Android) sobre el bridge de [Tauri](https://tauri.app). Comparte el mismo modelo de ciclo de vida que el resto de los Drivers del framework.
 

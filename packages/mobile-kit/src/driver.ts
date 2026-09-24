@@ -1,21 +1,23 @@
 import type { Driver, App } from '@iskra-bun/core';
 
+/**
+ * Experimental placeholder. It hooks into the App lifecycle but does not
+ * integrate with any mobile platform yet (deep links, push, native listeners);
+ * it only logs. See the README.
+ */
 export class MobileDriver implements Driver {
     name = 'MobileDriver';
     private app: App | null = null;
 
     async init(app: App) {
         this.app = app;
-        this.app.logger.info('Initializing Mobile Driver...');
     }
 
     async start() {
-        // Here we would set up listeners for mobile-specific events
-        // e.g. deep links, push notifications, etc.
-        this.app?.logger.info('Mobile Driver started.');
+        this.app?.logger.warn(
+            'MobileDriver is an experimental placeholder: it does not integrate with any mobile platform yet',
+        );
     }
 
-    async stop() {
-        this.app?.logger.info('Mobile Driver stopped.');
-    }
+    async stop() {}
 }
