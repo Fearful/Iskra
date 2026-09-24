@@ -16,6 +16,7 @@
         "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
         "typecheck": "tsc --noEmit",
         "contract:server": "bun run sdks/contract/server.ts",
+        "smoke:templates": "bun run scripts/smoke-templates.ts",
         "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",
         "test:sdk:java": "cd sdks/java/iskra-client && mvn -q -B test",
         "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",

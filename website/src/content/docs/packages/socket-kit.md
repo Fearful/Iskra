@@ -226,6 +226,8 @@ const driver = new SocketDriver({
 
 ## Connection IDs
 
+A request that is not a WebSocket handshake (a plain `GET` from a browser or a health check) gets `426 Upgrade Required`.
+
 Every connection is assigned a unique `connectionId` (UUID) at upgrade time, stored on the typed socket data (`ws.data.connectionId`). This is a reliable per-client identifier — unlike `remoteAddress`, it is guaranteed to be unique across reconnects.
 
 The `connectionId` is the payload of the lifecycle events:

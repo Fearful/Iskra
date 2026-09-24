@@ -71,6 +71,15 @@ export TEST_MYSQL_URL=mysql://root:mysql@127.0.0.1:3306/test
 bun run ci
 ```
 
+### Template images
+
+`bun run smoke:templates` builds every template's Docker image with its own
+Dockerfile, starts it (forms-app with its `docker compose`) and probes it over
+HTTP, as the *Templates smoke test* workflow does on pull requests that touch
+packages or templates. Pass template names to run only those
+(`bun run smoke:templates cms-starter forms-app`). It needs Docker with Compose
+v2 and port 80 free for forms-app's nginx.
+
 ### SDK contract tests
 
 The Python and Java SDKs are tested against a real Iskra service:

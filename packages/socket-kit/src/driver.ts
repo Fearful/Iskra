@@ -130,7 +130,13 @@ export class SocketDriver implements Driver {
                 if (server.upgrade(req, { data: { connectionId, auth } })) {
                     return; // Bun handles the rest
                 }
-                return new Response('Upgrade failed', { status: 500 });
+                // Not a (valid) WebSocket handshake, e.g. a plain GET from a
+                // browser or a load balancer's health check: the client's
+                // mistake, not a server error (a 500 marked the service down).
+                return new Response('Expected a WebSocket upgrade', {
+                    status: 426,
+                    headers: { Upgrade: 'websocket', Connection: 'Upgrade' },
+                });
             },
             websocket: {
                 maxPayloadLength: this.maxPayloadLength,
