@@ -81,7 +81,8 @@ describe("ApiKeyFeature cache", () => {
 
         const before = await boot("rotated");
         expect((await before.request("/private", { headers: { "X-API-Key": "rotated" } })).status).toBe(200);
-        expect(entries.size).toBe(1);
+        // Nothing is cached: the entry held the plaintext key.
+        expect(entries.size).toBe(0);
 
         const after = await boot("current");
         expect((await after.request("/private", { headers: { "X-API-Key": "rotated" } })).status).toBe(401);

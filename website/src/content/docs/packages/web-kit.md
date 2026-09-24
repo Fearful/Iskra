@@ -10,8 +10,17 @@ The web-kit provides a Hono-based HTTP server with a modular feature system.
 ```typescript
 import { App } from '@iskra-bun/core';
 import { WebPlugin, CorsFeature, HealthCheckFeature } from '@iskra-bun/web-kit';
+import { Hono } from 'hono';
 
 const app = new App({ name: 'MiAPI' });
+
+// Your routes, as a Hono app mounted at "/".
+const router = new Hono();
+router.get('/api/users', (c) => c.json({ users: [] }));
+router.post('/api/users', async (c) => {
+    const body = await c.req.json();
+    return c.json({ created: body }, 201);
+});
 
 const web = new WebPlugin({
     port: 3000,
@@ -19,13 +28,7 @@ const web = new WebPlugin({
         new CorsFeature({ origin: '*' }),
         new HealthCheckFeature(),
     ],
-    router: (hono) => {
-        hono.get('/api/users', (c) => c.json({ users: [] }));
-        hono.post('/api/users', async (c) => {
-            const body = await c.req.json();
-            return c.json({ created: body }, 201);
-        });
-    },
+    router,
 });
 
 app.register(web);
@@ -54,7 +57,7 @@ app.register(driver);
 await app.start();
 ```
 
-It applies the same standard security headers as the Kernel HTTP stack. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets).
+It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets).
 
 ## Kernel
 
@@ -62,6 +65,7 @@ The `Kernel` is the micro-kernel that orchestrates the web features:
 
 - Resolves dependencies between features (topological sort)
 - Detects circular dependencies
+- Initializes every feature (which registers its middleware) before registering any feature's routes, so each feature's middleware (CSRF, rate limit, auth, CORS…) applies to every route, whatever the order the features were registered in
 - Applies security headers automatically (whatever you pass in `securityHeaders` is merged over the defaults)
 - Manages the lifecycle (init, start, shutdown)
 
@@ -128,7 +132,7 @@ health.addReadinessCheck('db', async () => {
 });
 ```
 
-When any registered check returns `false` or throws, `/health/ready` responds with **503** and lists the failed check names. With no checks registered it always returns `ready` (previous behavior).
+When any registered check returns `false`, throws, or takes longer than `checkTimeoutMs` (default 2000), `/health/ready` responds with **503** and lists the failed check names. With no checks registered it always returns `ready` (previous behavior).
 
 ### /health endpoint details
 
@@ -166,20 +170,29 @@ The `ErrorHandlerFeature` catches these errors automatically and returns them as
 
 ## Security Configuration
 
-The Kernel applies security headers by default:
+The Kernel sends these security headers by default:
 
-- `Content-Security-Policy`
-- `X-Frame-Options: DENY`
+- `X-Frame-Options: SAMEORIGIN`
 - `X-Content-Type-Options: nosniff`
-- `Strict-Transport-Security` (HSTS)
-- `Permissions-Policy`
+- `Referrer-Policy: strict-origin-when-cross-origin`
 
-They can be customized via `KernelConfig.security`.
+`Content-Security-Policy`, `Strict-Transport-Security` (HSTS) and `Permissions-Policy` are opt-in, and `X-XSS-Protection` is off. Configure them with `securityHeaders`, merged over the defaults:
+
+```typescript
+new Kernel({
+    securityHeaders: {
+        xFrameOptions: 'DENY',
+        strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+        contentSecurityPolicy: { directives: { 'default-src': ["'self'"] } },
+        permissionsPolicy: { camera: [], geolocation: [] },
+    },
+});
+```
 
 **Security hardening notes:**
 
 - **CSRF (`CsrfFeature`):** HMAC-SHA256-signed double-submit cookie under the configured `secret`, compared in constant time. An unsigned or foreign token is rejected before any comparison. The `disableCSRFCheck` kill-switch is **ignored in production** (`NODE_ENV === 'production'`), so CSRF protection cannot be silently turned off in a deployed environment.
-- **API keys (`ApiKeyFeature`):** the cache key is a **SHA-256** hash of the key (the raw key is never persisted in the cache, e.g. Redis). API key `id`s are random (UUID) and leak no prefix of the secret. Key comparison is constant-time. An `Authorization: Bearer` value that is not a valid API key is not rejected globally (it may be a JWT or session token from another scheme); routes that need an API key use `requireApiKey()` / `requireScope()`. An invalid key in the `X-API-Key` header still returns 401.
+- **API keys (`ApiKeyFeature`):** keys are checked against the configured `staticKeys` on every request, so removing, expiring or narrowing a key takes effect at once; nothing is cached (`enableCache` and `cacheTtl` are ignored: a cached entry held the plaintext key and outlived its revocation). API key `id`s are random (UUID) and leak no prefix of the secret. Key comparison is constant-time. An `Authorization: Bearer` value that is not a valid API key is not rejected globally (it may be a JWT or session token from another scheme); routes that need an API key use `requireApiKey()` / `requireScope()`. An invalid key in the `X-API-Key` header still returns 401.
 - **CSRF on specific routes:** `requireCsrf()` validates the token on that route even if its method is in `ignoreMethods` (e.g. a state-changing GET), and fails closed when `CsrfFeature` is not registered. For `multipart/form-data` forms, send the token in the `X-CSRF-Token` header.
 - **Uploads (`UploadFeature`):** `exposeRoutes: true` requires `authorize(c, action)` (`action`: `upload` | `list` | `download` | `delete`); use `authorize: () => true` only if the routes must be public. The body is cut off once it exceeds `maxFileSize` (413) without buffering it whole, the filename is sanitized, and internal errors are not returned to the client.
 - **Auth (`AuthFeature`):** the underlying `secret` must be **>= 32 characters** (validated by `@iskra-bun/auth-kit`); a shorter or empty secret is rejected at initialization. See the Auth section.
@@ -200,8 +213,9 @@ new AuthFeature({
 
 - The `secret` signs sessions and **must be at least 32 characters**; a shorter or empty one throws at initialization.
 - In `oidc` mode (or when `oidcConfig` is passed) email/password login is disabled; opt back in with `enableEmailPassword: true`. `enableSelfRegistration: false` rejects `/sign-up/email` (accounts are provisioned another way).
-- Auth routes (`{basePath}/*`) are rate-limited per IP by default (20 attempts / 15 min) to throttle credential stuffing. Tune it with `rateLimit: { max, windowMs }`, or pass `rateLimit: false` when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
-- The client IP (for this limiter and for `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so `X-Forwarded-For` is used; otherwise the header is ignored, since any client can forge it.
+- `baseURL` is the app's public origin (it defaults to `BETTER_AUTH_URL`). Better Auth derives the cookies' `Secure` flag from it, so it is **required in production**: without it `http://localhost:3000` was used, and cookies went out without `Secure`.
+- Auth attempts (`POST` requests to `{basePath}/*` other than sign-out: sign-in, sign-up, password reset…) are rate-limited per IP by default (20 / 15 min) to throttle credential stuffing; session reads and OAuth callbacks are not counted. In production Better Auth also applies its own, stricter per-path limits. Tune the first with `rateLimit: { max, windowMs }`, or pass `rateLimit: false` to turn both off when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
+- The client IP (for these limiters, the sessions' `ipAddress` and `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so `X-Forwarded-For` is used; otherwise the header is ignored, since any client can forge it.
 - Use `requireAuth(kernel)` as middleware to protect routes that require a session.
 
 ## Sessions

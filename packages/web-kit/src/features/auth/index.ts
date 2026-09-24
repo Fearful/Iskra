@@ -46,6 +46,30 @@ const SessionResponseSchema = z.object({
 // ─── Auth Feature ────────────────────────────────────────────────────────────
 
 /**
+ * Carries the client IP, as resolved with the kernel's `trustProxy`, to
+ * better-auth (its rate limiter and the sessions' `ipAddress`). Set on every
+ * request handed to it, replacing any value the client sent.
+ */
+const CLIENT_IP_HEADER = "x-iskra-client-ip";
+
+/**
+ * The origin better-auth runs on. It decides the cookies' `Secure` flag and
+ * is a trusted origin, so production may not fall back to
+ * `http://localhost:3000` (cookies without `Secure`, localhost trusted).
+ */
+function resolveBaseURL(baseURL: string | undefined): string {
+    const resolved = baseURL || process.env.BETTER_AUTH_URL;
+    if (resolved) return resolved;
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "AuthFeature: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, " +
+                "e.g. \"https://app.example.com\"; without it cookies are sent without Secure.",
+        );
+    }
+    return "http://localhost:3000";
+}
+
+/**
  * better-auth ignores `basePath` when `baseURL` has a path and serves its
  * routes under that path instead, while the feature mounts them at
  * `basePath`: every auth request then 404s. A reverse-proxy prefix belongs in
@@ -85,11 +109,12 @@ export class AuthFeature implements Feature {
     // be restored, which would otherwise leak into auth-kit's own test suite).
     constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
         this.createAuth = createAuth;
-        assertBaseURLMatchesBasePath(config.baseURL, config.basePath || "/api/sso");
+        const baseURL = resolveBaseURL(config.baseURL);
+        assertBaseURLMatchesBasePath(baseURL, config.basePath || "/api/sso");
         this.config = {
             ...config,
             basePath: config.basePath || "/api/sso",
-            baseURL: config.baseURL || "http://localhost:3000",
+            baseURL,
         };
 
         if (config.authMode === "oidc" || config.authMode === "email") {
@@ -132,6 +157,9 @@ export class AuthFeature implements Feature {
             disableCSRFCheck,
             socialProviders: this.config.socialProviders,
             oidcConfig: this.config.oidcConfig,
+            // `rateLimit: false` turns off both limiters, as documented.
+            ...(this.config.rateLimit === false ? { rateLimit: false as const } : {}),
+            ipAddressHeaders: [CLIENT_IP_HEADER],
         });
 
         const app = kernel.getApp();
@@ -175,8 +203,18 @@ export class AuthFeature implements Feature {
         return (this.config.rateLimit || undefined)?.max ?? 20;
     }
 
+    /**
+     * Counts sign-in, sign-up, password-reset and other POST attempts per
+     * client. Session reads, OAuth callbacks (GET) and sign-out are not
+     * attempts: counting them locked out a SPA polling get-session, and its
+     * users out of signing in or out.
+     */
     private authRateLimitMiddleware() {
         return async (c: Context, next: Next) => {
+            if (c.req.method !== "POST" || /\/sign-out\/?$/.test(c.req.path)) {
+                await next();
+                return;
+            }
             // Socket address unless the kernel is configured with `trustProxy`:
             // a raw X-Forwarded-For is client-controlled and would let an
             // attacker rotate it to bypass the limit (and grow this map).
@@ -231,7 +269,7 @@ export class AuthFeature implements Feature {
                         401: { description: "Invalid credentials" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -253,7 +291,7 @@ export class AuthFeature implements Feature {
                         400: { description: "Validation error" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -266,7 +304,7 @@ export class AuthFeature implements Feature {
                         200: { description: "Signed out" },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -282,13 +320,33 @@ export class AuthFeature implements Feature {
                         },
                     },
                 },
-                (c: any) => this.auth!.handler(c.req.raw),
+                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
             );
         }
 
         // Catch-all for all other auth routes (OAuth callbacks, etc.)
-        app.on(["POST", "GET"], `${base}/*`, (c) => {
-            return this.auth!.handler(c.req.raw);
+        app.on(["POST", "GET"], `${base}/*`, async (c) => {
+            return this.auth!.handler(await this.withClientIp(c));
+        });
+    }
+
+    /**
+     * The request with {@link CLIENT_IP_HEADER} set to the resolved client IP.
+     * The body is re-read through Hono when a validator (the OpenAPI routes)
+     * already consumed the original one.
+     */
+    private async withClientIp(c: Context): Promise<Request> {
+        const raw = c.req.raw;
+        const headers = new Headers(raw.headers);
+        const ip = getClientIp(c, this.kernel?.getConfig().trustProxy);
+        if (ip) headers.set(CLIENT_IP_HEADER, ip);
+        else headers.delete(CLIENT_IP_HEADER);
+        const hasBody = raw.method !== "GET" && raw.method !== "HEAD";
+        return new Request(raw.url, {
+            method: raw.method,
+            headers,
+            body: hasBody ? await c.req.arrayBuffer() : undefined,
+            signal: raw.signal,
         });
     }
 

@@ -25,6 +25,9 @@ export class Kernel {
 
         // Add default error handler for HTTPException
         this.app.onError((err: Error, c: Context): Response | Promise<Response> => {
+            // A custom response (e.g. basicAuth's 401 with WWW-Authenticate)
+            // is sent as is.
+            if (err instanceof HTTPException && err.res) return err.getResponse();
             if (err instanceof HTTPException) {
                 return c.json(
                     { message: err.message },
@@ -51,9 +54,18 @@ export class Kernel {
         await this.validatePeerDependencies();
         this.applySecurityHeaders();
 
+        // Every feature's middleware first, then every feature's routes: Hono
+        // runs only the middleware registered before a route, so registering
+        // each feature's routes right after its own initialize() left them
+        // without the CSRF, rate-limit, auth or CORS middleware of the
+        // features registered after it.
         const orderedFeatures = this.sortFeaturesByDependencies();
         for (const feature of orderedFeatures) {
-            await this.initializeFeature(feature);
+            console.log(`⚙️  Initializing feature: ${feature.name}`);
+            await feature.initialize(this);
+        }
+        for (const feature of orderedFeatures) {
+            feature.routes?.(this.app);
         }
 
         this.initialized = true;
@@ -193,15 +205,6 @@ export class Kernel {
         }
 
         return sorted;
-    }
-
-    private async initializeFeature(feature: Feature): Promise<void> {
-        console.log(`⚙️  Initializing feature: ${feature.name}`);
-        await feature.initialize(this);
-
-        if (feature.routes) {
-            feature.routes(this.app);
-        }
     }
 
     getApp(): Hono {

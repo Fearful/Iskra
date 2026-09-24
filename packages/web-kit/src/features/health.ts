@@ -1,6 +1,6 @@
 import type { Feature, HealthCheckConfig } from "../types";
 import type { Kernel } from "../kernel";
-import type { Context } from "hono";
+import type { Context, Hono } from "hono";
 
 /** Rejects if `promise` does not settle within `ms` (a stuck probe must not hang /health). */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -39,13 +39,13 @@ export class HealthCheckFeature implements Feature {
 
     async initialize(kernel: Kernel): Promise<void> {
         this.kernel = kernel;
-        const app = kernel.getApp();
+        console.log("✅ Health check feature initialized");
+    }
 
+    routes(app: Hono): void {
         app.get(this.config.path, async (c: Context) => await this.handleHealthCheck(c));
         app.get(this.config.readinessPath, async (c: Context) => await this.handleReadinessCheck(c));
         app.get(this.config.livenessPath, async (c: Context) => await this.handleLivenessCheck(c));
-
-        console.log("✅ Health check feature initialized");
     }
 
     /**
@@ -133,7 +133,9 @@ export class HealthCheckFeature implements Feature {
 
         for (const [name, check] of this.readinessChecks) {
             try {
-                const passed = await check();
+                // Bounded like the other checks: a hung one left the probe
+                // pending until the orchestrator's own timeout.
+                const passed = await withTimeout(Promise.resolve(check()), this.config.checkTimeoutMs);
                 results[name] = passed;
                 if (!passed) failed.push(name);
             } catch {

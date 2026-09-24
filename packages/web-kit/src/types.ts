@@ -80,9 +80,15 @@ export interface ApiKeyConfig {
     headerName?: string;
     queryParamName?: string;
     extractStrategies?: ("header" | "bearer" | "query" | "custom")[];
-    vaultService?: any; // Placeholder for now
+    /** Not used yet: only `staticKeys` are validated. */
+    vaultService?: any;
     customExtractor?: (c: any) => string | null;
+    /**
+     * @deprecated Ignored. Keys are looked up in memory on every request; the
+     * cache kept a revoked key working and stored it in plaintext.
+     */
     enableCache?: boolean;
+    /** @deprecated Ignored, see `enableCache`. */
     cacheTtl?: number;
     requireScopes?: boolean;
     skipPaths?: string[];

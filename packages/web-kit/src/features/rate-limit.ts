@@ -73,6 +73,12 @@ class CacheStoreWrapper implements RateLimitStore {
 
 export class RateLimitFeature implements Feature {
     name = "rate-limit";
+    /**
+     * `store: "cache"` needs the cache feature initialized first; registered
+     * after this one, it was not, and limits silently fell back to a
+     * per-process memory store.
+     */
+    dependencies?: string[];
     private config: Required<Omit<RateLimitConfig, "keyGenerator" | "skip" | "handler">> & {
         keyGenerator?: RateLimitConfig["keyGenerator"];
         skip?: RateLimitConfig["skip"];
@@ -84,6 +90,7 @@ export class RateLimitFeature implements Feature {
     private warnedUnknownClient = false;
 
     constructor(config: RateLimitConfig = {}) {
+        if (config.store === "cache") this.dependencies = ["cache"];
         this.config = {
             windowMs: config.windowMs || 15 * 60 * 1000,
             max: config.max || 100,

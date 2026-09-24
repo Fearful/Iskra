@@ -1,91 +1,44 @@
-
-import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { createHash } from "crypto";
+import { describe, it, expect, mock } from "bun:test";
 import { ApiKeyStore } from "../src/features/api-key";
 import type { Kernel } from "../src/kernel";
 
-describe("ApiKeyStore Cache Integration", () => {
-    let mockCache: any;
-    let mockKernel: any;
-    let store: ApiKeyStore;
+// Keys used to be cached through the cache feature: the entry held the
+// plaintext key, and on a hit its scopes and expiry were used instead of the
+// current config, so a revoked key kept working for cacheTtl.
+describe("ApiKeyStore without a cache", () => {
+    const staticKey = { key: "sk_live_SUPERSECRET_1234567890", name: "Test Key", scopes: ["read"] };
 
-    const staticKey = {
-        id: "key-123",
-        key: "abcdef123456",
-        name: "Test Key",
-        scopes: ["read"],
-        createdAt: new Date(),
-    };
+    function kernelWithCache() {
+        const cache = { get: mock(() => Promise.resolve(JSON.stringify({ ...staticKey, scopes: ["admin"] }))), set: mock(() => Promise.resolve()) };
+        const kernel = { getFeature: mock((name: string) => (name === "cache" ? { client: cache } : undefined)) };
+        return { cache, kernel: kernel as unknown as Kernel };
+    }
 
-    beforeEach(() => {
-        mockCache = {
-            get: mock(() => Promise.resolve(null)),
-            set: mock(() => Promise.resolve()),
-        };
-
-        mockKernel = {
-            getFeature: mock((name: string) => {
-                if (name === 'cache') {
-                    return { client: mockCache };
-                }
-                return undefined;
-            })
-        };
-
-        store = new ApiKeyStore({
-            staticKeys: [staticKey],
-            enableCache: true
-        } as any, mockKernel as unknown as Kernel);
-    });
-
-    it("should consult cache on validate", async () => {
-        // First call: Cache miss, should fallback to static keys and set cache
-        const result = await store.validate(staticKey.key);
-
-        const hashedKey = `apikey:${createHash("sha256").update(staticKey.key).digest("hex")}`;
-
-        expect(result.isValid).toBe(true);
-        expect(mockCache.get).toHaveBeenCalledWith(hashedKey);
-        expect(mockCache.set).toHaveBeenCalled();
-        const setArgs = mockCache.set.mock.calls[0];
-        expect(setArgs[0]).toBe(hashedKey);
-
-        // Parse the stored value to verify it contains key data
-        const storedValue = JSON.parse(setArgs[1]);
-        expect(storedValue.key).toBe(staticKey.key);
-    });
-
-    it("should return cached value if present", async () => {
-        // Preset cache
-        const createdAt = new Date().toISOString();
-        const cachedMetadata = {
-            id: "key-cached",
-            key: staticKey.key,
-            name: "Cached Key",
-            scopes: ["read"],
-            createdAt,
-        };
-        mockCache.get = mock(() => Promise.resolve(JSON.stringify(cachedMetadata)));
+    it("never reads or writes the cache, even with enableCache", async () => {
+        const { cache, kernel } = kernelWithCache();
+        const store = new ApiKeyStore({ staticKeys: [staticKey], enableCache: true } as any, kernel);
 
         const result = await store.validate(staticKey.key);
 
         expect(result.isValid).toBe(true);
-        expect(mockCache.get).toHaveBeenCalled();
-        // Cache returns JSON-parsed metadata — Date fields become strings after serialization
-        expect(result.key).toBeDefined();
-        expect(result.key!.id).toBe("key-cached");
-        expect(result.key!.name).toBe("Cached Key");
-        expect(result.key!.key).toBe(staticKey.key);
+        // The current config's scopes, not a cached entry's.
+        expect(result.key!.scopes).toEqual(["read"]);
+        expect(cache.get).not.toHaveBeenCalled();
+        expect(cache.set).not.toHaveBeenCalled();
     });
 
-    it("should not use cache if disabled in config", async () => {
-        store = new ApiKeyStore({
-            staticKeys: [staticKey],
-            enableCache: false
-        } as any, mockKernel as unknown as Kernel);
+    it("rejects a key once it is removed or expired in the config", async () => {
+        const { kernel } = kernelWithCache();
+        const before = new ApiKeyStore({ staticKeys: [staticKey], enableCache: true } as any, kernel);
+        expect((await before.validate(staticKey.key)).isValid).toBe(true);
 
-        const result = await store.validate(staticKey.key);
-        expect(result.isValid).toBe(true);
-        expect(mockKernel.getFeature).not.toHaveBeenCalled();
+        // A restart with the key expired, and one with it removed.
+        const expired = new ApiKeyStore(
+            { staticKeys: [{ ...staticKey, expiresAt: new Date(Date.now() - 1000) }], enableCache: true } as any,
+            kernel,
+        );
+        const removed = new ApiKeyStore({ staticKeys: [], enableCache: true } as any, kernel);
+        expect(await expired.validate(staticKey.key)).toEqual({ isValid: false, error: "API key has expired" });
+        expect(await removed.validate(staticKey.key)).toEqual({ isValid: false, error: "Invalid API key" });
     });
 });

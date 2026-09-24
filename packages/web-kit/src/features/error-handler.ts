@@ -97,6 +97,9 @@ export class ErrorHandlerFeature implements Feature {
             if (this.config.customHandlers?.[status]) {
                 return this.config.customHandlers[status](err, c);
             }
+            // A custom response (e.g. basicAuth's 401 with WWW-Authenticate,
+            // which makes the browser prompt) is sent as is.
+            if (err.res) return err.getResponse();
 
             const response: any = {
                 error: err.message || this.getStatusText(status),

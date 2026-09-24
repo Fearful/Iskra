@@ -38,6 +38,17 @@ export interface BetterAuthConfigOptions {
      * frequent DB lookups). Defaults to 300 (5 minutes).
      */
     cookieCacheMaxAge?: number;
+    /**
+     * `false` turns off better-auth's own rate limiter (on by default in
+     * production), e.g. when the app limits the auth routes itself.
+     */
+    rateLimit?: false;
+    /**
+     * Request headers better-auth reads the client IP from, for its rate
+     * limiter and the sessions' `ipAddress` (default `x-forwarded-for`, first
+     * entry). Without a usable one, every client shares one rate-limit bucket.
+     */
+    ipAddressHeaders?: string[];
     // deno-lint-ignore no-explicit-any
     socialProviders?: Record<string, any>;
     oidcConfig?: {
@@ -77,6 +88,8 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         cookieCacheMaxAge = 5 * 60,
         socialProviders,
         oidcConfig,
+        rateLimit,
+        ipAddressHeaders,
     } = options;
 
     // A weak or empty secret signs forgeable sessions, so reject it before
@@ -180,9 +193,11 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
                 maxAge: cookieCacheMaxAge,
             },
         },
+        ...(rateLimit === false ? { rateLimit: { enabled: false } } : {}),
         advanced: {
             disableCSRFCheck,
             generateId: () => crypto.randomUUID().replace(/-/g, ""),
+            ...(ipAddressHeaders ? { ipAddress: { ipAddressHeaders } } : {}),
         },
     }) as unknown as BetterAuthInstance;
 }

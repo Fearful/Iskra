@@ -55,7 +55,8 @@ describe('WebDriver — error/header hardening', () => {
         expect(res.status).toBe(200);
         expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
         expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-        expect(res.headers.get('X-XSS-Protection')).toBe('1; mode=block');
+        // Off, as in the Kernel: the legacy auditor it enables could be abused.
+        expect(res.headers.get('X-XSS-Protection')).toBeNull();
         expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     });
 

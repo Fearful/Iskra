@@ -2,7 +2,6 @@ import type { Feature, ApiKeyConfig, ApiKeyMetadata, ApiKeyValidationResult } fr
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createHash } from "crypto";
 
 // Resolved config: scalar/array fields are always populated by the constructor
 // defaults, while the genuinely optional callbacks stay optional. This replaces
@@ -14,22 +13,20 @@ type ResolvedApiKeyConfig =
 
 // --- ApiKeyStore ---
 
+/**
+ * Validates keys against the configured `staticKeys`, on every request.
+ *
+ * Validated keys used to be cached (with `enableCache`, through the cache
+ * feature): the cached entry held the plaintext key, and on a hit its scopes
+ * and expiry were used instead of the current config, so a key revoked or
+ * narrowed in the config kept working for `cacheTtl` on every instance
+ * sharing the cache. A lookup in the in-memory map needs no cache.
+ */
 export class ApiKeyStore {
     private staticKeysMap: Map<string, ApiKeyMetadata> = new Map();
-    private cache?: any;
 
-    constructor(private config: ResolvedApiKeyConfig, private kernel: Kernel) {
+    constructor(private config: ResolvedApiKeyConfig, _kernel?: Kernel) {
         this.initializeStaticKeys();
-    }
-
-    private getCache() {
-        if (!this.cache && this.config.enableCache) {
-            const cacheFeature = this.kernel.getFeature<any>('cache');
-            if (cacheFeature) {
-                this.cache = cacheFeature.client;
-            }
-        }
-        return this.cache;
     }
 
     private initializeStaticKeys(): void {
@@ -58,7 +55,7 @@ export class ApiKeyStore {
     private generateId(_key: string): string {
         // Derive the id independently of the secret key material so it can never
         // leak a usable prefix of the key. Lookup is keyed by the plaintext key
-        // (staticKeysMap / cache), never by id, so a random id is sufficient.
+        // (staticKeysMap), never by id, so a random id is sufficient.
         return crypto.randomUUID();
     }
 
@@ -76,39 +73,9 @@ export class ApiKeyStore {
         return new Date() > expiresAt;
     }
 
-    private cacheKeyFor(key: string): string {
-        // Hash the key before using it as a cache key so the plaintext secret is
-        // never persisted (e.g. in Redis) where it could leak via cache dumps.
-        const hash = createHash("sha256").update(key).digest("hex");
-        return `apikey:${hash}`;
-    }
-
     async validate(key: string): Promise<ApiKeyValidationResult> {
         if (!key) return { isValid: false, error: "API key is required" };
 
-        const cache = this.getCache();
-        const cacheKey = this.cacheKeyFor(key);
-
-        if (cache) {
-            try {
-                const cached = await cache.get(cacheKey);
-                // Only static keys exist today, so a cached entry is honored only
-                // while its key is still configured: a Redis cache outlives a
-                // restart that removed or rotated the key.
-                if (cached && (this.config.vaultService || this.staticKeysMap.has(key))) {
-                    const metadata: ApiKeyMetadata = typeof cached === 'string' ? JSON.parse(cached) : cached;
-                    const expiresAt = metadata.expiresAt ? new Date(metadata.expiresAt) : undefined;
-                    if (this.isExpired(expiresAt)) {
-                        return { isValid: false, error: "API key has expired" };
-                    }
-                    return { isValid: true, key: { ...metadata, expiresAt } };
-                }
-            } catch (err) {
-                // Cache error, ignore
-            }
-        }
-
-        // Check static keys
         for (const [staticKey, metadata] of this.staticKeysMap) {
             if (this.compareKeys(key, staticKey)) {
                 if (this.isExpired(metadata.expiresAt)) {
@@ -116,18 +83,7 @@ export class ApiKeyStore {
                 }
                 // Build a derived object instead of mutating the metadata held in
                 // staticKeysMap (immutability — the stored object must stay intact).
-                const usedMetadata: ApiKeyMetadata = { ...metadata, lastUsedAt: new Date() };
-
-                if (cache) {
-                    const ttl = this.config.cacheTtl ? Math.floor(this.config.cacheTtl / 1000) : 300;
-                    try {
-                        await cache.set(cacheKey, JSON.stringify(usedMetadata), ttl);
-                    } catch {
-                        // ignore cache write failures — validation already succeeded
-                    }
-                }
-
-                return { isValid: true, key: usedMetadata };
+                return { isValid: true, key: { ...metadata, lastUsedAt: new Date() } };
             }
         }
 

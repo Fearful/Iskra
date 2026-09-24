@@ -116,8 +116,17 @@ class DbSessionStore implements SessionStore {
         this.table = sessionTables[this.dialect];
     }
 
+    /** No new CREATE TABLE attempt before this time, after a failed one. */
+    private retryAt = 0;
+
+    /**
+     * Creates the table once. A failure (the database not reachable yet, say)
+     * is retried on a later request, at most every 5 s: it used to be marked
+     * done anyway, so the table was never created and every login set a cookie
+     * for a session that could not be stored.
+     */
     private async ensureTable() {
-        if (this.initialized) return;
+        if (this.initialized || Date.now() < this.retryAt) return;
         try {
             const ddl = sql.raw(createTableDdl[this.dialect]);
             // sqlite drivers expose run(); postgres/mysql expose execute().
@@ -126,10 +135,11 @@ class DbSessionStore implements SessionStore {
             } else {
                 await this.db.execute(ddl);
             }
+            this.initialized = true;
         } catch (err) {
+            this.retryAt = Date.now() + 5000;
             console.error("[session] Failed to ensure sessions table:", err);
         }
-        this.initialized = true;
     }
 
     async get(id: string) {
