@@ -182,4 +182,4 @@ async function main() {
 main().catch((err) => app.logger.error({ err }, 'Fallo al arrancar'));
 ```
 
-Para una plantilla lista para usar, mira [`templates/desktop-app`](https://github.com/fearful/iskra/tree/main/templates/desktop-app). Si tu app tambien apunta a moviles, revisa [`@iskra-bun/mobile-kit`](/iskra/es/packages/mobile-kit/) y la plantilla [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app).
+Para una plantilla lista para usar, mira [`templates/desktop-app`](https://github.com/fearful/iskra/tree/main/templates/desktop-app). Si tu app tambien apunta a moviles, revisa [`@iskra-bun/mobile-kit`](/es/packages/mobile-kit/) y la plantilla [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app).

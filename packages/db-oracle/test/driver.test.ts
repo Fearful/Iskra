@@ -43,11 +43,13 @@ describe("OracleDriver", () => {
 describe("OracleDriver bridge protocol", () => {
     const prevConn = process.env.ORA_CONN;
     let driver: OracleDriver;
+    let app: App;
 
     beforeAll(async () => {
         process.env.ORA_CONN = "fake://localhost/test";
+        app = makeApp();
         driver = new OracleDriver(FAKE_BRIDGE);
-        await driver.init(makeApp());
+        await driver.init(app);
         await driver.start();
     });
 
@@ -81,7 +83,9 @@ describe("OracleDriver bridge protocol", () => {
     });
 
     test("recovers from a malformed line emitted by the bridge", async () => {
-        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+        const errSpy = spyOn(app.logger, "error").mockImplementation(
+            (() => {}) as any,
+        );
         try {
             const rows = await driver.query("BAD_JSON_TEST");
             expect(rows).toEqual([{ recovered: true }]);
@@ -91,13 +95,17 @@ describe("OracleDriver bridge protocol", () => {
         }
     });
 
-    test("a fatal message does not break subsequent queries", async () => {
-        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+    test("a fatal message rejects all pending promises including the triggering query", async () => {
+        const errSpy = spyOn(app.logger, "error").mockImplementation(
+            (() => {}) as any,
+        );
         try {
-            // Fatal messages carry no id, so this query never resolves — fire and forget.
-            void driver.query("FATAL_TEST");
-            const rows = await driver.query("SELECT 2 FROM dual");
-            expect(rows).toEqual([{ echo: "SELECT 2 FROM dual", params: [] }]);
+            // Fire the fatal-triggering query and capture (don't await) so we can
+            // assert it rejects rather than hangs.
+            const fatalPromise = driver.query("FATAL_TEST").catch((e) => e);
+            const err = await fatalPromise;
+            expect(err).toBeInstanceOf(Error);
+            expect((err as Error).message).toMatch(/fatal/i);
             expect(errSpy).toHaveBeenCalled();
         } finally {
             errSpy.mockRestore();

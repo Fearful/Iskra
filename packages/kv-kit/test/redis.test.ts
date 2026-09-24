@@ -60,7 +60,7 @@ describe("RedisAdapter", () => {
 
     it("stores and retrieves a primitive string value", async () => {
         await adapter.set("name", "alice");
-        expect(await adapter.get("name")).toBe("alice");
+        expect(await adapter.get<string>("name")).toBe("alice");
     });
 
     it("serializes objects as JSON on set and parses them back on get", async () => {
@@ -69,50 +69,52 @@ describe("RedisAdapter", () => {
         // Stored form is the JSON string.
         expect(fake.store.get("obj")).toBe(JSON.stringify(obj));
         // Retrieved form is the parsed object.
-        expect(await adapter.get("obj")).toEqual(obj);
+        expect(await adapter.get<typeof obj>("obj")).toEqual(obj);
     });
 
     it("round-trips arrays through JSON", async () => {
         const arr = [1, "two", { three: 3 }];
         await adapter.set("arr", arr);
-        expect(await adapter.get("arr")).toEqual(arr);
+        expect(await adapter.get<typeof arr>("arr")).toEqual(arr);
     });
 
-    it("returns null for a missing key", async () => {
-        expect(await adapter.get("nope")).toBeNull();
+    it("returns undefined for a missing key", async () => {
+        expect(await adapter.get("nope")).toBeUndefined();
     });
 
     it("returns the raw string when stored value is not valid JSON", async () => {
         // Simulate a value written outside the adapter that is not JSON.
         fake.store.set("legacy", "plain-text-not-json");
-        expect(await adapter.get("legacy")).toBe("plain-text-not-json");
+        expect(await adapter.get<string>("legacy")).toBe("plain-text-not-json");
     });
 
     it("passes EX ttl through to the client when a ttl is given", async () => {
+        // Values are JSON-encoded on write, so the string "token" is stored as
+        // its JSON form '"token"'. The assertion targets the EX/ttl plumbing.
         await adapter.set("session", "token", 60);
-        expect(fake.setCalls).toEqual([["session", "token", "EX", 60]]);
+        expect(fake.setCalls).toEqual([["session", JSON.stringify("token"), "EX", 60]]);
     });
 
     it("omits the EX argument when no ttl is given", async () => {
         await adapter.set("perm", "value");
-        expect(fake.setCalls).toEqual([["perm", "value"]]);
+        expect(fake.setCalls).toEqual([["perm", JSON.stringify("value")]]);
     });
 
     it("treats ttl of 0 as no expiry (falsy)", async () => {
         // The adapter guards with `if (ttl)`, so 0 must not add EX.
         await adapter.set("zero", "v", 0);
-        expect(fake.setCalls).toEqual([["zero", "v"]]);
+        expect(fake.setCalls).toEqual([["zero", JSON.stringify("v")]]);
     });
 
     it("deletes a key", async () => {
         await adapter.set("temp", "x");
         await adapter.del("temp");
-        expect(await adapter.get("temp")).toBeNull();
+        expect(await adapter.get("temp")).toBeUndefined();
     });
 
     it("does not throw when deleting a missing key", async () => {
         await adapter.del("ghost"); // should resolve without error
-        expect(await adapter.get("ghost")).toBeNull();
+        expect(await adapter.get("ghost")).toBeUndefined();
     });
 
     it("has() returns true only when the key exists", async () => {
@@ -126,12 +128,11 @@ describe("RedisAdapter", () => {
         expect(fake.disconnected).toBe(true);
     });
 
-    it("serializes a number value as-is (non-object) and parses it back", async () => {
-        // typeof 42 !== 'object', so it is stored without JSON.stringify, but
-        // JSON.parse('42') still yields the number 42 on read.
-        await adapter.set("count", 42 as unknown as any);
-        expect(fake.store.get("count")).toBe(42 as unknown as string);
-        expect(await adapter.get("count")).toBe(42);
+    it("serializes a number value via JSON and parses it back as a number", async () => {
+        // JSON.stringify(42) === "42"; JSON.parse("42") yields the number 42.
+        await adapter.set<number>("count", 42);
+        expect(fake.store.get("count")).toBe("42");
+        expect(await adapter.get<number>("count")).toBe(42);
     });
 });
 

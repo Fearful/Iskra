@@ -1,5 +1,5 @@
 import { App } from '@iskra-bun/core';
-import { WebPlugin, HealthFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, HealthCheckFeature } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { KVManager } from '@iskra-bun/kv-kit';
 import { config } from './app.config.ts';
@@ -10,21 +10,20 @@ import { Hono } from 'hono';
 const app = new App({ name: 'Cron' });
 
 app.config.db = config.db;
+app.config.kv = {
+    driver: 'redis',
+    connection: config.redis.url,
+};
 
 const honoApp = new Hono();
 
 app.register(new DbDriver());
-app.register(
-    new KVManager({
-        driver: 'redis',
-        connection: config.redis.url,
-    }),
-);
+app.register(new KVManager());
 app.register(
     new WebPlugin({
         port: config.web.port,
         router: honoApp,
-        features: [new HealthFeature({ path: '/health' })],
+        features: [new HealthCheckFeature({ path: '/health' })],
     }),
 );
 

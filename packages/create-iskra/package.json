@@ -1,0 +1,54 @@
+{
+    "name": "create-iskra",
+    "version": "0.1.0",
+    "description": "Andamiaje de proyectos Iskra (CLI).",
+    "keywords": [
+        "iskra",
+        "bun",
+        "cli",
+        "scaffold",
+        "create"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/create-iskra"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/create-iskra#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+        "create-iskra": "./dist/cli.js"
+    },
+    "exports": {
+        ".": {
+            "source": "./src/index.ts",
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "templates",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "bun test",
+        "build": "tsup --config ./tsup.config.ts"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.3.5",
+        "@types/node": "^22.10.2"
+    }
+}

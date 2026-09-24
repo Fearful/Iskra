@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/worker-kit",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Cola de jobs en segundo plano para Iskra con BullMQ.",
     "keywords": [
         "iskra",

@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, afterEach, spyOn } from "bun:test";
 import { OracleDriver } from "../src/driver";
 import { App } from "@iskra-bun/core";
 
@@ -82,5 +82,46 @@ describe("OracleDriver lifecycle", () => {
         const driver = new OracleDriver();
         // Default name is unchanged regardless of bridge path resolution.
         expect(driver.name).toBe("db");
+    });
+});
+
+describe("OracleDriver pending-promise rejection on fatal/exit", () => {
+    const prevConn = process.env.ORA_CONN;
+
+    afterEach(() => {
+        if (prevConn !== undefined) process.env.ORA_CONN = prevConn;
+        else delete process.env.ORA_CONN;
+    });
+
+    test("fatal message rejects the pending promise rather than leaving it hung", async () => {
+        process.env.ORA_CONN = "fake://localhost/test";
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(makeApp());
+        await driver.start();
+        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+        try {
+            // FATAL_TEST causes the bridge to emit { type: 'fatal' } without an id.
+            // The driver must reject this (and all other) pending promises.
+            await expect(driver.query("FATAL_TEST")).rejects.toThrow(/fatal/i);
+        } finally {
+            errSpy.mockRestore();
+            await driver.stop();
+        }
+    });
+
+    test("bridge process exit rejects all pending promises rather than leaving them hung", async () => {
+        process.env.ORA_CONN = "fake://localhost/test";
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(makeApp());
+        await driver.start();
+        const errSpy = spyOn(console, "error").mockImplementation(() => {});
+        try {
+            // EXIT_TEST causes the bridge to call process.exit(1) immediately.
+            // The stream will close, triggering rejectAllPending in the finally block.
+            await expect(driver.query("EXIT_TEST")).rejects.toThrow(/exited|error/i);
+        } finally {
+            errSpy.mockRestore();
+            await driver.stop();
+        }
     });
 });

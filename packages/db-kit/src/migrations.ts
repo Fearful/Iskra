@@ -1,6 +1,18 @@
 import { type App } from '@iskra-bun/core';
 import { MigrationError } from './errors';
 
+/**
+ * Redacta credenciales `//user:pass@host` embebidas en texto arbitrario (p. ej.
+ * el stderr de drizzle-kit, que suele imprimir la cadena de conexión completa al
+ * fallar). A diferencia de `scrubUrl`, opera sobre texto libre y no requiere que
+ * el contenido sea una URL parseable, dejando intacto el resto del diagnóstico.
+ *
+ * e.g. "... postgres://user:pass@host:5432/db" → "... postgres://***:***@host:5432/db"
+ */
+export function scrubCredentials(text: string): string {
+    return text.replace(/(\/\/)[^/\s:@]+:[^/\s@]+@/g, '$1***:***@');
+}
+
 export interface MigrationConfig {
     /** Dialecto de la base de datos */
     dialect: 'postgresql' | 'mysql' | 'sqlite';
@@ -10,6 +22,8 @@ export interface MigrationConfig {
     schemaPath: string;
     /** Directorio donde se generan las migraciones (ej: './drizzle') */
     migrationsDir: string;
+    /** Ruta opcional a un drizzle.config.ts; cuando se define se pasa como --config. */
+    configPath?: string;
 }
 
 /**
@@ -27,33 +41,49 @@ export class MigrationHelper {
 
     /**
      * Genera archivos de migración basados en los cambios del schema.
+     * drizzle-kit generate soporta --schema y --out, así que ambos se reenvían
+     * desde la config (antes se ignoraban silenciosamente).
      */
     async generate(name?: string): Promise<void> {
         const args = ['drizzle-kit', 'generate'];
+        if (this.config.schemaPath) args.push('--schema', this.config.schemaPath);
+        if (this.config.migrationsDir) args.push('--out', this.config.migrationsDir);
         if (name) args.push('--name', name);
+        if (this.config.configPath) args.push('--config', this.config.configPath);
         await this.exec(args, 'generate');
     }
 
     /**
      * Aplica las migraciones pendientes a la base de datos.
+     * `migrate` sólo acepta --config; schema y out no son flags válidos en este
+     * comando, por eso únicamente reenviamos configPath cuando está presente.
      */
     async migrate(): Promise<void> {
-        await this.exec(['drizzle-kit', 'migrate'], 'migrate');
+        const args = ['drizzle-kit', 'migrate'];
+        if (this.config.configPath) args.push('--config', this.config.configPath);
+        await this.exec(args, 'migrate');
     }
 
     /**
      * Empuja el schema directamente a la base de datos (sin generar archivos de migración).
-     * Útil para desarrollo rápido.
+     * Útil para desarrollo rápido. `push` acepta --schema pero no --out.
      */
     async push(): Promise<void> {
-        await this.exec(['drizzle-kit', 'push'], 'push');
+        const args = ['drizzle-kit', 'push'];
+        if (this.config.schemaPath) args.push('--schema', this.config.schemaPath);
+        if (this.config.configPath) args.push('--config', this.config.configPath);
+        await this.exec(args, 'push');
     }
 
     /**
      * Elimina todas las tablas de la base de datos.
+     * `drop` acepta --out (dónde viven las migraciones) pero no --schema.
      */
     async drop(): Promise<void> {
-        await this.exec(['drizzle-kit', 'drop'], 'drop');
+        const args = ['drizzle-kit', 'drop'];
+        if (this.config.migrationsDir) args.push('--out', this.config.migrationsDir);
+        if (this.config.configPath) args.push('--config', this.config.configPath);
+        await this.exec(args, 'drop');
     }
 
     private async exec(args: string[], operation: string): Promise<void> {
@@ -80,7 +110,7 @@ export class MigrationHelper {
 
             if (exitCode !== 0) {
                 throw new MigrationError(`Migration ${operation} failed with exit code ${exitCode}`, {
-                    context: { operation, exitCode, stderr: stderr.trim() },
+                    context: { operation, exitCode, stderr: scrubCredentials(stderr.trim()) },
                 });
             }
 

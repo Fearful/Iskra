@@ -1,5 +1,5 @@
 import { App } from '@iskra-bun/core';
-import { WebPlugin, CsrfFeature, HealthFeature, RateLimitFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, CsrfFeature, HealthCheckFeature, RateLimitFeature } from '@iskra-bun/web-kit';
 import { KVManager } from '@iskra-bun/kv-kit';
 import { WorkerManager } from '@iskra-bun/worker-kit';
 import { config } from './app.config.ts';
@@ -11,6 +11,10 @@ import { Hono } from 'hono';
 const app = new App({ name: 'FormsAPI' });
 
 // NOTE: No DbDriver — this service is Redis-only for security
+app.config.kv = {
+    driver: 'redis',
+    connection: config.redis.url,
+};
 
 const honoApp = new Hono();
 honoApp.route('/', router);
@@ -22,19 +26,14 @@ const worker = new WorkerManager({
     concurrency: 0,
 });
 
-app.register(
-    new KVManager({
-        driver: 'redis',
-        connection: config.redis.url,
-    }),
-);
+app.register(new KVManager());
 app.register(worker);
 app.register(
     new WebPlugin({
         port: config.web.port,
         router: honoApp,
         features: [
-            new HealthFeature({ path: '/health' }),
+            new HealthCheckFeature({ path: '/health' }),
             new CsrfFeature({ secret: config.csrf.secret }),
             new RateLimitFeature({
                 max: 60,

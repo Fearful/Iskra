@@ -1,5 +1,5 @@
 import { App } from '@iskra-bun/core';
-import { WebPlugin, CorsFeature, HealthFeature, AuthFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, CorsFeature, HealthCheckFeature, AuthFeature } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { config } from './app.config.ts';
 import router from './interfaces/http/router.ts';
@@ -24,7 +24,7 @@ app.register(
                 origin: config.cors.origins.split(','),
                 credentials: true,
             }),
-            new HealthFeature({ path: '/health' }),
+            new HealthCheckFeature({ path: '/health' }),
             new AuthFeature({
                 secret: config.auth.secret,
                 baseURL: config.auth.baseURL,

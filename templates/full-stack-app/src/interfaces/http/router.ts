@@ -1,6 +1,5 @@
 import type { KVManager } from '@iskra-bun/kv-kit';
 import type { DbDriver } from '@iskra-bun/db-kit';
-import { sql } from 'drizzle-orm';
 
 export function createHttpRoutes(kv: KVManager, db: DbDriver) {
     return [
@@ -27,8 +26,8 @@ export function createHttpRoutes(kv: KVManager, db: DbDriver) {
             method: 'GET' as const,
             path: '/db-test',
             handler: async () => {
-                const res = await db.db.run(sql`SELECT 1 as val`);
-                return { val: res };
+                const ok = await db.ping();
+                return { ok };
             },
             doc: { summary: 'Test DB connection' }
         }

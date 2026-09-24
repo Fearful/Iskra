@@ -1,5 +1,6 @@
 
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { createHash } from "crypto";
 import { ApiKeyStore } from "../src/features/api-key";
 import type { Kernel } from "../src/kernel";
 
@@ -41,11 +42,13 @@ describe("ApiKeyStore Cache Integration", () => {
         // First call: Cache miss, should fallback to static keys and set cache
         const result = await store.validate(staticKey.key);
 
+        const hashedKey = `apikey:${createHash("sha256").update(staticKey.key).digest("hex")}`;
+
         expect(result.isValid).toBe(true);
-        expect(mockCache.get).toHaveBeenCalledWith(`apikey:${staticKey.key}`);
+        expect(mockCache.get).toHaveBeenCalledWith(hashedKey);
         expect(mockCache.set).toHaveBeenCalled();
         const setArgs = mockCache.set.mock.calls[0];
-        expect(setArgs[0]).toBe(`apikey:${staticKey.key}`);
+        expect(setArgs[0]).toBe(hashedKey);
 
         // Parse the stored value to verify it contains key data
         const storedValue = JSON.parse(setArgs[1]);

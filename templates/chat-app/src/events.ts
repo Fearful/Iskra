@@ -52,7 +52,7 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
         return session;
     };
 
-    router.on('auth', async (ctx) => {
+    router.on<{ token?: unknown }>('auth', async (ctx) => {
         const identity = verifyToken(ctx.payload?.token, secret);
         if (!identity) {
             ctx.logger.warn('Handshake rechazado: token inválido');
@@ -70,7 +70,7 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
         ctx.reply({ ok: true, rooms: await listRooms(kv) });
     });
 
-    router.on('join', async (ctx) => {
+    router.on<{ room?: unknown }>('join', async (ctx) => {
         const session = requireSession(ctx);
         if (!session) return;
 
@@ -95,7 +95,7 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
         ctx.reply({ ok: true, room, members, history: history.items, hasMore: history.hasMore, nextBefore: history.nextBefore });
     });
 
-    router.on('message', async (ctx) => {
+    router.on<{ text?: unknown }>('message', async (ctx) => {
         const session = requireSession(ctx);
         if (!session) return;
 
@@ -121,7 +121,7 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
         ctx.reply({ ok: true, id: msg.id });
     });
 
-    router.on('history', async (ctx) => {
+    router.on<{ before?: unknown; limit?: unknown }>('history', async (ctx) => {
         const session = requireSession(ctx);
         if (!session) return;
         if (!session.room) {

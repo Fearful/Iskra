@@ -123,4 +123,4 @@ Start from the [`plugin-starter`](https://github.com/fearful/iskra/tree/main/tem
 }
 ```
 
-See [Architecture](/iskra/concepts/architecture/) for how these pieces fit into the layered model.
+See [Architecture](/concepts/architecture/) for how these pieces fit into the layered model.

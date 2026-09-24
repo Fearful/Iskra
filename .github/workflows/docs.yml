@@ -1,5 +1,7 @@
 name: Docs
 
+# Build the documentation site and deploy it to Fly.io on every push to `main`
+# that touches the docs, the site, or package sources (TypeDoc reads them).
 on:
   push:
     branches: [main]
@@ -10,19 +12,15 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-# Allow only one concurrent deployment, skipping runs queued between the
-# run in-progress and latest queued.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: deploy-docs
+  cancel-in-progress: true
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,39 +43,23 @@ jobs:
         working-directory: website
         run: bun run build
 
-      # Stage the built site under a directory matching the `/iskra` base path so
-      # lychee can resolve the root-relative links Starlight emits (e.g.
-      # `/iskra/getting-started/`). `--root-dir` then maps `/` to `_linkcheck`.
-      - name: Stage site for link check
-        run: |
-          rm -rf _linkcheck
-          mkdir -p _linkcheck/iskra
-          cp -R website/dist/. _linkcheck/iskra/
-
+      # The site serves from "/", so root-relative links resolve directly
+      # against the dist root. Offline = internal links only (external links are
+      # checked elsewhere and would make deploys flaky).
       - name: Link check (lychee)
         uses: lycheeverse/lychee-action@v2
         with:
-          # Offline: check internal links only. External links (npm, GitHub,
-          # Codeberg) are validated elsewhere and would make docs deploys flaky.
           args: >-
             --offline
             --no-progress
-            --root-dir ${{ github.workspace }}/_linkcheck
-            '_linkcheck/iskra/**/*.html'
+            --root-dir ${{ github.workspace }}/website/dist
+            'website/dist/**/*.html'
           fail: true
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: website/dist
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Deploy to Fly.io
+        run: flyctl deploy ./website --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

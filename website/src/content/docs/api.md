@@ -5,7 +5,7 @@ description: Auto-generated TypeDoc API reference for every Iskra package.
 
 The full API reference is generated from the TypeScript source of every package with [TypeDoc](https://typedoc.org).
 
-👉 **[Open the generated API reference](/iskra/api/)**
+👉 **[Open the generated API reference](/api/)**
 
 The reference covers all ten packages:
 
@@ -25,7 +25,7 @@ The reference covers all ten packages:
 ```bash
 cd website
 bun run api    # runs TypeDoc -> public/api
-bun run build  # builds the site (TypeDoc output is served at /iskra/api/)
+bun run build  # builds the site (TypeDoc output is served at /api/)
 ```
 
 :::note

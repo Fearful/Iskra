@@ -72,6 +72,22 @@ childLogger.info('Procesando pago');
 
 Configured with `logger.level` in the app config.
 
+### Secret redaction
+
+The logger automatically censors sensitive fields in its output (in both development and production). Any structured field matching these paths is replaced with `[REDACTED]`:
+
+`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+
+This makes it safe to log full config or error objects: credentials are scrubbed before the line is written.
+
+```typescript
+app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');
+// => { "password": "[REDACTED]", "userId": 123, "msg": "Login" }
+
+app.logger.info({ config: { env: { DB_URL: '...' } } }, 'Config loaded');
+// => config.env shows up as "[REDACTED]"
+```
+
 ## Configuration
 
 Configuration is loaded with c12, which supports `.env` files and `app.config.ts`:
@@ -101,6 +117,21 @@ interface AppConfig {
     kv?: { driver: 'memory' | 'redis' | 'libsql'; connection?: any };
     processes?: Record<string, ProcessConfig>;
     [key: string]: any; // extensible
+}
+```
+
+### RestartBackoffConfig
+
+Each `processes` entry accepts an optional `restartBackoff` that controls exponential backoff between restarts. All of its fields are optional and have defaults:
+
+```typescript
+interface RestartBackoffConfig {
+    /** Initial delay in ms before the first restart. Default: 1000 */
+    initialMs?: number;
+    /** Maximum delay cap in ms. Default: 30000 */
+    maxMs?: number;
+    /** Multiplier applied to the delay after each restart. Default: 2 */
+    factor?: number;
 }
 ```
 

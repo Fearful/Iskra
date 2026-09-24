@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/process-kit",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Gestion de procesos externos (Python, binarios) para Iskra.",
     "keywords": [
         "iskra",

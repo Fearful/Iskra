@@ -1,7 +1,11 @@
 import type { DbDriver } from '@iskra-bun/db-kit';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { eq, sql, desc } from 'drizzle-orm';
 import { content, contentVersions, type ContentRow, type ContentVersionRow } from '../../db/schema';
 import type { CreateContentInput, UpdateContentInput } from './content.model';
+
+/** Esquema tipado del driver: tablas de contenido y su historial. */
+type Schema = { content: typeof content; contentVersions: typeof contentVersions };
 
 /** Errores de dominio con codigo, para que la capa HTTP elija el status. */
 export class ContentError extends Error {
@@ -15,11 +19,24 @@ export class ContentError extends Error {
 }
 
 export class ContentService {
-    constructor(private readonly db: DbDriver) {}
+    constructor(private readonly db: DbDriver<Schema>) {}
+
+    /**
+     * El handle `db` del driver es una unión de todos los dialectos soportados
+     * y es `undefined` hasta que el driver arranca. Este template apunta a
+     * SQLite, así que estrechamos al miembro SQLite tras descartar el caso de
+     * "todavía no arrancó".
+     */
+    private get sqlite(): BunSQLiteDatabase<Schema> {
+        if (!this.db.db) {
+            throw new Error('El driver de base de datos todavía no arrancó');
+        }
+        return this.db.db as unknown as BunSQLiteDatabase<Schema>;
+    }
 
     /** Crea las tablas si no existen. Llamado una vez al arrancar la App. */
     async initTables() {
-        await this.db.db.run(sql`
+        await this.sqlite.run(sql`
             CREATE TABLE IF NOT EXISTS content (
                 id TEXT PRIMARY KEY,
                 slug TEXT UNIQUE NOT NULL,
@@ -33,7 +50,7 @@ export class ContentService {
                 updated_at INTEGER NOT NULL
             )
         `);
-        await this.db.db.run(sql`
+        await this.sqlite.run(sql`
             CREATE TABLE IF NOT EXISTS content_versions (
                 id TEXT PRIMARY KEY,
                 content_id TEXT NOT NULL,
@@ -47,26 +64,26 @@ export class ContentService {
     }
 
     async findAll(filter?: { type?: 'post' | 'page'; status?: 'draft' | 'published' }): Promise<ContentRow[]> {
-        const rows: ContentRow[] = await this.db.db.select().from(content).orderBy(desc(content.updatedAt));
+        const rows: ContentRow[] = await this.sqlite.select().from(content).orderBy(desc(content.updatedAt));
         return rows.filter(
             (r) => (!filter?.type || r.type === filter.type) && (!filter?.status || r.status === filter.status),
         );
     }
 
     async findById(id: string): Promise<ContentRow | undefined> {
-        const rows: ContentRow[] = await this.db.db.select().from(content).where(eq(content.id, id)).limit(1);
+        const rows: ContentRow[] = await this.sqlite.select().from(content).where(eq(content.id, id)).limit(1);
         return rows[0];
     }
 
     async findBySlug(slug: string): Promise<ContentRow | undefined> {
-        const rows: ContentRow[] = await this.db.db.select().from(content).where(eq(content.slug, slug)).limit(1);
+        const rows: ContentRow[] = await this.sqlite.select().from(content).where(eq(content.slug, slug)).limit(1);
         return rows[0];
     }
 
     async listVersions(id: string): Promise<ContentVersionRow[]> {
         const exists = await this.findById(id);
         if (!exists) throw new ContentError(`Contenido ${id} no encontrado`, 'NOT_FOUND');
-        return this.db.db
+        return this.sqlite
             .select()
             .from(contentVersions)
             .where(eq(contentVersions.contentId, id))
@@ -92,7 +109,7 @@ export class ContentService {
             updatedAt: now,
         };
 
-        await this.db.db.insert(content).values(row);
+        await this.sqlite.insert(content).values(row);
         await this.snapshot(row);
         return row;
     }
@@ -119,7 +136,7 @@ export class ContentService {
             updatedAt: new Date(),
         };
 
-        await this.db.db.update(content).set(next).where(eq(content.id, id));
+        await this.sqlite.update(content).set(next).where(eq(content.id, id));
         await this.snapshot(next);
         return next;
     }
@@ -138,7 +155,7 @@ export class ContentService {
             updatedAt: now,
         };
 
-        await this.db.db.update(content).set(next).where(eq(content.id, id));
+        await this.sqlite.update(content).set(next).where(eq(content.id, id));
         await this.snapshot(next);
         return next;
     }
@@ -159,7 +176,7 @@ export class ContentService {
             updatedAt: new Date(),
         };
 
-        await this.db.db.update(content).set(next).where(eq(content.id, id));
+        await this.sqlite.update(content).set(next).where(eq(content.id, id));
         await this.snapshot(next);
         return next;
     }
@@ -167,8 +184,8 @@ export class ContentService {
     async delete(id: string): Promise<void> {
         const current = await this.findById(id);
         if (!current) throw new ContentError(`Contenido ${id} no encontrado`, 'NOT_FOUND');
-        await this.db.db.delete(content).where(eq(content.id, id));
-        await this.db.db.delete(contentVersions).where(eq(contentVersions.contentId, id));
+        await this.sqlite.delete(content).where(eq(content.id, id));
+        await this.sqlite.delete(contentVersions).where(eq(contentVersions.contentId, id));
     }
 
     /** Inserta una fila inmutable en el historial reflejando el estado actual. */
@@ -182,6 +199,6 @@ export class ContentService {
             status: row.status,
             createdAt: new Date(),
         };
-        await this.db.db.insert(contentVersions).values(version);
+        await this.sqlite.insert(contentVersions).values(version);
     }
 }

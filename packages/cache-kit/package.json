@@ -1,0 +1,56 @@
+{
+    "name": "@iskra-bun/cache-kit",
+    "version": "0.1.0",
+    "description": "Cache de aplicación de alto nivel para Iskra, construido sobre @iskra-bun/kv-kit.",
+    "keywords": [
+        "iskra",
+        "bun",
+        "cache",
+        "cache-aside",
+        "ttl",
+        "kv"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/cache-kit"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/cache-kit#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "source": "./src/index.ts",
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "bun test",
+        "build": "tsup --config ../../tsup.config.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/kv-kit": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.3.5",
+        "@types/node": "^22.10.2"
+    }
+}

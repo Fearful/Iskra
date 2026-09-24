@@ -159,4 +159,4 @@ async function main() {
 main().catch((err) => app.logger.error({ err }, 'Fallo al arrancar'));
 ```
 
-Para un proyecto multiplataforma listo para usar, revisa el template [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md). Para el ciclo de vida de los Drivers, consulta la [documentacion de arquitectura](/iskra/es/concepts/architecture/) y el [Core](/iskra/es/packages/core/).
+Para un proyecto multiplataforma listo para usar, revisa el template [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md). Para el ciclo de vida de los Drivers, consulta la [documentacion de arquitectura](/es/concepts/architecture/) y el [Core](/es/packages/core/).

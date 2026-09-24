@@ -1,0 +1,135 @@
+---
+title: Seguridad y hardening
+description: Defensas integradas en los kits de Iskra — secretos, CSRF, autz de WebSocket, email, almacenamiento y hardening HTTP.
+---
+
+Iskra viene con defaults seguros, así que el camino fácil también es el seguro. Esta guía recorre las protecciones que están activas por defecto y las perillas que conviene conocer.
+
+## Secretos
+
+El `secret` de auth/web debe tener al menos **32 caracteres**. `createBetterAuth` tira un error en el arranque si falta o es muy corto, así que un secreto débil nunca llega a producción en silencio:
+
+```typescript
+// packages/auth-kit — createBetterAuth valida la longitud
+// tira: "auth secret must be at least 32 characters; received 8"
+```
+
+Siempre traé los secretos del entorno, nunca los hardcodees:
+
+```typescript
+// app.config.ts
+export default {
+    auth: {
+        secret: process.env.AUTH_SECRET, // >= 32 chars, o el arranque falla
+    },
+};
+```
+
+El logger redacta campos sensibles automáticamente. Las claves que coinciden con `password`, `pass`, `apiKey`, `apiSecret`, `token`, `authToken`, `secret`, `config.env`, y cualquier `*.data` se reemplazan por `[REDACTED]` antes de escribir nada:
+
+```typescript
+app.logger.info({ password: 'hunter2', token: 'abc' }, 'login');
+// → { password: '[REDACTED]', token: '[REDACTED]' }
+```
+
+## Protección CSRF
+
+El feature de CSRF usa una cookie firmada con HMAC en patrón double-submit (patrón OWASP). El token es `<random>.<hmac>`, y la verificación usa una comparación de tiempo constante (`timingSafeEqual`) para que las firmas no se puedan romper por timing:
+
+```typescript
+import { CsrfFeature } from '@iskra-bun/web-kit';
+
+new CsrfFeature({
+    secret: process.env.CSRF_SECRET, // requerido, o tira error
+    // cookieName por defecto "_csrf", headerName por defecto "X-CSRF-Token"
+});
+```
+
+Las cookies usan por defecto `httpOnly`, `secure`, `sameSite: 'Strict'`. Hay un kill-switch `disableCSRFCheck` para desarrollo local, pero se **ignora en producción** — incluso si una config lo trae habilitado, se neutraliza cuando `NODE_ENV === 'production'`:
+
+```typescript
+const disableCSRFCheck = process.env.NODE_ENV !== 'production'
+    ? this.config.disableCSRFCheck === true
+    : false; // siempre false en prod
+```
+
+## Autorización de WebSocket
+
+`socket-kit` expone los hooks `canJoin` y `canPublish` para controlar el acceso a salas y la publicación por conexión:
+
+```typescript
+import { SocketDriver } from '@iskra-bun/socket-kit';
+
+new SocketDriver({
+    canJoin: (connection, room) => isMember(connection.data.userId, room),
+    canPublish: (connection, topic) => canWrite(connection.data.userId, topic),
+    maxPayloadLength: 16 * 1024, // 16 KiB por defecto — limita el tamaño de frame
+    rateLimit: 100,              // mensajes por ventana (default 100)
+    rateWindowMs: 1000,          // duración de la ventana (default 1000ms)
+});
+```
+
+`maxPayloadLength` acota el tamaño del frame y el rate limit por conexión descarta a quienes superan su presupuesto de mensajes, protegiendo contra floods.
+
+## Email
+
+El proveedor SMTP usa TLS por defecto. STARTTLS es obligatorio en puertos distintos al 465 (`requireTLS: true`) y los certificados siempre se validan (`rejectUnauthorized: true`):
+
+```typescript
+// mailer-kit SMTP — TLS forzado, certs validados
+nodemailer.createTransport({
+    host, port,
+    secure,                        // TLS implícito en 465
+    requireTLS: secure ? undefined : true,
+    tls: { rejectUnauthorized: true },
+});
+```
+
+El proveedor de Mailgun aplica una allowlist estricta de headers y elimina CRLF de los valores para prevenir inyección de headers. Solo se aceptan estos headers: `reply-to`, `in-reply-to`, `references`, `list-unsubscribe`, `list-unsubscribe-post`, `list-id`, `x-mailgun-variables`, `x-mailgun-tag`. Cualquier otro tira error:
+
+```typescript
+// tira: Header "x-evil" is not allowed
+```
+
+## Almacenamiento
+
+El adapter local bloquea el path traversal: las claves se sanitizan y se resuelven contra `basePath`, y cualquier clave que escape de la raíz del storage se rechaza:
+
+```typescript
+// storage-kit adapter local
+// tira: "Path escapes storage root: ../../etc/passwd"
+```
+
+El adapter S3 rechaza endpoints en texto plano (`http://`) salvo que optes explícitamente por `useSSL: false`:
+
+```typescript
+// tira: "Refusing plaintext S3 endpoint; set useSSL:false to override"
+new S3Adapter({
+    connection: { endpoint: 'https://s3.example.com' /* useSSL activo por defecto */ },
+});
+```
+
+## Hardening HTTP
+
+El endpoint de health oculta los detalles internos por defecto. `includeDetails` es `false` por defecto, así que las listas de features, los chequeos de DB y los errores crudos (que pueden incluir connection strings) nunca se serializan al cliente salvo que lo habilites explícitamente:
+
+```typescript
+import { HealthCheckFeature } from '@iskra-bun/web-kit';
+
+new HealthCheckFeature({ includeDetails: false }); // default
+```
+
+Las API keys se hashean con SHA-256 antes de usarse como clave de caché, así que el secreto en texto plano nunca se persiste donde un dump de caché podría filtrarlo:
+
+```typescript
+// feature de api-key
+const hash = createHash('sha256').update(key).digest('hex');
+const cacheKey = `apikey:${hash}`;
+```
+
+Los flujos OAuth/OIDC habilitan PKCE por defecto. Deshabilitarlo expone la interceptación de códigos de autorización y requiere un `pkce: false` explícito:
+
+```typescript
+// auth-kit OIDC — PKCE activo salvo que se deshabilite explícitamente
+pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
+```

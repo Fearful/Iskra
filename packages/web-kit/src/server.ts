@@ -28,8 +28,21 @@ export class WebDriver implements Driver {
 
     init(app: App) {
         this.app = app;
+        this.setupSecurityHeaders();
         this.setupRoutes();
         this.setupOpenApi();
+    }
+
+    // Apply the same standard security headers as the Kernel HTTP stack
+    // (web-kit/src/kernel.ts) so the standalone WebDriver server is at parity.
+    private setupSecurityHeaders() {
+        this.server.use('*', async (c, next) => {
+            await next();
+            c.res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+            c.res.headers.set('X-Content-Type-Options', 'nosniff');
+            c.res.headers.set('X-XSS-Protection', '1; mode=block');
+            c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        });
     }
 
     private setupOpenApi() {
@@ -108,8 +121,11 @@ export class WebDriver implements Driver {
                     if (result instanceof Response) return result;
                     return c.json(result);
                 } catch (err: any) {
+                    // Log the detail server-side; never serialize the raw error
+                    // message (it may embed connection strings or other secrets)
+                    // to the client. Return only a generic body.
                     this.app.logger.error(err);
-                    return c.json({ error: err.message }, 500);
+                    return c.json({ error: 'Internal Server Error' }, 500);
                 }
             });
         }

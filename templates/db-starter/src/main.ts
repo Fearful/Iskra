@@ -3,6 +3,7 @@ import { WebDriver } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { OracleDriver } from '@iskra-bun/db-oracle';
 import { UserService } from './domain/user.service';
+import { users } from './db/schema';
 import { createRouter } from './interfaces/http/router';
 
 const app = new App({
@@ -13,7 +14,7 @@ const app = new App({
     }
 });
 
-const db = new DbDriver();
+const db = new DbDriver<{ users: typeof users }>();
 const oracle = new OracleDriver(); // Will skip if no env vars
 
 const userService = new UserService(db);

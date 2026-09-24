@@ -44,7 +44,7 @@ El proceso corre en background de forma continua. Si `restartOnCrash: true`, se 
 
 ### `oneshot`
 
-El proceso se ejecuta una vez y termina. Util para tareas de inicializacion o scripts de setup.
+El proceso se ejecuta una vez y termina. Util para tareas de inicializacion o scripts de setup. Los procesos `oneshot` **nunca se reinician**, aunque `restartOnCrash: true` este configurado. Se emite el evento `process:exit` cuando finalizan.
 
 ### `stdio`
 
@@ -69,17 +69,70 @@ El ProcessManager emite estos eventos en el bus de la App:
 - `process:log` — lineas de log no-JSON del proceso
 - `process:error` — cuando el proceso falla
 
+## Gestion de Procesos en Tiempo de Ejecucion
+
+Despues de `app.start()` puedes agregar o eliminar procesos individuales sin reiniciar toda la aplicacion.
+
+### `spawn(name, config)`
+
+Inicia un nuevo proceso en tiempo de ejecucion con el mismo formato de configuracion que el mapa `processes` del arranque.
+
+```typescript
+const pm = new ProcessManager();
+// ... registrar e iniciar la app ...
+
+await pm.spawn('extra-worker', {
+    command: 'python3',
+    args: ['scripts/extra.py'],
+    mode: 'stdio',
+    restartOnCrash: true,
+});
+```
+
+Lanza un error si ya existe un proceso con ese nombre. Usa `kill()` primero si necesitas reemplazarlo.
+
+### `kill(name, gracefulTimeoutMs?)`
+
+Detiene de forma ordenada un proceso por nombre: envia **SIGTERM** y escala a **SIGKILL** si el proceso no ha terminado dentro de `gracefulTimeoutMs` (por defecto `5000` ms).
+
+```typescript
+await pm.kill('extra-worker');
+// o con un timeout personalizado:
+await pm.kill('extra-worker', 2000);
+```
+
+Lanza un error si no existe ningun proceso con ese nombre.
+
+> **Espera en el peor caso.** Tras enviar SIGTERM, `kill()` espera hasta `gracefulTimeoutMs` antes de escalar a SIGKILL, y despues otorga otra ventana de gracia para que el proceso termine. Por eso la espera maxima antes de que `kill()` (o `stop()`) resuelva es de hasta **~2x `gracefulTimeoutMs`**. Si el proceso sobrevive a **ambas** senales (SIGTERM y SIGKILL), no se descarta en silencio: se registra como huerfano via `app.logger.error` para que la fuga sea observable y puedas hacer limpieza manual.
+
+## Parada Ordenada
+
+`stop()` (llamado automaticamente por `app.stop()`) envia **SIGTERM** a todos los procesos en paralelo y escala a **SIGKILL** tras el timeout. El timeout por defecto es `5000` ms. Al igual que `kill()`, la espera maxima por proceso es de hasta **~2x `gracefulTimeoutMs`**, y cualquier proceso que sobreviva a ambas senales se registra como huerfano via `app.logger.error`.
+
+```typescript
+await app.stop(); // o: await pm.stop(3000) para un timeout de 3 s
+```
+
 ## Configuracion
 
 ```typescript
 interface ProcessConfig {
-    command: string;              // Comando a ejecutar
-    args?: string[];              // Argumentos
+    command: string;               // Ejecutable a lanzar
+    args?: string[];               // Argumentos
     mode?: 'daemon' | 'oneshot' | 'stdio';  // default: 'daemon'
-    restartOnCrash?: boolean;     // default: false
-    env?: Record<string, string>; // Variables de entorno adicionales
+    restartOnCrash?: boolean;      // default: false
+    maxRestarts?: number;          // default: 10
+    restartCooldown?: number;      // ms; si el uptime supera este valor, el contador se reinicia. default: 60000
+    env?: Record<string, string>;  // Variables de entorno adicionales
+    restartBackoff?: {
+        initialMs?: number;        // Retraso antes del primer reinicio. default: 1000
+        maxMs?: number;            // Limite maximo del retraso. default: 30000
+        factor?: number;           // Multiplicador aplicado tras cada reinicio. default: 2
+    };
 }
 ```
+
+Cuando `restartBackoff` **no** esta configurado, el retraso de reinicio es fijo en **1000 ms** (comportamiento anterior). Cuando se configura, el retraso crece exponencialmente tras cada crash y se reinicia a `initialMs` si el proceso permanece activo mas tiempo que `restartCooldown`.
 
 ## Ejemplo con Python
 
@@ -97,4 +150,25 @@ export default {
 };
 ```
 
-El proceso se spawneea automaticamente al llamar `app.start()` y se termina con `app.stop()`.
+El proceso se spawnea automaticamente al llamar `app.start()` y se termina con `app.stop()`.
+
+### Ejemplo con Backoff de Reinicio
+
+Un proceso que crashea repetidamente retrocede exponencialmente en lugar de saturar el sistema:
+
+```typescript
+const pm = new ProcessManager();
+
+await pm.spawn('servicio-inestable', {
+    command: './bin/servicio-inestable',
+    mode: 'daemon',
+    restartOnCrash: true,
+    maxRestarts: 8,
+    restartBackoff: {
+        initialMs: 500,   // primer reinicio tras 500 ms
+        maxMs: 30000,     // limite en 30 s
+        factor: 2,        // 500 → 1000 → 2000 → 4000 → ...
+    },
+    restartCooldown: 120000, // considerar estable tras 2 min de uptime; reiniciar contador
+});
+```

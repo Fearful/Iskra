@@ -3,8 +3,8 @@ title: Mobile Kit
 description: Driver for running an Iskra App on mobile platforms (iOS / Android).
 ---
 
-:::caution[Experimental]
-`@iskra-bun/mobile-kit` is experimental. APIs may change between releases.
+:::caution[Alpha — not yet functional]
+`@iskra-bun/mobile-kit` is an **Alpha placeholder**. The `MobileDriver` currently only wires up lifecycle logging; the real Tauri v2 mobile plugin bridges (deep links, notifications, orientation/status bar) land in **v0.2**. The examples below describe the planned API and are not usable yet.
 :::
 
 Driver for running an Iskra App on mobile platforms (iOS / Android) over the [Tauri](https://tauri.app) bridge. It shares the same lifecycle model as the rest of the framework's Drivers.
@@ -159,4 +159,4 @@ async function main() {
 main().catch((err) => app.logger.error({ err }, 'Fallo al arrancar'));
 ```
 
-For a ready-to-use cross-platform project, check the [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md) template. For the Drivers' lifecycle, see the [architecture documentation](/iskra/concepts/architecture/) and the [Core](/iskra/packages/core/).
+For a ready-to-use cross-platform project, check the [`universal-app`](https://github.com/fearful/iskra/tree/main/templates/universal-app/README.md) template. For the Drivers' lifecycle, see the [architecture documentation](/concepts/architecture/) and the [Core](/packages/core/).

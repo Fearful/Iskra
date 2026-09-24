@@ -123,4 +123,4 @@ Empezá desde el template [`plugin-starter`](https://github.com/fearful/iskra/tr
 }
 ```
 
-Mirá [Arquitectura](/iskra/es/concepts/architecture/) para ver cómo encajan estas piezas en el modelo por capas.
+Mirá [Arquitectura](/es/concepts/architecture/) para ver cómo encajan estas piezas en el modelo por capas.

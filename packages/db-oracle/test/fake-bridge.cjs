@@ -17,8 +17,21 @@ rl.on('line', (line) => {
         const sql = String(req.sql || '');
 
         if (sql === 'FATAL_TEST') {
-            // Fatal messages carry no id; the driver should log and keep going.
+            // Fatal messages carry no id; the driver should reject all pending promises.
             process.stdout.write(JSON.stringify({ type: 'fatal', error: 'simulated fatal' }) + '\n');
+            return;
+        }
+
+        if (sql === 'EXIT_TEST') {
+            // Simulate bridge crash: exit without responding to the pending request.
+            process.exit(1);
+        }
+
+        if (sql === 'NO_RESPONSE_TEST') {
+            // Black hole: accept the request but never answer it. Used to
+            // exercise the driver's per-request timeout. The process stays
+            // alive so the stream does not close (which would otherwise reject
+            // the pending promise for the wrong reason).
             return;
         }
 

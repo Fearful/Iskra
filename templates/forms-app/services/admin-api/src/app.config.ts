@@ -29,7 +29,7 @@ export const config: AppConfig = AppConfigSchema.parse({
         url: process.env.DATABASE_URL || 'postgresql://forms:secret@localhost:5432/forms_app',
     },
     auth: {
-        secret: process.env.AUTH_SECRET || 'dev-secret-change-me',
+        secret: process.env.AUTH_SECRET || 'dev-secret-change-me-min-32-characters-long',
         baseURL: process.env.AUTH_BASE_URL || 'http://localhost:4000',
     },
     cors: {

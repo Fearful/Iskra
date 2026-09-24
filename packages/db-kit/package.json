@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/db-kit",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Base de datos SQL de Iskra con Drizzle ORM (PostgreSQL, MySQL, SQLite, LibSQL).",
     "keywords": [
         "iskra",

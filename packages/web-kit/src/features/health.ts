@@ -6,16 +6,25 @@ export class HealthCheckFeature implements Feature {
     name = "health";
 
     private kernel?: Kernel;
-    private config: Required<Omit<HealthCheckConfig, "checks">> & { checks?: HealthCheckConfig["checks"] };
+    private config: Required<Omit<HealthCheckConfig, "checks" | "readinessChecks">> & {
+        checks?: HealthCheckConfig["checks"];
+    };
+    private readinessChecks: Map<string, () => Promise<boolean>>;
 
     constructor(config: HealthCheckConfig = {}) {
         this.config = {
             path: config.path || "/health",
             readinessPath: config.readinessPath || "/health/ready",
             livenessPath: config.livenessPath || "/health/live",
-            includeDetails: config.includeDetails !== undefined ? config.includeDetails : true,
+            includeDetails: config.includeDetails !== undefined ? config.includeDetails : false,
             checks: config.checks,
         };
+        const initial = config.readinessChecks ?? {};
+        this.readinessChecks = new Map(Object.entries(initial));
+    }
+
+    addReadinessCheck(name: string, check: () => Promise<boolean>): void {
+        this.readinessChecks = new Map([...this.readinessChecks, [name, check]]);
     }
 
     async initialize(kernel: Kernel): Promise<void> {
@@ -56,7 +65,10 @@ export class HealthCheckFeature implements Feature {
                     try {
                         customChecks[name] = await check(c);
                     } catch (error) {
-                        customChecks[name] = { status: "error", error: String(error) };
+                        // Log the detail server-side; never serialize the raw error
+                        // (it may embed connection strings or other secrets) to the client.
+                        console.error(`Health custom check "${name}" failed:`, error);
+                        customChecks[name] = { status: "error" };
                     }
                 }
                 response.customChecks = customChecks;
@@ -75,13 +87,37 @@ export class HealthCheckFeature implements Feature {
                 report[key] = { status: "ok" };
             }
         } catch (e) {
-            report[key] = { status: "error", error: String(e) };
+            // Log server-side; return only a generic status so DB/cache error
+            // strings (which can carry connection details) never reach the client.
+            console.error(`Health feature check "${key}" failed:`, e);
+            report[key] = { status: "error" };
         }
     }
 
     private async handleReadinessCheck(c: Context) {
-        // Simplified readiness check
-        return c.json({ status: "ready" });
+        if (this.readinessChecks.size === 0) {
+            return c.json({ status: "ready" });
+        }
+
+        const results: Record<string, boolean> = {};
+        const failed: string[] = [];
+
+        for (const [name, check] of this.readinessChecks) {
+            try {
+                const passed = await check();
+                results[name] = passed;
+                if (!passed) failed.push(name);
+            } catch {
+                results[name] = false;
+                failed.push(name);
+            }
+        }
+
+        if (failed.length > 0) {
+            return c.json({ status: "not ready", checks: results, failed }, 503);
+        }
+
+        return c.json({ status: "ready", checks: results });
     }
 
     private async handleLivenessCheck(c: Context) {
