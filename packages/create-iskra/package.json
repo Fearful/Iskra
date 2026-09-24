@@ -39,6 +39,7 @@
     },
     "files": [
         "dist",
+        "src",
         "templates",
         "README.md",
         "CHANGELOG.md"

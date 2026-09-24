@@ -214,3 +214,30 @@ describe('envEnum', () => {
         expect(() => loadConfig({ schema, source: { NODE_ENV: input } })).toThrow(ConfigError);
     });
 });
+
+describe('error messages never echo the value', () => {
+    it('coercers and zod enums/literals report what was expected, not what was received', () => {
+        const schema = z.object({
+            PORT: envPort,
+            DEBUG: envBool,
+            RETRIES: envNumber,
+            MODE: envEnum(['a', 'b']),
+            LEVEL: z.enum(['info', 'debug']),
+            KIND: z.literal('x'),
+        });
+        const secret = 'hunter2-SECRET';
+        let error: unknown;
+        try {
+            loadConfig({
+                schema,
+                source: { PORT: secret, DEBUG: secret, RETRIES: secret, MODE: secret, LEVEL: secret, KIND: secret },
+            });
+        } catch (e) {
+            error = e;
+        }
+        expect(error).toBeDefined();
+        expect(String((error as Error).message)).not.toContain(secret);
+        expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain(secret);
+        expect((error as Error).message).toContain("LEVEL: Invalid enum value. Expected 'info' | 'debug'");
+    });
+});

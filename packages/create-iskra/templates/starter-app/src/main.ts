@@ -3,11 +3,12 @@ import { WebDriver } from '@iskra-bun/web-kit';
 import { ProcessManager } from '@iskra-bun/process-kit';
 import { httpRouter } from './interfaces/http/router';
 
+// Without a config, init() loads app.config.ts from the working directory.
 const app = new App();
 
 // Register Web Driver
 app.register(new WebDriver({
-    port: 3000,
+    port: Number(process.env.PORT) || 3000,
     routes: httpRouter
 }));
 
@@ -19,4 +20,9 @@ app.on('process:log', (ctx) => {
     ctx.logger.info(`[${ctx.payload.name}] LOG: ${ctx.payload.text}`);
 });
 
-app.start().catch(console.error);
+// A failed start (port in use, bad config) must exit non-zero, or a
+// supervisor or container runtime sees a clean exit and does not restart it.
+app.start().catch((err) => {
+    app.logger.error({ err }, 'Failed to start');
+    process.exit(1);
+});

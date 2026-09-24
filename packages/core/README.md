@@ -15,9 +15,10 @@ import { App } from '@iskra-bun/core'
 
 const app = new App({ name: 'mi-app' })
 
-app.on('app:started', () => app.logger.info('Listo'))
+app.on('user:created', (ctx) => app.logger.info({ user: ctx.payload }, 'Usuario creado'))
 
 await app.start()
+app.emit('user:created', { id: 1 })
 ```
 
 Registra capacidades adicionales con `app.register(driver)` (Drivers) o `app.use(plugin)` (Plugins).

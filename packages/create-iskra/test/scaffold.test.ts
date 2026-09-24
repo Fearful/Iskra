@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
     isEmptyDir,
     listTemplates,
+    packageNameFor,
     rewritePackageJson,
     scaffold,
     workspaceRange,
@@ -202,5 +203,32 @@ describe('scaffold', () => {
                 templatesRoot,
             }),
         ).toThrow(/nombre del proyecto/);
+    });
+});
+
+describe('generated project basics', () => {
+    test('packageNameFor derives a valid npm name from the directory', () => {
+        expect(packageNameFor('my-app/')).toBe('my-app');
+        expect(packageNameFor('./apps/My Cool App')).toBe('my-cool-app');
+        expect(packageNameFor('_private')).toBe('private');
+        // "." is the current directory: its own name.
+        expect(packageNameFor('.')).toBe(packageNameFor(process.cwd()));
+        expect(packageNameFor('/')).toBe('iskra-app');
+    });
+
+    test('scaffold writes a .gitignore (npm drops them from published packages)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'create-iskra-gitignore-'));
+        try {
+            const templatesRoot = join(root, 'templates');
+            mkdirSync(join(templatesRoot, 'mini'), { recursive: true });
+            writeFileSync(join(templatesRoot, 'mini', 'package.json'), '{"name":"mini"}');
+            const targetDir = join(root, 'out');
+            scaffold({ template: 'mini', targetDir, projectName: 'out', templatesRoot });
+            const gitignore = readFileSync(join(targetDir, '.gitignore'), 'utf8');
+            expect(gitignore).toContain('node_modules/');
+            expect(gitignore).toContain('.env');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

@@ -13,7 +13,7 @@ describe('MemoryAdapter TTLs', () => {
         await adapter.set('session', { user: 1 }, 30 * 24 * 3600);
         await Bun.sleep(20);
         // The overflowed timer used to fire at once.
-        expect(await adapter.get('session')).toEqual({ user: 1 });
+        expect(await adapter.get<{ user: number }>('session')).toEqual({ user: 1 });
     });
 
     it('rejects a negative or non-finite TTL instead of deleting the key at once', async () => {
@@ -22,14 +22,14 @@ describe('MemoryAdapter TTLs', () => {
         for (const ttl of [-5, Number.NaN, Number.POSITIVE_INFINITY]) {
             await expect(adapter.set('k', 'lost', ttl)).rejects.toThrow(RangeError);
         }
-        expect(await adapter.get('k')).toBe('kept');
+        expect(await adapter.get<string>('k')).toBe('kept');
     });
 
     it('treats a TTL of 0 as no expiry', async () => {
         adapter = new MemoryAdapter();
         await adapter.set('k', 1, 0);
         await Bun.sleep(5);
-        expect(await adapter.get('k')).toBe(1);
+        expect(await adapter.get<number>('k')).toBe(1);
     });
 });
 

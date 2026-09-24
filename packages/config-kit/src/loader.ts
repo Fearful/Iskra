@@ -23,7 +23,7 @@ export function loadConfig<TSchema extends z.ZodTypeAny>(
 ): z.output<TSchema> {
     const { schema, source = process.env } = options;
 
-    const result = schema.safeParse(source);
+    const result = schema.safeParse(source, { errorMap: valueFreeErrors });
 
     if (!result.success) {
         const issues = result.error.issues.map(issue => {
@@ -47,6 +47,20 @@ export function loadConfig<TSchema extends z.ZodTypeAny>(
 
     return deepFreeze(result.data) as z.output<TSchema>;
 }
+
+/**
+ * Zod's own messages for enums and literals quote the value received
+ * ("…, received 'hunter2'"); these say what was expected instead.
+ */
+const valueFreeErrors: z.ZodErrorMap = (issue, ctx) => {
+    if (issue.code === z.ZodIssueCode.invalid_enum_value) {
+        return { message: `Invalid enum value. Expected ${issue.options.map((o) => `'${String(o)}'`).join(' | ')}` };
+    }
+    if (issue.code === z.ZodIssueCode.invalid_literal) {
+        return { message: `Invalid literal value, expected ${JSON.stringify(issue.expected)}` };
+    }
+    return { message: ctx.defaultError };
+};
 
 /**
  * Recursively freezes an object so the returned config is truly immutable.

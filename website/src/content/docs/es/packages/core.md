@@ -78,11 +78,13 @@ Se configura con `logger.level` en la config de la app.
 
 ### Redaccion de secretos
 
-El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Cualquier campo estructurado que coincida con estos paths se reemplaza por `[REDACTED]`:
+El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Un campo con alguno de estos nombres (sin importar mayusculas), a cualquier profundidad de un objeto plano o array, se reemplaza por `[REDACTED]`:
 
-`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
 
-Esto hace que sea seguro loguear objetos de config o de error completos: las credenciales se eliminan antes de escribir la linea.
+`config.env` y `*.data` tambien se censuran. El objeto que se pasa no se modifica: se escribe una copia censurada.
+
+Solo se miran los nombres de los campos, no los valores: una URL de conexion con la contrasena adentro (`postgres://user:pass@host/db`) se escribe tal cual, igual que los campos de instancias de clases (solo se recorren objetos planos y arrays). Hay que limpiarlos antes de loguearlos.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

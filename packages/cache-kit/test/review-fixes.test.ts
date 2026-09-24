@@ -58,7 +58,7 @@ describe('TTLs', () => {
         const cache = new Cache();
         await cache.set('long', 'v', { ttl: 30 * 24 * 3600 });
         await Bun.sleep(20);
-        expect(await cache.get('long')).toBe('v');
+        expect(await cache.get<string>('long')).toBe('v');
     });
 
     it('rejects a negative TTL', async () => {

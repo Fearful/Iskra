@@ -78,11 +78,13 @@ Configured with `logger.level` in the app config.
 
 ### Secret redaction
 
-The logger automatically censors sensitive fields in its output (in both development and production). Any structured field matching these paths is replaced with `[REDACTED]`:
+The logger automatically censors sensitive fields in its output (in both development and production). A field with one of these names (in any case), at any depth of a plain object or array, is replaced with `[REDACTED]`:
 
-`password`, `*.password`, `pass`, `*.pass`, `apiKey`, `*.apiKey`, `*.apiSecret`, `token`, `*.token`, `*.authToken`, `secret`, `*.secret`, `config.env`, `*.data`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
 
-This makes it safe to log full config or error objects: credentials are scrubbed before the line is written.
+`config.env` and `*.data` are censored too. The object you pass is not modified: the censored copy is what gets written.
+
+Only field names are checked, not values: a connection URL with a password in it (`postgres://user:pass@host/db`) is written as is, and so are the fields of class instances (only plain objects and arrays are walked). Scrub those before logging them.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { ISKRA_VERSIONS } from './versions.ts';
 
 /**
@@ -17,6 +17,28 @@ export function workspaceRange(name: string, versions: Readonly<Record<string, s
     }
     return `^${version}`;
 }
+
+/**
+ * A valid npm package name for a project created in `targetDir`, taken from
+ * the directory's own name: `my-app/` and `.` used to yield `my-app/` and `.`,
+ * which `bun install` rejects.
+ */
+export function packageNameFor(targetDir: string): string {
+    const name = basename(resolve(targetDir))
+        .toLowerCase()
+        .replace(/[^a-z0-9._~-]+/g, '-')
+        .replace(/^[._-]+/, '')
+        .replace(/-+$/, '')
+        .slice(0, 214);
+    return name || 'iskra-app';
+}
+
+/**
+ * Written as the new project's `.gitignore` when the template has none: npm
+ * leaves `.gitignore` files out of published packages, so a bundled one never
+ * reached the generated project.
+ */
+export const DEFAULT_GITIGNORE = ['node_modules/', 'dist/', '.env', '.env.*', '!.env.example', '*.log', '.DS_Store', ''].join('\n');
 
 /** Directories that must never be copied from a template into a new project. */
 export const EXCLUDED_ENTRIES: readonly string[] = ['node_modules', 'dist', '.git'];
@@ -159,6 +181,8 @@ export function scaffold(options: ScaffoldOptions): ScaffoldResult {
 
     mkdirSync(targetDir, { recursive: true });
     copyTemplateTree(templateDir, targetDir);
+    const gitignore = join(targetDir, '.gitignore');
+    if (!existsSync(gitignore)) writeFileSync(gitignore, DEFAULT_GITIGNORE, 'utf8');
     const rewrittenDeps = rewriteTargetPackageJson(targetDir, projectName);
 
     return { targetDir, projectName, template, rewrittenDeps };

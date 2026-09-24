@@ -4,7 +4,7 @@ import { WebDriver } from '@iskra-bun/web-kit';
 const app = new App({ name: 'SimpleServer' });
 
 app.register(new WebDriver({
-    port: 3000,
+    port: Number(process.env.PORT) || 3000,
     routes: [
         {
             method: 'GET',
@@ -14,4 +14,9 @@ app.register(new WebDriver({
     ]
 }));
 
-app.start().catch(console.error);
+// A failed start (port in use, bad config) must exit non-zero, or a
+// supervisor or container runtime sees a clean exit and does not restart it.
+app.start().catch((err) => {
+    app.logger.error({ err }, 'Failed to start');
+    process.exit(1);
+});
