@@ -191,7 +191,7 @@ describe("CsrfFeature with SessionFeature across two requests", () => {
     async function appWithSessionAndCsrf() {
         const kernel = new Kernel();
         // Register session first so sessionId is populated before CSRF runs.
-        kernel.registerFeature(new SessionFeature({ store: "memory", secret: "sess-secret" }));
+        kernel.registerFeature(new SessionFeature({ store: "memory", secret: "sess-secret-0123456789abcdef0123456789abcdef" }));
         kernel.registerFeature(new CsrfFeature({ secret: "csrf-secret" }));
         await kernel.initialize();
         const app = kernel.getApp();

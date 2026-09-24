@@ -185,6 +185,21 @@ new AuthFeature({
 - La IP del cliente (para este limitador y para `RateLimitFeature`) es la del socket. Si la app corre detras de un proxy (nginx, load balancer), configura `new Kernel({ trustProxy: 1 })` con la cantidad de proxies para usar `X-Forwarded-For`; sin eso el header se ignora, porque cualquier cliente puede falsificarlo.
 - Usa `requireAuth(kernel)` como middleware para proteger rutas que requieren sesion.
 
+## Sesiones
+
+```typescript
+import { SessionFeature } from '@iskra-bun/web-kit';
+
+new SessionFeature({
+    store: 'cache',                        // 'memory' | 'cache' | 'db'
+    secret: process.env.SESSION_SECRET!,   // requerido, >= 32 caracteres
+});
+```
+
+- Para cerrar sesion, vacia la sesion (`delete c.get('session').userId`) o llama a `await c.get('destroySession')()`: en ambos casos se borra del store y se elimina la cookie.
+- Despues del login llama a `await c.get('regenerateSession')()` para emitir un ID nuevo e invalidar el anterior (evita session fixation).
+- La cookie es `HttpOnly`, `SameSite=Lax` y `Secure` en produccion (`new Kernel({ environment: 'production' })` o `NODE_ENV=production`); `cookieOptions.secure` lo sobreescribe.
+
 ## Respuestas Estandarizadas
 
 ```typescript

@@ -47,7 +47,7 @@ const mysqlUp = await mysqlUsable(MYSQL_URL);
 async function build(dbConfig: any) {
     const kernel = new Kernel();
     kernel.registerFeature(new DbFeature(dbConfig));
-    kernel.registerFeature(new SessionFeature({ store: "db", secret: "db-session-secret" }));
+    kernel.registerFeature(new SessionFeature({ store: "db", secret: "db-session-secret-0123456789abcdef0123456789abcdef" }));
     await kernel.initialize();
 
     const app = kernel.getApp();
@@ -56,6 +56,11 @@ async function build(dbConfig: any) {
         return c.json({ ok: true });
     });
     app.get("/get", (c) => c.json({ session: c.get("session") }));
+    // Logout by clearing the data instead of calling destroySession().
+    app.get("/clear", (c) => {
+        delete c.get("session").value;
+        return c.json({ ok: true });
+    });
     // Deliberately does NOT clear the in-memory session — destroySession() alone
     // must prevent the post-response save block from re-persisting it.
     app.get("/logout", async (c) => {
@@ -88,6 +93,19 @@ function runSuite(enabled: boolean, label: string, dbConfig: any) {
 
             const cookie = cookieOf(await app.request("/set?v=bye"));
             await app.request("/logout", { headers: { Cookie: cookie } });
+
+            const after = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
+            expect(after.session).toEqual({});
+
+            await kernel.shutdown();
+        });
+
+        it("forgets a session the handler emptied", async () => {
+            const kernel = await build(dbConfig);
+            const app = kernel.getApp();
+
+            const cookie = cookieOf(await app.request("/set?v=gone"));
+            await app.request("/clear", { headers: { Cookie: cookie } });
 
             const after = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
             expect(after.session).toEqual({});

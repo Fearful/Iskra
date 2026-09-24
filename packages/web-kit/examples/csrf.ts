@@ -49,7 +49,7 @@ const sessionKernel = new Kernel({ port: 8005 });
 sessionKernel.registerFeature(
     new SessionFeature({
         store: "memory",
-        secret: "session-secret",
+        secret: "session-secret-0123456789abcdef0123456789abcdef",
     }),
 );
 
