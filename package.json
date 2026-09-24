@@ -17,6 +17,7 @@
         "typecheck": "tsc --noEmit",
         "contract:server": "bun run sdks/contract/server.ts",
         "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",
+        "test:sdk:java": "cd sdks/java/iskra-client && mvn -q -B test",
         "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
         "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
         "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",

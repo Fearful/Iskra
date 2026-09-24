@@ -29,10 +29,17 @@ public class IskraException extends RuntimeException {
         this.requestId = null;
     }
 
+    /**
+     * Maps an error response to a typed exception. The message comes from
+     * {@code error} ({@code ErrorHandlerFeature}, {@code errorResponse()}) or
+     * {@code message} (Better Auth, the Kernel's default handler).
+     */
     public static IskraException fromErrorResponse(int statusCode, ErrorResponse response) {
-        String message = response.getError() != null ? response.getError() : "Unknown error";
+        String message = response.getError() != null ? response.getError()
+                : response.getMessage() != null ? response.getMessage()
+                : "HTTP " + statusCode;
         String code = response.getCode();
-        Object details = response.getDetails();
+        Object details = response.getDetails() != null ? response.getDetails() : response.getContext();
         String requestId = response.getRequestId();
 
         switch (statusCode) {
@@ -44,6 +51,8 @@ public class IskraException extends RuntimeException {
                 return new ForbiddenException(message, code, details, requestId);
             case 404:
                 return new NotFoundException(message, code, details, requestId);
+            case 409:
+                return new ConflictException(message, code, details, requestId);
             case 429:
                 return new RateLimitException(message, code, details, requestId);
             default:

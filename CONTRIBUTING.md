@@ -85,6 +85,10 @@ cd sdks/python/iskra-client
 python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 pytest                                   # or `bun run test:sdk:python` from the root
 
+# Java (JDK 11+, Maven)
+cd sdks/java/iskra-client
+mvn test                                 # or `bun run test:sdk:java` from the root
+
 # Run the server by hand (prints ISKRA_CONTRACT_READY {"port":...,"baseUrl":...})
 bun run contract:server
 ```

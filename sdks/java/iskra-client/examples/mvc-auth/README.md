@@ -2,6 +2,11 @@
 
 Ejemplo de una aplicacion Java MVC (Spring MVC) que enruta peticiones de autenticacion a un servicio Iskra usando el SDK Java.
 
+La app usa un solo `IskraClient` (bean) para todos los usuarios. Al iniciar sesion
+guarda la cookie de sesion de Iskra (`Session.getCookie()`) en una cookie HttpOnly
+propia (`iskra_session`) y la reenvia a Iskra con `withSession()` / `getSession(cookie)`
+en cada peticion del usuario.
+
 ## Arquitectura
 
 ```
@@ -45,7 +50,13 @@ Variables de entorno:
 ```bash
 export ISKRA_BASE_URL=http://localhost:3000   # URL del servicio Iskra
 export ISKRA_API_KEY=sk-xxx                    # Opcional: API key
+export SESSION_COOKIE_SECURE=0                 # Solo en desarrollo sobre http://
 ```
+
+Todas las peticiones de auth llegan a Iskra desde la IP de esta app, asi que el
+limite por IP del `AuthFeature` (20 cada 15 min) las frenaria a todas juntas:
+configura `rateLimit: { max, windowMs }` en el servicio, o `rateLimit: false` y
+limita en esta app.
 
 ## Compilar y ejecutar
 
@@ -53,27 +64,31 @@ export ISKRA_API_KEY=sk-xxx                    # Opcional: API key
 # Compilar
 mvn clean package
 
-# Desplegar el WAR en Tomcat, Jetty, o cualquier contenedor de servlets
+# Desplegar el WAR en Tomcat, Jetty, o cualquier contenedor de servlets,
+# o levantarlo directamente con Jetty:
+mvn org.eclipse.jetty:jetty-maven-plugin:9.4.54.v20240208:run -Djetty.http.port=8080
 ```
+
+El SDK debe estar en el repositorio Maven local (`mvn install` en `sdks/java/iskra-client`).
 
 ## Uso
 
 ```bash
-# Registrar usuario
-curl -X POST http://localhost:8080/auth/sign-up \
+# Registrar usuario (deja la sesion iniciada en cookies.txt)
+curl -X POST http://localhost:8080/auth/sign-up -c cookies.txt \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "secret123", "name": "Juan"}'
 
 # Iniciar sesion
-curl -X POST http://localhost:8080/auth/sign-in \
+curl -X POST http://localhost:8080/auth/sign-in -c cookies.txt \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "secret123"}'
 
 # Obtener sesion
-curl http://localhost:8080/auth/session
+curl http://localhost:8080/auth/session -b cookies.txt
 
 # Cerrar sesion
-curl -X POST http://localhost:8080/auth/sign-out
+curl -X POST http://localhost:8080/auth/sign-out -b cookies.txt -c cookies.txt
 
 # Verificar salud
 curl http://localhost:8080/auth/health

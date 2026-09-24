@@ -12,6 +12,8 @@ public class IskraConfig {
     private final Duration timeout;
     private final Map<String, String> headers;
     private final String authBasePath;
+    private final String origin;
+    private final String storageRoutePrefix;
 
     private IskraConfig(Builder builder) {
         this.baseUrl = builder.baseUrl;
@@ -19,6 +21,8 @@ public class IskraConfig {
         this.timeout = builder.timeout;
         this.headers = Collections.unmodifiableMap(builder.headers);
         this.authBasePath = builder.authBasePath;
+        this.origin = builder.origin;
+        this.storageRoutePrefix = builder.storageRoutePrefix;
     }
 
     public String getBaseUrl() {
@@ -41,6 +45,15 @@ public class IskraConfig {
         return authBasePath;
     }
 
+    /** Origin sent with session requests; null means the origin of the base URL. */
+    public String getOrigin() {
+        return origin;
+    }
+
+    public String getStorageRoutePrefix() {
+        return storageRoutePrefix;
+    }
+
     public static Builder builder(String baseUrl) {
         return new Builder(baseUrl);
     }
@@ -51,6 +64,8 @@ public class IskraConfig {
         private Duration timeout = Duration.ofSeconds(30);
         private final Map<String, String> headers = new HashMap<>();
         private String authBasePath = "/api/sso";
+        private String origin;
+        private String storageRoutePrefix = "/upload";
 
         private Builder(String baseUrl) {
             if (baseUrl == null || baseUrl.isEmpty()) {
@@ -76,6 +91,23 @@ public class IskraConfig {
 
         public Builder authBasePath(String authBasePath) {
             this.authBasePath = authBasePath;
+            return this;
+        }
+
+        /**
+         * Origin sent with requests that carry a user's session. Better Auth
+         * rejects cookie-authenticated POSTs without a trusted Origin; set this
+         * when the service's AuthFeature {@code baseURL} differs from the base
+         * URL used here (or add that URL to {@code trustedOrigins}).
+         */
+        public Builder origin(String origin) {
+            this.origin = origin;
+            return this;
+        }
+
+        /** The {@code routePrefix} of the service's UploadFeature (default /upload). */
+        public Builder storageRoutePrefix(String storageRoutePrefix) {
+            this.storageRoutePrefix = storageRoutePrefix;
             return this;
         }
 
