@@ -44,7 +44,7 @@ export const AppConfigSchema = z.object({
         adapter: z.enum(['bun', 'socket.io']).optional(),
     }).passthrough().optional(),
     kv: z.object({
-        driver: z.enum(['memory', 'redis', 'libsql']),
+        driver: z.enum(['memory', 'redis']),
         connection: z.any().optional(),
     }).passthrough().optional(),
     db: z.object({

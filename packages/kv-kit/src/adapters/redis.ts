@@ -26,25 +26,59 @@ function decode<T>(raw: string): T | undefined {
     }
 }
 
+/**
+ * Connection settings: a `redis://` / `rediss://` URL, ioredis options, or
+ * ioredis options with a `url` (the form used in app.config and the docs).
+ */
+export type RedisAdapterOptions = string | (RedisOptions & { url?: string });
+
+/** `EX` for whole seconds; `PX` for fractional TTLs, which Redis `EX` rejects. */
+function ttlArgs(ttl: number): ['EX', number] | ['PX', number] {
+    return Number.isInteger(ttl) ? ['EX', ttl] : ['PX', Math.max(1, Math.round(ttl * 1000))];
+}
+
 export class RedisAdapter implements KVAdapter {
     id = 'redis';
     private client: Redis | null = null;
-    private readonly options: RedisOptions | string;
+    private readonly options: RedisAdapterOptions;
 
-    constructor(options: RedisOptions | string) {
+    constructor(options: RedisAdapterOptions) {
         this.options = options;
     }
 
     connect() {
-        this.client = new Redis(this.options as RedisOptions);
+        // ioredis only parses a URL passed as its own argument: an object with
+        // a `url` key was ignored and it silently connected to localhost:6379.
+        if (typeof this.options === 'string') {
+            this.client = new Redis(this.options);
+        } else if (this.options.url) {
+            const { url, ...rest } = this.options;
+            this.client = new Redis(url, rest);
+        } else {
+            this.client = new Redis(this.options);
+        }
     }
 
-    disconnect() {
-        this.client?.disconnect();
+    async disconnect() {
+        const client = this.client;
+        this.client = null;
+        if (!client) return;
+        // QUIT waits for pending replies, so in-flight writes are not dropped.
+        if (typeof client.quit === 'function') {
+            await client.quit().catch(() => client.disconnect());
+        } else {
+            client.disconnect();
+        }
+    }
+
+    /** The live client; operations before connect() fail instead of silently doing nothing. */
+    private get redis(): Redis {
+        if (!this.client) throw new Error('RedisAdapter is not connected; call connect() first');
+        return this.client;
     }
 
     async get<T = unknown>(key: string): Promise<T | undefined> {
-        const val = await this.client?.get(key);
+        const val = await this.redis.get(key);
         if (val === null || val === undefined) return undefined;
         return decode<T>(val);
     }
@@ -52,18 +86,18 @@ export class RedisAdapter implements KVAdapter {
     async set<T = unknown>(key: string, value: T, ttl?: number): Promise<void> {
         const val = encode(value);
         if (ttl) {
-            await this.client?.set(key, val, 'EX', ttl);
+            await this.redis.set(key, val, ...(ttlArgs(ttl) as ['EX', number]));
         } else {
-            await this.client?.set(key, val);
+            await this.redis.set(key, val);
         }
     }
 
     async del(key: string) {
-        await this.client?.del(key);
+        await this.redis.del(key);
     }
 
     async has(key: string) {
-        const exists = await this.client?.exists(key);
+        const exists = await this.redis.exists(key);
         return exists === 1;
     }
 
@@ -72,7 +106,7 @@ export class RedisAdapter implements KVAdapter {
 
     async mget<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
         if (keys.length === 0) return [];
-        const raws = (await this.client?.mget(...keys)) ?? [];
+        const raws = (await this.redis.mget(...keys)) ?? [];
         return keys.map((_, i) => {
             const raw = raws[i];
             return raw === null || raw === undefined ? undefined : decode<T>(raw);
@@ -84,23 +118,25 @@ export class RedisAdapter implements KVAdapter {
         ttl?: number
     ): Promise<void> {
         if (entries.length === 0) return;
-        const pipeline = this.client?.pipeline();
-        if (!pipeline) return;
+        const pipeline = this.redis.pipeline();
 
         for (const [key, value] of entries) {
             const val = encode(value);
             if (ttl) {
-                pipeline.set(key, val, 'EX', ttl);
+                pipeline.set(key, val, ...(ttlArgs(ttl) as ['EX', number]));
             } else {
                 pipeline.set(key, val);
             }
         }
 
-        await pipeline.exec();
+        // exec() resolves even when individual commands fail; surface them.
+        const results = await pipeline.exec();
+        const failed = results?.find(([err]) => err);
+        if (failed) throw failed[0];
     }
 
     async mdel(keys: string[]): Promise<void> {
         if (keys.length === 0) return;
-        await this.client?.del(...keys);
+        await this.redis.del(...keys);
     }
 }

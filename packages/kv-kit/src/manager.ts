@@ -30,10 +30,14 @@ export class KVManager implements Driver, KVAdapter {
 
         if (config?.driver === 'redis') {
             app.logger.info('Initializing KV with Redis');
-            this.adapter = new RedisAdapter(config.connection);
-        } else {
+            this.adapter = new RedisAdapter(config.connection ?? {});
+        } else if (!config?.driver || config.driver === 'memory') {
             app.logger.info('Initializing KV with Memory');
             this.adapter = new MemoryAdapter();
+        } else {
+            // Unknown drivers (e.g. 'libsql') used to fall back to memory
+            // silently, losing every value on restart.
+            throw new Error(`Unsupported KV driver "${config.driver}" (supported: "memory", "redis")`);
         }
     }
 

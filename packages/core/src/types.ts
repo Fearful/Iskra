@@ -60,7 +60,8 @@ export interface AppConfig {
         adapter?: 'bun' | 'socket.io';
     };
     kv?: {
-        driver: 'memory' | 'redis' | 'libsql';
+        driver: 'memory' | 'redis';
+        /** Redis: a URL string, ioredis options, or ioredis options with `url`. */
         connection?: any;
     };
     db?: {

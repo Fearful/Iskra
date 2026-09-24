@@ -1,3 +1,4 @@
+import Redis from 'ioredis';
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { App } from '@iskra-bun/core';
 import { KVManager } from '../src';
@@ -114,5 +115,79 @@ describe.if(redisUp)('KVManager with the Redis driver', () => {
         await kv.set(key, { ok: true });
         expect(await kv.get<{ ok: boolean }>(key)).toEqual({ ok: true });
         expect(await kv.has(key)).toBe(true);
+    });
+});
+
+describe.if(redisUp)('Redis connection settings (requires Redis)', () => {
+    // Database 7 so the assertion can tell the URL apart from the default db 0.
+    const base = new URL(REDIS_URL);
+    const urlDb7 = `redis://${base.hostname}:${Number(base.port) || 6379}/7`;
+    const key = `kvconn:${Date.now()}`;
+
+    async function inDb(db: number): Promise<string | null> {
+        const raw = new Redis({ ...redisOptions(), db });
+        try {
+            return await raw.get(key);
+        } finally {
+            raw.disconnect();
+        }
+    }
+
+    it('honors { url } as documented for kv.connection', async () => {
+        // Regression: ioredis ignored an object's `url`, so this connected to
+        // localhost db 0 instead.
+        const app = new App({ name: 'KVUrl', logger: { level: 'error' }, kv: { driver: 'redis', connection: { url: urlDb7 } } });
+        const kv = new KVManager();
+        app.register(kv);
+        await app.start();
+        try {
+            await kv.set(key, 'in-db-7');
+            expect(await inDb(7)).toBe(JSON.stringify('in-db-7'));
+            expect(await inDb(0)).toBeNull();
+        } finally {
+            await kv.del(key);
+            await app.stop();
+        }
+    });
+
+    it('accepts a plain URL string', async () => {
+        const adapter = new RedisAdapter(urlDb7);
+        adapter.connect();
+        try {
+            await adapter.set(key, 1);
+            expect(await inDb(7)).toBe('1');
+        } finally {
+            await adapter.del(key);
+            await adapter.disconnect();
+        }
+    });
+
+    it('supports fractional TTLs (Redis EX only takes whole seconds)', async () => {
+        const adapter = new RedisAdapter(urlDb7);
+        adapter.connect();
+        try {
+            await adapter.set(key, 'short', 0.2);
+            await adapter.mset([[`${key}:b`, 'short']], 0.2);
+            expect(await adapter.has(key)).toBe(true);
+            await Bun.sleep(350);
+            expect(await adapter.has(key)).toBe(false);
+            expect(await adapter.has(`${key}:b`)).toBe(false);
+        } finally {
+            await adapter.disconnect();
+        }
+    });
+});
+
+describe('RedisAdapter / KVManager guards', () => {
+    it('fails loudly when used before connect()', async () => {
+        // Regression: `this.client?.set(...)` silently did nothing.
+        const adapter = new RedisAdapter({});
+        await expect(adapter.set('k', 'v')).rejects.toThrow(/not connected/);
+        await expect(adapter.get('k')).rejects.toThrow(/not connected/);
+    });
+
+    it('rejects an unsupported driver instead of silently using memory', () => {
+        const app = new App({ name: 'KVBad', logger: { level: 'error' }, kv: { driver: 'libsql' } as any });
+        expect(() => new KVManager().init(app)).toThrow(/Unsupported KV driver "libsql"/);
     });
 });
