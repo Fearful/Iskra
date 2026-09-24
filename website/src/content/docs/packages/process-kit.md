@@ -43,7 +43,9 @@ await app.start();
 
 ### `daemon`
 
-The process runs continuously in the background. If `restartOnCrash: true`, it automatically restarts if it dies.
+The process runs continuously in the background. With `restartOnCrash: true` it is restarted when it fails (non-zero exit code or killed by a signal); a clean exit with code 0 is not restarted.
+
+Each process is started in its own process group, so `kill()` and `stop()` signal the whole tree: the children of a wrapper (`sh -c`, `npm run`, a script) are terminated too. A `kill()` while the process waits out its restart backoff cancels that restart.
 
 ### `oneshot`
 
@@ -69,8 +71,10 @@ for line in sys.stdin:
 The ProcessManager emits these events on the App bus:
 
 - `process:message` — parsed JSON message from the process stdout
-- `process:log` — non-JSON log lines from the process
-- `process:error` — when the process fails
+- `process:log` — non-JSON log lines from the process (including a last line without a trailing newline)
+- `process:error` — each line the process writes to stderr (`stdio` mode)
+- `process:exit` — whenever a process exits: `{ name, exitCode, signal }` (`exitCode` is `null` when a signal killed it)
+- `process:max-restarts` — when `maxRestarts` is exceeded
 
 ## Runtime Process Management
 

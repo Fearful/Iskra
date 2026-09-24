@@ -43,7 +43,9 @@ await app.start();
 
 ### `daemon`
 
-El proceso corre en background de forma continua. Si `restartOnCrash: true`, se reinicia automaticamente si muere.
+El proceso corre en background de forma continua. Si `restartOnCrash: true`, se reinicia automaticamente cuando falla (codigo de salida distinto de 0 o muerto por una senal); una salida limpia con codigo 0 no se reinicia.
+
+Cada proceso se lanza en su propio grupo de procesos, asi que `kill()` y `stop()` envian las senales a todo el arbol: los hijos de un wrapper (`sh -c`, `npm run`, un script) tambien terminan. Un `kill()` mientras el proceso espera su backoff de reinicio cancela ese reinicio.
 
 ### `oneshot`
 
@@ -69,8 +71,10 @@ for line in sys.stdin:
 El ProcessManager emite estos eventos en el bus de la App:
 
 - `process:message` — mensaje JSON parseado del stdout del proceso
-- `process:log` — lineas de log no-JSON del proceso
-- `process:error` — cuando el proceso falla
+- `process:log` — lineas de log no-JSON del proceso (tambien la ultima, aunque no termine en salto de linea)
+- `process:error` — cada linea que el proceso escribe en stderr (modo `stdio`)
+- `process:exit` — cuando termina cualquier proceso: `{ name, exitCode, signal }` (`exitCode` es `null` si lo mato una senal)
+- `process:max-restarts` — cuando se supera `maxRestarts`
 
 ## Gestion de Procesos en Tiempo de Ejecucion
 

@@ -12,10 +12,15 @@ interface RunningProcess {
     currentBackoffMs: number;
 }
 
+/** Longest stdout/stderr line kept in memory before it is emitted truncated. */
+const MAX_LINE_LENGTH = 1024 * 1024;
+
 export class ProcessManager implements Driver {
     name = 'ProcessManager';
     private app: App | null = null;
     private processes: Map<string, RunningProcess> = new Map();
+    /** Restarts waiting out their backoff delay, so kill()/stop() can cancel them. */
+    private restartTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
     private stopping = false;
 
     init(app: App) {
@@ -24,6 +29,8 @@ export class ProcessManager implements Driver {
 
     async start() {
         if (!this.app) return;
+        // A manager that was stopped can be started again.
+        this.stopping = false;
         const processConfigs = this.app.config.processes;
 
         if (!processConfigs) {
@@ -45,7 +52,7 @@ export class ProcessManager implements Driver {
      * @throws {Error} if a process with the given name is already registered.
      */
     async spawn(name: string, config: ProcessConfig): Promise<void> {
-        if (this.processes.has(name)) {
+        if (this.processes.has(name) || this.restartTimers.has(name)) {
             throw new Error(`Process '${name}' is already registered. Kill it first or use a different name.`);
         }
         this.spawnProcess(name, config);
@@ -62,6 +69,16 @@ export class ProcessManager implements Driver {
      * @throws {Error} if no process with the given name exists.
      */
     async kill(name: string, gracefulTimeoutMs = 5000): Promise<void> {
+        // A crashed process waiting out its restart backoff has no running
+        // instance: cancel the pending restart instead of reporting "not found"
+        // and letting the timer respawn it afterwards.
+        const pendingRestart = this.restartTimers.get(name);
+        if (pendingRestart) {
+            clearTimeout(pendingRestart);
+            this.restartTimers.delete(name);
+            if (!this.processes.has(name)) return;
+        }
+
         const procInfo = this.processes.get(name);
         if (!procInfo) {
             throw new Error(`Process '${name}' not found. It may have already exited or never been spawned.`);
@@ -77,19 +94,47 @@ export class ProcessManager implements Driver {
     }
 
     /**
+     * Sends `signal` to the child's whole process group (it is spawned as a
+     * group leader), so grandchildren of wrappers such as `sh -c`, `npm run` or
+     * a shell script are terminated too instead of being orphaned. Falls back
+     * to signalling the direct child when groups are unavailable.
+     */
+    private sendSignal(proc: Subprocess, signal?: NodeJS.Signals) {
+        const pid = (proc as { pid?: number }).pid;
+        if (pid && process.platform !== 'win32') {
+            try {
+                process.kill(-pid, signal ?? 'SIGKILL');
+                return;
+            } catch {
+                // Bun 1.1 rejects negative pids; use the system kill instead.
+                const res = Bun.spawnSync(['kill', `-${(signal ?? 'SIGKILL').replace(/^SIG/, '')}`, '--', `-${pid}`], {
+                    stdout: 'ignore',
+                    stderr: 'ignore',
+                });
+                if (res.exitCode === 0) return;
+            }
+        }
+        if (signal) proc.kill(signal);
+        else proc.kill();
+    }
+
+    /**
      * Send SIGTERM, escalate to SIGKILL after `gracefulTimeoutMs`, and wait up to
      * `gracefulTimeoutMs * 2` for the process to exit. After the race settles, if
      * the process is still alive it is surfaced as an orphan via `app.logger.error`
      * so a hung shutdown is observable instead of silently succeeding.
      */
     private async terminate(name: string, proc: Subprocess, gracefulTimeoutMs: number): Promise<void> {
-        proc.kill('SIGTERM');
+        let exited = false;
+        proc.exited.then(() => { exited = true; }, () => { exited = true; });
+
+        this.sendSignal(proc, 'SIGTERM');
 
         const deadline = gracefulTimeoutMs * 2;
         const forceKillTimer = setTimeout(() => {
-            if (!proc.killed) {
+            if (!exited) {
                 this.app?.logger.warn(`Process ${name} did not exit within ${gracefulTimeoutMs}ms; sending SIGKILL`);
-                proc.kill();
+                this.sendSignal(proc);
             }
         }, gracefulTimeoutMs);
 
@@ -102,7 +147,7 @@ export class ProcessManager implements Driver {
             clearTimeout(forceKillTimer);
         }
 
-        if (!proc.killed) {
+        if (!exited) {
             this.app?.logger.error(
                 { name },
                 `Process ${name} survived SIGTERM and SIGKILL and is now an orphan; manual cleanup may be required`,
@@ -125,12 +170,20 @@ export class ProcessManager implements Driver {
                 const lines = buffer.split('\n');
                 // Keep the last chunk if it's not a complete line (doesn't end with \n)
                 buffer = lines.pop() || '';
+                // A child that never prints a newline must not grow this forever.
+                if (buffer.length > MAX_LINE_LENGTH) {
+                    lines.push(buffer);
+                    buffer = '';
+                }
 
                 for (const line of lines) {
                     if (!line.trim()) continue;
                     this.processLine(name, line);
                 }
             }
+            // The last line may lack a trailing newline; it used to be dropped.
+            buffer += decoder.decode();
+            if (buffer.trim()) this.processLine(name, buffer);
         } catch (err) {
             // A thrown error here is a broken pipe mid-read, distinct from the
             // normal end-of-stream (`done: true`) that exits the loop above.
@@ -186,24 +239,35 @@ export class ProcessManager implements Driver {
         return next;
     }
 
-    private handleExit(name: string, exitCode: number) {
+    /**
+     * @param exitCode null when the process was killed by a signal.
+     * @param proc the instance that exited: a late exit from an older instance
+     *   with the same name (after kill()+spawn(), or a restart) must not remove
+     *   or restart the current one.
+     */
+    private handleExit(name: string, exitCode: number | null, signal: string | null = null, proc?: Subprocess) {
         if (this.stopping) return;
 
         const procInfo = this.processes.get(name);
         if (!procInfo) return;
+        if (proc && procInfo.process !== proc) return;
 
-        this.app?.logger.warn(`Process ${name} exited with code ${exitCode}`);
+        const how = signal ? `signal ${signal}` : `code ${exitCode}`;
+        const crashed = signal !== null || exitCode !== 0;
+        if (crashed) this.app?.logger.warn(`Process ${name} exited with ${how}`);
+        else this.app?.logger.info(`Process ${name} exited with ${how}`);
 
         // Remove from map so we don't try to kill it again on stop()
         this.processes.delete(name);
+        this.app?.emit('process:exit', { name, exitCode, signal });
 
         // oneshot processes run to completion once and are never restarted
         if (procInfo.config.mode === 'oneshot') {
-            this.app?.emit('process:exit', { name, exitCode });
             return;
         }
 
-        if (procInfo.config.restartOnCrash) {
+        // A clean exit (code 0) is intentional, not a crash.
+        if (procInfo.config.restartOnCrash && crashed) {
             const maxRestarts = procInfo.config.maxRestarts ?? 10;
             const cooldown = procInfo.config.restartCooldown ?? 60000;
             const uptime = Date.now() - procInfo.startedAt;
@@ -221,9 +285,11 @@ export class ProcessManager implements Driver {
 
             this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts}) in ${delayMs}ms`);
 
-            setTimeout(() => {
+            const timer = setTimeout(() => {
+                this.restartTimers.delete(name);
                 this.spawnProcess(name, procInfo.config, restarts, delayMs);
             }, delayMs);
+            this.restartTimers.set(name, timer);
         }
     }
 
@@ -243,8 +309,10 @@ export class ProcessManager implements Driver {
                     stdout: config.mode === 'stdio' ? 'pipe' : 'inherit',
                     stderr: config.mode === 'stdio' ? 'pipe' : 'inherit',
                     stdin: config.mode === 'stdio' ? 'pipe' : 'ignore',
-                    onExit: (_proc, exitCode, _signalCode, _error) => {
-                        this.handleExit(name, exitCode || 0);
+                    // Own process group, so stop()/kill() can signal the whole tree.
+                    detached: process.platform !== 'win32',
+                    onExit: (exitedProc, exitCode) => {
+                        this.handleExit(name, exitCode, exitedProc.signalCode ?? null, exitedProc);
                     }
                 }
             );
@@ -268,19 +336,29 @@ export class ProcessManager implements Driver {
         }
     }
 
+    /** Emits `process:error` once per stderr line (chunks used to be emitted as they arrived). */
     private async readStdErr(name: string, stream: ReadableStream) {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
+        const emit = (text: string) => {
+            if (text.trim()) this.app?.emit('process:error', { name, text });
+        };
 
         try {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const text = decoder.decode(value, { stream: true });
-                if (text.trim()) {
-                    this.app?.emit('process:error', { name, text });
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                if (buffer.length > MAX_LINE_LENGTH) {
+                    lines.push(buffer);
+                    buffer = '';
                 }
+                for (const line of lines) emit(line);
             }
+            emit(buffer + decoder.decode());
         } catch (err) {
             // A thrown error here is a broken pipe mid-read, distinct from the
             // normal end-of-stream (`done: true`) that exits the loop above.
@@ -320,6 +398,9 @@ export class ProcessManager implements Driver {
     async stop(gracefulTimeoutMs = 5000) {
         this.stopping = true;
         this.app?.logger.info('Stopping all processes...');
+
+        for (const timer of this.restartTimers.values()) clearTimeout(timer);
+        this.restartTimers.clear();
 
         const entries = [...this.processes.entries()];
         this.processes.clear();
