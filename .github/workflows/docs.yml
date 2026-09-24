@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   deploy:
+    # A manual run from another branch would deploy it over the public docs.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -63,7 +65,8 @@ jobs:
           fail: true
 
       - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        # Pinned: @master ran whatever that branch held, with the deploy token.
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
       - name: Deploy to Fly.io
         run: flyctl deploy ./website --remote-only

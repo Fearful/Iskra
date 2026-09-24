@@ -72,3 +72,12 @@ async def test_async_storage(user: IskraClient):
     assert await user.storage.async_download("a.txt", subfolder="async") == b"async bytes"
     await user.storage.async_delete("a.txt", subfolder="async")
     assert await user.storage.async_list(subfolder="async") == []
+
+
+@pytest.mark.parametrize("name,subfolder", [("..", None), ("x", "../contract"), ("x", "a/./b"), (".", None)])
+def test_dot_segments_are_rejected(user: IskraClient, name, subfolder):
+    # httpx resolved them: "../contract/me" left /upload with the API key and cookie.
+    with pytest.raises(ValueError):
+        user.storage.download(name, subfolder=subfolder)
+    with pytest.raises(ValueError):
+        user.storage.delete(name, subfolder=subfolder)

@@ -39,7 +39,7 @@ Cliente HTTP
 
 ## Requisitos
 
-- Java 11+
+- Java 17+ (Spring 6)
 - Maven
 - Un servicio Iskra corriendo con `AuthFeature` habilitado
 
@@ -64,9 +64,9 @@ limita en esta app.
 # Compilar
 mvn clean package
 
-# Desplegar el WAR en Tomcat, Jetty, o cualquier contenedor de servlets,
+# Desplegar el WAR en un contenedor Jakarta EE 10 (Tomcat 10.1+, Jetty 12),
 # o levantarlo directamente con Jetty:
-mvn org.eclipse.jetty:jetty-maven-plugin:9.4.54.v20240208:run -Djetty.http.port=8080
+mvn org.eclipse.jetty.ee10:jetty-ee10-maven-plugin:12.0.16:run -Djetty.http.port=8080
 ```
 
 El SDK debe estar en el repositorio Maven local (`mvn install` en `sdks/java/iskra-client`).

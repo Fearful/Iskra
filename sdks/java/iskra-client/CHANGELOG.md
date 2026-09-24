@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Storage:** a file name or subfolder segment `.` or `..` is rejected: URI normalization resolved it, so `download("x", "../contract")` left the upload routes and sent the API key and session cookie to another route.
+- **Requests:** a path must start with `/`; concatenated to the base URL, `"@other-host/x"` sent the request, API key included, to another host.
+- **Timeouts:** the configured timeout covers the whole response, body included; `HttpRequest.timeout()` stopped at the headers, so a stalled body blocked the caller forever.
+- **Config:** `IskraConfig` copies the builder's headers (later changes to the builder changed the built config).
+- Jackson 2.18.9 (2.17.0 has known advisories). The Spring MVC example moves to Spring 6.2 / Jakarta Servlet 6 / Java 17 (Spring 5.3 is end-of-life and vulnerable) and was run on Jetty 12 against the contract server.
+
 ## 0.2.0
 
 Tested against a real Iskra service (`sdks/contract/server.ts`) with JUnit instead of assumed response shapes.

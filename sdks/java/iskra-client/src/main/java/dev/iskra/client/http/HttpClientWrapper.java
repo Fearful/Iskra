@@ -21,6 +21,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Sends requests to an Iskra service and maps its responses.
@@ -117,6 +121,12 @@ public class HttpClientWrapper {
      */
     public HttpResponse<byte[]> send(String method, String path, HttpRequest.BodyPublisher body,
                                      String contentType, Set<Integer> okStatuses) {
+        // Concatenated to the base URL, a path such as "@other-host/x" made
+        // "http://iskra@other-host/x": the request, API key included, went to
+        // another host.
+        if (path == null || !path.startsWith("/")) {
+            throw new IllegalArgumentException("Request path must start with '/': " + path);
+        }
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(config.getBaseUrl().replaceAll("/+$", "") + path))
                 .timeout(config.getTimeout())
@@ -130,14 +140,26 @@ public class HttpClientWrapper {
             builder.header("Content-Type", contentType);
         }
 
+        // The timeout covers the whole exchange: HttpRequest.timeout() stops
+        // at the response headers, so a server that stalled mid-body blocked
+        // the caller forever.
         HttpResponse<byte[]> response;
+        CompletableFuture<HttpResponse<byte[]>> future =
+                httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         try {
-            response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            response = future.get(config.getTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
+            future.cancel(true);
             Thread.currentThread().interrupt();
             throw new IskraException("HTTP request interrupted", e);
-        } catch (IOException e) {
-            throw new IskraException("HTTP request failed: " + e.getMessage(), e);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IskraException("HTTP request timed out after " + config.getTimeout().toMillis() + " ms", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            // A refused connection has no message, only its type.
+            String reason = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+            throw new IskraException("HTTP request failed: " + reason, cause);
         }
         if (response.statusCode() >= 400 && !okStatuses.contains(response.statusCode())) {
             throw toException(response);

@@ -19,7 +19,8 @@ public class IskraConfig {
         this.baseUrl = builder.baseUrl;
         this.apiKey = builder.apiKey;
         this.timeout = builder.timeout;
-        this.headers = Collections.unmodifiableMap(builder.headers);
+        // A copy: the builder's own map changed the config after build().
+        this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
         this.authBasePath = builder.authBasePath;
         this.origin = builder.origin;
         this.storageRoutePrefix = builder.storageRoutePrefix;

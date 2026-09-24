@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Storage:** a file name or subfolder segment `.` or `..` raises `ValueError`: httpx resolved it, so `download("x", subfolder="../contract")` left the upload routes and sent the API key and session cookie to another route.
+- **Errors:** connection failures and timeouts raise `IskraException` (status 0) instead of an `httpx` error that `except IskraException` handlers (such as the FastAPI example's) did not catch.
+- **Sessions:** `get_session(session)` returns the session with its `cookie` (it was None), so it can be passed to `with_session()`.
+
 ## 0.2.0
 
 Tested against a real Iskra service (`sdks/contract/server.ts`) instead of assumed response shapes.

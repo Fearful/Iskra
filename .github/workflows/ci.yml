@@ -132,4 +132,11 @@ jobs:
           osv-scanner --version
 
       - name: Scan dependencies for known CVEs (osv-scanner)
-        run: osv-scanner scan --config=osv-scanner.toml --lockfile=bun.lock --lockfile=website/bun.lock
+        # The SDKs' Maven and pip manifests too: their dependencies (Jackson,
+        # Spring, httpx) were never scanned.
+        run: >-
+          osv-scanner scan --config=osv-scanner.toml
+          --lockfile=bun.lock --lockfile=website/bun.lock
+          --lockfile=pom.xml:sdks/java/iskra-client/pom.xml
+          --lockfile=pom.xml:sdks/java/iskra-client/examples/mvc-auth/pom.xml
+          --lockfile=requirements.txt:sdks/python/iskra-client/examples/fastapi-auth/requirements.txt

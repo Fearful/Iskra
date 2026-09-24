@@ -127,11 +127,22 @@ public class StorageClient {
         if (subfolder != null) {
             for (String segment : subfolder.split("/")) {
                 if (!segment.isEmpty()) {
-                    path.append('/').append(encode(segment));
+                    path.append('/').append(encode(checkSegment(segment)));
                 }
             }
         }
-        return path.append('/').append(encode(name)).toString();
+        return path.append('/').append(encode(checkSegment(name))).toString();
+    }
+
+    /**
+     * "." and ".." are resolved by URI normalization: "../api/admin" left the
+     * upload routes and sent the API key and session cookie to another route.
+     */
+    private static String checkSegment(String segment) {
+        if (segment == null || segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+            throw new IllegalArgumentException("Invalid file name or subfolder segment: \"" + segment + "\"");
+        }
+        return segment;
     }
 
     private static String query(String subfolder) {

@@ -108,9 +108,12 @@ class HttpClientWrapper:
     ) -> httpx.Response:
         """Sends a request and returns the raw response, raising the matching
         IskraException for a 4xx/5xx status not listed in `ok_statuses`."""
-        resp = self._transport.sync.request(
-            method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
-        )
+        try:
+            resp = self._transport.sync.request(
+                method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+            )
+        except httpx.HTTPError as e:
+            raise _transport_error(e) from e
         return self._check(resp, ok_statuses)
 
     def get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
@@ -140,9 +143,12 @@ class HttpClientWrapper:
         files: Any = None,
         ok_statuses: Collection[int] = (),
     ) -> httpx.Response:
-        resp = await self._transport.async_client.request(
-            method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
-        )
+        try:
+            resp = await self._transport.async_client.request(
+                method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+            )
+        except httpx.HTTPError as e:
+            raise _transport_error(e) from e
         return self._check(resp, ok_statuses)
 
     async def async_get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
@@ -194,6 +200,13 @@ def parse_body(resp: httpx.Response) -> Any:
         except ValueError:
             pass
     return resp.text
+
+
+def _transport_error(error: httpx.HTTPError) -> IskraException:
+    """A connection failure or timeout as an IskraException (status 0), so
+    callers that handle IskraException do not crash with an httpx error."""
+    kind = "timed out" if isinstance(error, httpx.TimeoutException) else "failed"
+    return IskraException(f"HTTP request {kind}: {error}", status_code=0)
 
 
 def _clean(params: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:

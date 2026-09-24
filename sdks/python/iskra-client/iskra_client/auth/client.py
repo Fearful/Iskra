@@ -66,8 +66,9 @@ class AuthClient:
     def get_session(self, session: Optional[SessionLike] = None) -> IskraResponse[Session]:
         """The session behind `session` (or the one this client is bound to);
         `data` is None when there is none or it expired / was signed out."""
-        resp = self._as(session).request("GET", f"{self._base_path}/get-session")
-        return self._session_response(resp, capture_cookie=False)
+        http = self._as(session)
+        resp = http.request("GET", f"{self._base_path}/get-session")
+        return self._session_response(resp, capture_cookie=False, cookie=http.cookie)
 
     def sign_out(self, session: Optional[SessionLike] = None) -> IskraResponse:
         resp = self._as(session).request("POST", f"{self._base_path}/sign-out")
@@ -87,8 +88,9 @@ class AuthClient:
         return self._session_response(resp)
 
     async def async_get_session(self, session: Optional[SessionLike] = None) -> IskraResponse[Session]:
-        resp = await self._as(session).async_request("GET", f"{self._base_path}/get-session")
-        return self._session_response(resp, capture_cookie=False)
+        http = self._as(session)
+        resp = await http.async_request("GET", f"{self._base_path}/get-session")
+        return self._session_response(resp, capture_cookie=False, cookie=http.cookie)
 
     async def async_sign_out(self, session: Optional[SessionLike] = None) -> IskraResponse:
         resp = await self._as(session).async_request("POST", f"{self._base_path}/sign-out")
@@ -96,11 +98,18 @@ class AuthClient:
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
-    def _session_response(self, resp: httpx.Response, capture_cookie: bool = True) -> IskraResponse[Session]:
+    def _session_response(
+        self, resp: httpx.Response, capture_cookie: bool = True, cookie: Optional[str] = None
+    ) -> IskraResponse[Session]:
         body = parse_body(resp)
         if not isinstance(body, dict):
             return IskraResponse(success=True, data=None, status_code=resp.status_code)
-        cookie = _session_cookie_from(resp) if capture_cookie else self._http.cookie
+        # get_session(session) returned a Session without its cookie: it read
+        # the unbound client's (None) instead of the session's.
+        if capture_cookie:
+            cookie = _session_cookie_from(resp)
+        elif cookie is None:
+            cookie = self._http.cookie
         return IskraResponse(
             success=True,
             data=Session.from_dict(body, cookie=cookie),

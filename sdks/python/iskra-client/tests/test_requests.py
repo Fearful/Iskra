@@ -80,3 +80,19 @@ def test_async_calls_work_across_event_loops(iskra: IskraClient):
     # e.g. Django's async_to_sync runs each call in a fresh event loop.
     for _ in range(2):
         assert asyncio.run(iskra.async_get("/contract/envelope")).success
+
+
+def test_connection_errors_are_iskra_exceptions():
+    import socket
+
+    from iskra_client import IskraException
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    client = IskraClient(f"http://127.0.0.1:{port}")
+    # An httpx.ConnectError escaped, so handlers for IskraException (such as
+    # the FastAPI example's) answered 500.
+    with pytest.raises(IskraException) as info:
+        client.get("/anything")
+    assert info.value.status_code == 0

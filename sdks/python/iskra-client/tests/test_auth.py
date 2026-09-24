@@ -75,3 +75,14 @@ async def test_async_auth(iskra: IskraClient, credentials):
     assert (await iskra.auth.async_get_session(session)).data.user.email == email
     assert (await iskra.auth.async_sign_out(session)).success
     assert (await iskra.auth.async_get_session(session)).data is None
+
+
+def test_get_session_keeps_the_sessions_cookie(iskra: IskraClient, credentials):
+    email, password = credentials
+    iskra.auth.sign_up(email, password)
+    session = iskra.auth.sign_in(email, password).data
+    current = iskra.auth.get_session(session).data
+    # It read the unbound client's cookie (None), so the returned Session
+    # could not be used with with_session().
+    assert current.cookie == session.cookie
+    assert iskra.with_session(current).get("/contract/me").data["email"] == email

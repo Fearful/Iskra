@@ -15,7 +15,7 @@
     <properties>
         <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jackson.version>2.17.0</jackson.version>
+        <jackson.version>2.18.9</jackson.version>
         <junit.version>5.11.4</junit.version>
         <!-- Where the SDK contract server lives (see src/test/.../ContractServer.java). -->
         <iskra.repoRoot>${project.basedir}/../../..</iskra.repoRoot>

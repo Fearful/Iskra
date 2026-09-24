@@ -89,6 +89,11 @@ class StorageClient:
 
     def _file_path(self, name: str, subfolder: Optional[str]) -> str:
         segments = [s for s in (subfolder or "").split("/") if s] + [name]
+        for segment in segments:
+            # httpx resolves "." and ".." like a browser: "../api/admin" left
+            # the upload routes and sent the API key and cookie elsewhere.
+            if segment in (".", "..") or not segment:
+                raise ValueError(f"invalid file name or subfolder segment: {segment!r}")
         return self._prefix + "/" + "/".join(quote(s, safe="") for s in segments)
 
 
