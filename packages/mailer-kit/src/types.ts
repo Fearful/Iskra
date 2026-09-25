@@ -1,5 +1,5 @@
 export interface EmailConfig {
-    provider: "smtp" | "sendgrid" | "mock" | "mailgun" | "ses";
+    provider: 'smtp' | 'sendgrid' | 'mock' | 'mailgun' | 'ses';
     smtp?: {
         host: string;
         port: number;
@@ -35,5 +35,9 @@ export interface TemplateData {
 
 export interface EmailAdapter {
     send(message: EmailMessage): Promise<{ messageId: string; success: boolean }>;
-    sendTemplate(templateName: string, to: string | string[], data: TemplateData): Promise<{ messageId: string; success: boolean }>;
+    sendTemplate(
+        templateName: string,
+        to: string | string[],
+        data: TemplateData,
+    ): Promise<{ messageId: string; success: boolean }>;
 }

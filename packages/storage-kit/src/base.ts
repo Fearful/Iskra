@@ -1,5 +1,5 @@
 export interface StorageConfig {
-    adapter: "local" | "minio" | "s3";
+    adapter: 'local' | 'minio' | 's3';
     basePath?: string;
     connection?: {
         endpoint?: string;
@@ -61,7 +61,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
     protected ensureConnected(): void {
         if (!this.connected) {
-            throw new Error("Storage not connected. Call connect() first.");
+            throw new Error('Storage not connected. Call connect() first.');
         }
     }
 
@@ -86,32 +86,30 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     }
 
     protected generateFileName(originalName: string): string {
-        const ext = originalName.split(".").pop();
+        const ext = originalName.split('.').pop();
         const timestamp = Date.now();
-        const random = crypto.randomUUID().replace(/-/g, "");
+        const random = crypto.randomUUID().replace(/-/g, '');
         return `${timestamp}-${random}.${ext}`;
     }
 
     protected sanitizePath(path: string): string {
-        const normalized = path.replace(/\\/g, "/");
-        const segments = normalized
-            .split("/")
-            .filter((segment) => segment !== "" && !/^\.+$/.test(segment));
-        return segments.join("/");
+        const normalized = path.replace(/\\/g, '/');
+        const segments = normalized.split('/').filter((segment) => segment !== '' && !/^\.+$/.test(segment));
+        return segments.join('/');
     }
 
     protected getMimeType(filename: string): string {
-        const ext = filename.split(".").pop()?.toLowerCase();
+        const ext = filename.split('.').pop()?.toLowerCase();
         const mimeTypes: Record<string, string> = {
-            jpg: "image/jpeg",
-            jpeg: "image/jpeg",
-            png: "image/png",
-            gif: "image/gif",
-            pdf: "application/pdf",
-            txt: "text/plain",
-            json: "application/json",
-            zip: "application/zip",
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            gif: 'image/gif',
+            pdf: 'application/pdf',
+            txt: 'text/plain',
+            json: 'application/json',
+            zip: 'application/zip',
         };
-        return mimeTypes[ext || ""] || "application/octet-stream";
+        return mimeTypes[ext || ''] || 'application/octet-stream';
     }
 }

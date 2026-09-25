@@ -35,7 +35,10 @@ export async function handleDisconnect(kv: KVManager, ws: ServerWebSocket<Socket
     const session = sessions.get(ws);
     if (session?.room) {
         const members = await removeMember(kv, session.room, session.username);
-        ws.publish(roomTopic(session.room), envelope('presence', { room: session.room, members, left: session.username }));
+        ws.publish(
+            roomTopic(session.room),
+            envelope('presence', { room: session.room, members, left: session.username }),
+        );
     }
     sessions.delete(ws);
 }
@@ -80,7 +83,10 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
         if (session.room && session.room !== room) {
             ctx.socket.unsubscribe(roomTopic(session.room));
             const prev = await removeMember(kv, session.room, session.username);
-            ctx.socket.publish(roomTopic(session.room), envelope('presence', { room: session.room, members: prev, left: session.username }));
+            ctx.socket.publish(
+                roomTopic(session.room),
+                envelope('presence', { room: session.room, members: prev, left: session.username }),
+            );
         }
 
         ctx.socket.subscribe(roomTopic(room));
@@ -92,7 +98,14 @@ export function createSocketRouter(kv: KVManager, secret: string): SocketRouter 
 
         // Mandar al recién llegado el estado inicial: presencia + ultima pagina de historial.
         const history = await getMessages(kv, room, { limit: 20 });
-        ctx.reply({ ok: true, room, members, history: history.items, hasMore: history.hasMore, nextBefore: history.nextBefore });
+        ctx.reply({
+            ok: true,
+            room,
+            members,
+            history: history.items,
+            hasMore: history.hasMore,
+            nextBefore: history.nextBefore,
+        });
     });
 
     router.on<{ text?: unknown }>('message', async (ctx) => {

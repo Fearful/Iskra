@@ -158,7 +158,10 @@ describe('secrets outside the userinfo', () => {
             db: { driver: 'libsql', url: 'http://127.0.0.1:9/?authToken=TOPSECRET' },
         } as any);
         app.register(new DbDriver());
-        const error = await app.start().then(() => undefined, (e: unknown) => e);
+        const error = await app.start().then(
+            () => undefined,
+            (e: unknown) => e,
+        );
         expect(JSON.stringify(error)).not.toContain('TOPSECRET');
         expect(String((error as any)?.context?.url ?? (error as any)?.cause?.context?.url)).toContain('authToken=***');
     });

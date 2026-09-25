@@ -9,10 +9,12 @@ export const AppConfigSchema = z.object({
         driver: z.enum(['sqlite', 'postgres', 'mysql', 'libsql']).default('sqlite'),
         url: z.string().default('ecommerce.db'),
     }),
-    cache: z.object({
-        adapter: z.enum(['memory', 'redis']).default('memory'),
-        ttl: z.number().default(60),
-    }).optional(),
+    cache: z
+        .object({
+            adapter: z.enum(['memory', 'redis']).default('memory'),
+            ttl: z.number().default(60),
+        })
+        .optional(),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -28,6 +30,6 @@ export const config: AppConfig = {
     },
     cache: {
         adapter: 'memory',
-        ttl: 60
-    }
+        ttl: 60,
+    },
 };

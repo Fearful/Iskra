@@ -100,7 +100,7 @@ export class SocketDriver implements Driver {
         if (!this.allowedOrigins && !this.authenticate) {
             this.app?.logger.warn(
                 'SocketDriver accepts connections from any origin without authentication; ' +
-                    'set allowedOrigins and/or authenticate to prevent cross-site WebSocket hijacking'
+                    'set allowedOrigins and/or authenticate to prevent cross-site WebSocket hijacking',
             );
         }
 
@@ -193,7 +193,9 @@ export class SocketDriver implements Driver {
             let timer: ReturnType<typeof setTimeout> | undefined;
             await Promise.race([
                 Promise.resolve(server.stop(true)).catch(() => {}),
-                new Promise<void>((resolve) => { timer = setTimeout(resolve, 1000); }),
+                new Promise<void>((resolve) => {
+                    timer = setTimeout(resolve, 1000);
+                }),
             ]);
             clearTimeout(timer);
         }
@@ -221,7 +223,7 @@ export class SocketDriver implements Driver {
             if (!this.allowMessage(ws)) {
                 this.app?.logger.warn(
                     { connectionId: ws.data.connectionId },
-                    'Socket message rate limit exceeded; dropping frame'
+                    'Socket message rate limit exceeded; dropping frame',
                 );
                 return;
             }
@@ -257,10 +259,7 @@ export class SocketDriver implements Driver {
                     return;
                 }
                 if (this.allowedEvents && !this.allowedEvents.has(event)) {
-                    this.app?.logger.warn(
-                        { event },
-                        'Dropping fallback socket event not in the allowed set'
-                    );
+                    this.app?.logger.warn({ event }, 'Dropping fallback socket event not in the allowed set');
                     return;
                 }
                 this.app?.emit(`socket:${event}`, { socket: ws, payload });
@@ -278,7 +277,7 @@ export class SocketDriver implements Driver {
         if (!this.canJoin(ws, room)) {
             this.app?.logger.warn(
                 { connectionId: ws.data.connectionId, room },
-                'Denied socket join to unauthorized room'
+                'Denied socket join to unauthorized room',
             );
             return;
         }
@@ -290,7 +289,7 @@ export class SocketDriver implements Driver {
         if (!this.canPublish(ws, topic)) {
             this.app?.logger.warn(
                 { connectionId: ws.data.connectionId, topic },
-                'Denied socket broadcast to unauthorized topic'
+                'Denied socket broadcast to unauthorized topic',
             );
             return;
         }

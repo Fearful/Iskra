@@ -10,10 +10,7 @@ import { resolve } from 'node:path';
 describe('RestartBackoffConfig typing', () => {
     it('allows omitting the documented-default fields', () => {
         const tsc = resolve(import.meta.dir, '../../../node_modules/.bin/tsc');
-        const fixture = resolve(
-            import.meta.dir,
-            'fixtures/restart-backoff-optional.ts'
-        );
+        const fixture = resolve(import.meta.dir, 'fixtures/restart-backoff-optional.ts');
         const result = spawnSync(
             tsc,
             [
@@ -26,9 +23,9 @@ describe('RestartBackoffConfig typing', () => {
                 '--target',
                 'ESNext',
                 '--skipLibCheck',
-                fixture
+                fixture,
             ],
-            { encoding: 'utf8' }
+            { encoding: 'utf8' },
         );
 
         const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;

@@ -9,7 +9,7 @@ describe('KVKit', () => {
     beforeAll(async () => {
         app = new App({
             name: 'KVTest',
-            kv: { driver: 'memory' }
+            kv: { driver: 'memory' },
         });
 
         kv = new KVManager();
@@ -39,7 +39,7 @@ describe('KVKit', () => {
         const imm = await kv.get<string>('temp');
         expect(imm).toBe('gone');
 
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
         const gone = await kv.get('temp');
         expect(gone).toBeUndefined();
     });
@@ -87,7 +87,7 @@ describe('KVKit', () => {
         await kv.set('ttl-has', 'temp', 0.1);
         expect(await kv.has('ttl-has')).toBe(true);
 
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
         expect(await kv.has('ttl-has')).toBe(false);
     });
 });

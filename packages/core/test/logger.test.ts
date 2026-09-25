@@ -9,10 +9,7 @@ const { streamSym } = (pino as any).symbols as { streamSym: symbol };
 // `write`. Redaction is applied during serialization (asJson), BEFORE the line
 // reaches the stream/transport, so this captures the censored output for both
 // the dev (pino-pretty worker) and prod (stdout) branches.
-const captureLog = (
-    logger: pino.Logger,
-    emit: (l: pino.Logger) => void
-): string => {
+const captureLog = (logger: pino.Logger, emit: (l: pino.Logger) => void): string => {
     const stream = (logger as any)[streamSym] as { write: (s: string) => boolean };
     const original = stream.write.bind(stream);
     let captured = '';
@@ -78,20 +75,18 @@ describe('createLogger', () => {
                 token: 'ntok',
                 authToken: 'nauth',
                 secret: 'nsecret',
-                data: 'sensitive-data'
+                data: 'sensitive-data',
             },
             config: {
-                env: { DB_URL: 'postgres://secret' }
+                env: { DB_URL: 'postgres://secret' },
             },
-            keep: 'visible-value'
+            keep: 'visible-value',
         });
 
         const emitAndCapture = (): { json: string; parsed: any } => {
             process.env.NODE_ENV = env;
             const logger = createLogger(`redact-${env}`);
-            const json = captureLog(logger, (l) =>
-                l.info(buildSecretPayload(), 'secret message')
-            );
+            const json = captureLog(logger, (l) => l.info(buildSecretPayload(), 'secret message'));
             return { json, parsed: JSON.parse(json) };
         };
 
@@ -136,7 +131,7 @@ describe('createLogger', () => {
                 'shh',
                 'sensitive-data',
                 'postgres://secret',
-                'nauth'
+                'nauth',
             ]) {
                 expect(json).not.toContain(secret);
             }
@@ -144,7 +139,7 @@ describe('createLogger', () => {
     });
 
     describe('secrets at any depth', () => {
-        it('censors nested and top-level secret keys without touching the caller\'s object', () => {
+        it("censors nested and top-level secret keys without touching the caller's object", () => {
             process.env.NODE_ENV = 'production';
             const logger = createLogger('redact-deep');
             const config = {
@@ -158,7 +153,15 @@ describe('createLogger', () => {
                 l.info({ config }, 'Config loaded');
                 l.info({ authToken: 'TOP-AUTHTOKEN', apiSecret: 'TOP-APISECRET', Authorization: 'Bearer X' }, 'top');
             });
-            for (const secret of ['TURSO-SECRET', 'REDIS-SECRET', 'LIST-SECRET', 'DEEP-SECRET', 'TOP-AUTHTOKEN', 'TOP-APISECRET', 'Bearer X']) {
+            for (const secret of [
+                'TURSO-SECRET',
+                'REDIS-SECRET',
+                'LIST-SECRET',
+                'DEEP-SECRET',
+                'TOP-AUTHTOKEN',
+                'TOP-APISECRET',
+                'Bearer X',
+            ]) {
                 expect(json).not.toContain(secret);
             }
             expect(json).toContain('"host":"h"');

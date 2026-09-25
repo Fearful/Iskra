@@ -1,5 +1,5 @@
-import type { Context } from "hono";
-import { getConnInfo } from "hono/bun";
+import type { Context } from 'hono';
+import { getConnInfo } from 'hono/bun';
 
 /**
  * How many reverse proxies sit in front of the app, for resolving the client IP.
@@ -17,7 +17,7 @@ export type TrustProxy = boolean | number;
 
 function trustedHops(trustProxy: TrustProxy | undefined): number {
     if (trustProxy === true) return 1;
-    if (typeof trustProxy === "number" && trustProxy > 0) return Math.floor(trustProxy);
+    if (typeof trustProxy === 'number' && trustProxy > 0) return Math.floor(trustProxy);
     return 0;
 }
 
@@ -39,16 +39,16 @@ export function getClientIp(c: Context, trustProxy?: TrustProxy): string | undef
     const hops = trustedHops(trustProxy);
     if (hops === 0) return socket;
 
-    const forwarded = (c.req.header("x-forwarded-for") ?? "")
-        .split(",")
+    const forwarded = (c.req.header('x-forwarded-for') ?? '')
+        .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
     if (forwarded.length === 0) {
-        return c.req.header("x-real-ip")?.trim() || socket;
+        return c.req.header('x-real-ip')?.trim() || socket;
     }
 
     // The last hop is the socket peer (the nearest proxy). Without a socket we
     // still count it as one hop so the result matches production.
-    const chain = [...forwarded, socket ?? ""];
+    const chain = [...forwarded, socket ?? ''];
     return chain[Math.max(0, chain.length - 1 - hops)] || undefined;
 }

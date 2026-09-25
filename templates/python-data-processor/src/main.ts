@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 
 const app = new App({
     name: 'PythonDataProcessor',
-    processes: config.processes
+    processes: config.processes,
 });
 
 const pm = new ProcessManager();
@@ -14,11 +14,14 @@ app.register(pm);
 
 // ─── Request-Response IPC ────────────────────────────────────────────────────
 
-const pendingRequests = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (reason: unknown) => void;
-    timeout: ReturnType<typeof setTimeout>;
-}>();
+const pendingRequests = new Map<
+    string,
+    {
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+        timeout: ReturnType<typeof setTimeout>;
+    }
+>();
 
 function sendToProcess(processName: string, data: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
     return new Promise((resolve, reject) => {
@@ -79,10 +82,12 @@ router.get('/health', (c) => {
     return c.json({ status: 'ok', pendingRequests: pendingRequests.size });
 });
 
-app.register(new WebPlugin({
-    port: config.web.port,
-    router: router
-}));
+app.register(
+    new WebPlugin({
+        port: config.web.port,
+        router: router,
+    }),
+);
 
 async function main() {
     await app.start();

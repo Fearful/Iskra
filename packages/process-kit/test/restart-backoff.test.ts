@@ -21,13 +21,17 @@ function makePm(app: App): ProcessManager {
 }
 
 /** Build a minimal RunningProcess-shaped object and insert it into pm.processes */
-function seedProcess(pm: ProcessManager, name: string, opts: {
-    currentBackoffMs: number;
-    startedAt?: number;
-    restarts?: number;
-    restartBackoff?: { initialMs: number; maxMs: number; factor: number };
-    restartCooldown?: number;
-}) {
+function seedProcess(
+    pm: ProcessManager,
+    name: string,
+    opts: {
+        currentBackoffMs: number;
+        startedAt?: number;
+        restarts?: number;
+        restartBackoff?: { initialMs: number; maxMs: number; factor: number };
+        restartCooldown?: number;
+    },
+) {
     (pm as any).processes.set(name, {
         process: { killed: false, kill: () => {} },
         config: {
@@ -41,13 +45,12 @@ function seedProcess(pm: ProcessManager, name: string, opts: {
         },
         name,
         restarts: opts.restarts ?? 0,
-        startedAt: opts.startedAt ?? (Date.now() - 100), // crashed quickly
+        startedAt: opts.startedAt ?? Date.now() - 100, // crashed quickly
         currentBackoffMs: opts.currentBackoffMs,
     });
 }
 
 describe('ProcessManager restart backoff – unit (no real waits)', () => {
-
     it('computeBackoffMs returns 1000 when no restartBackoff config is set', () => {
         const app = makeApp();
         const pm = makePm(app);
@@ -179,7 +182,9 @@ describe('ProcessManager restart backoff – unit (no real waits)', () => {
         const pm = makePm(app);
 
         const emitted: any[] = [];
-        app.on('process:max-restarts', (ctx) => { emitted.push(ctx.payload); });
+        app.on('process:max-restarts', (ctx) => {
+            emitted.push(ctx.payload);
+        });
 
         const scheduledDelays: number[] = [];
         const originalSetTimeout = globalThis.setTimeout;

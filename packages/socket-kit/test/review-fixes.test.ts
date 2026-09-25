@@ -24,7 +24,9 @@ describe('SocketDriver review fixes', () => {
     it('ignores a non-string event name (it bypassed the reserved-name check)', async () => {
         const { app, port } = await startApp();
         let disconnected = 0;
-        app.on('socket:disconnected', () => { disconnected++; });
+        app.on('socket:disconnected', () => {
+            disconnected++;
+        });
         const ws = await open(port);
         ws.send(JSON.stringify({ event: ['disconnected'] }));
         ws.send(JSON.stringify(['disconnected']));
@@ -55,7 +57,9 @@ describe('SocketDriver review fixes', () => {
         router.on('ping', async (ctx) => ctx.reply('pong'));
         const { app, port } = await startApp(router);
         const ws = await open(port);
-        const closed = new Promise<CloseEvent>((resolve) => { ws.onclose = (e) => resolve(e); });
+        const closed = new Promise<CloseEvent>((resolve) => {
+            ws.onclose = (e) => resolve(e);
+        });
         await app.stop();
         // A close frame, not a dropped connection (1006). Bun's client reports
         // the server's 1001 as 1000, so check the reason instead of the code.

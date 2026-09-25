@@ -97,7 +97,7 @@ export class MigrationHelper {
 
     private async exec(args: string[], operation: string): Promise<void> {
         const env: Record<string, string> = {
-            ...process.env as Record<string, string>,
+            ...(process.env as Record<string, string>),
             DATABASE_URL: this.config.dbUrl,
         };
 

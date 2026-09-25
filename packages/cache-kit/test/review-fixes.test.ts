@@ -11,10 +11,22 @@ function slowAdapter(): KVAdapter {
         id: 'slow',
         connect: () => inner.connect(),
         disconnect: () => inner.disconnect(),
-        get: async (k) => { await tick(); return inner.get(k); },
-        set: async (k, v, ttl) => { await tick(); return inner.set(k, v, ttl); },
-        del: async (k) => { await tick(); return inner.del(k); },
-        has: async (k) => { await tick(); return inner.has(k); },
+        get: async (k) => {
+            await tick();
+            return inner.get(k);
+        },
+        set: async (k, v, ttl) => {
+            await tick();
+            return inner.set(k, v, ttl);
+        },
+        del: async (k) => {
+            await tick();
+            return inner.del(k);
+        },
+        has: async (k) => {
+            await tick();
+            return inner.has(k);
+        },
     } as KVAdapter;
 }
 
@@ -46,7 +58,11 @@ describe('remember()', () => {
             status = 404;
         }
         const cache = new Cache();
-        const error = await cache.remember('k', 60, async () => { throw new NotFound('missing'); }).catch((e) => e);
+        const error = await cache
+            .remember('k', 60, async () => {
+                throw new NotFound('missing');
+            })
+            .catch((e) => e);
         expect(error).toBeInstanceOf(NotFound);
         expect(error.status).toBe(404);
         expect(await cache.has('k')).toBe(false);
@@ -54,7 +70,7 @@ describe('remember()', () => {
 });
 
 describe('TTLs', () => {
-    it('keeps an entry whose TTL exceeds setTimeout\'s ~24.8-day limit', async () => {
+    it("keeps an entry whose TTL exceeds setTimeout's ~24.8-day limit", async () => {
         const cache = new Cache();
         await cache.set('long', 'v', { ttl: 30 * 24 * 3600 });
         await Bun.sleep(20);

@@ -143,8 +143,7 @@ export async function run(argv: readonly string[]): Promise<number> {
     const rl = interactive ? createInterface({ input: stdin, output: stdout }) : undefined;
 
     try {
-        const targetDir =
-            parsed.targetDir ?? (rl ? await ask(rl, 'Directorio del proyecto', 'mi-app') : 'mi-app');
+        const targetDir = parsed.targetDir ?? (rl ? await ask(rl, 'Directorio del proyecto', 'mi-app') : 'mi-app');
         if (targetDir === undefined) {
             error('Cancelado.');
             return 1;

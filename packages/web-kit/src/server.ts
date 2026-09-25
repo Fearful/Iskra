@@ -75,22 +75,22 @@ export class WebDriver implements Driver {
                         description: 'Successful response',
                         content: {
                             'application/json': {
-                                schema: z.any() // We don't enforce response schema yet
-                            }
-                        }
+                                schema: z.any(), // We don't enforce response schema yet
+                            },
+                        },
                     },
                     500: {
-                        description: 'Internal Server Error'
-                    }
-                }
+                        description: 'Internal Server Error',
+                    },
+                },
             };
 
             if (route.schema?.body) {
                 routeConfig.request.body = {
                     content: {
                         'application/json': {
-                            schema: route.schema.body
-                        }
+                            schema: route.schema.body,
+                        },
                     },
                     // Validated whatever the Content-Type: when not required,
                     // a text/plain or untyped body skipped validation and the
@@ -116,7 +116,7 @@ export class WebDriver implements Driver {
                     body: route.schema?.body ? (c as any).req.valid('json') : undefined,
                     query: route.schema?.query ? (c as any).req.valid('query') : undefined,
                     params: c.req.param(),
-                    app: this.app
+                    app: this.app,
                 };
 
                 try {
@@ -141,7 +141,7 @@ export class WebDriver implements Driver {
         // Bun.serve works with OpenAPIHono just like Hono
         this.runningServer = Bun.serve({
             fetch: this.server.fetch,
-            port
+            port,
         });
     }
 

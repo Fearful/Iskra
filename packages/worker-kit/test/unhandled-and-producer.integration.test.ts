@@ -14,10 +14,20 @@ async function redisReachable(): Promise<boolean> {
             port: Number(url.port) || 6379,
             socket: {
                 data() {},
-                open(socket) { clearTimeout(timer); socket.end(); resolve(true); },
-                connectError() { clearTimeout(timer); resolve(false); },
+                open(socket) {
+                    clearTimeout(timer);
+                    socket.end();
+                    resolve(true);
+                },
+                connectError() {
+                    clearTimeout(timer);
+                    resolve(false);
+                },
             },
-        }).catch(() => { clearTimeout(timer); resolve(false); });
+        }).catch(() => {
+            clearTimeout(timer);
+            resolve(false);
+        });
     });
 }
 
@@ -31,7 +41,10 @@ describe.if(redisUp)('WorkerManager job routing (requires Redis)', () => {
         while (managers.length) await managers.pop()!.app.stop();
     });
 
-    async function startManager(queueName: string, opts: { consume?: boolean; concurrency?: number; deadLetter?: boolean } = {}) {
+    async function startManager(
+        queueName: string,
+        opts: { consume?: boolean; concurrency?: number; deadLetter?: boolean } = {},
+    ) {
         const app = new App({ name: 'WorkerRouting', logger: { level: 'silent' } });
         const wm = new WorkerManager({ connection: REDIS_URL, queueName, ...opts });
         app.register(wm);
@@ -87,7 +100,9 @@ describe.if(redisUp)('WorkerManager job routing (requires Redis)', () => {
         const queueName = `iskra-unhandled-${Date.now()}`;
         const consumer = await startManager(queueName, { deadLetter: true });
         const deadLetters: any[] = [];
-        consumer.app.on('worker:dead-letter', (ctx) => { deadLetters.push(ctx.payload); });
+        consumer.app.on('worker:dead-letter', (ctx) => {
+            deadLetters.push(ctx.payload);
+        });
         await consumer.app.start();
         const producer = await startManager(queueName, { consume: false });
         await producer.app.start();

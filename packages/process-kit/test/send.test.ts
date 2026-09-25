@@ -46,7 +46,12 @@ describe('ProcessManager.send', () => {
     it('writes a string message to stdin verbatim with a newline', async () => {
         const writes: string[] = [];
         let flushed = false;
-        seedStdioProcess(pm, 'p', { write: (s: string) => writes.push(s), flush: () => { flushed = true; } });
+        seedStdioProcess(pm, 'p', {
+            write: (s: string) => writes.push(s),
+            flush: () => {
+                flushed = true;
+            },
+        });
 
         await pm.send('p', 'hello');
 
@@ -65,7 +70,9 @@ describe('ProcessManager.send', () => {
 
     it('swallows and logs errors thrown while writing to stdin', async () => {
         seedStdioProcess(pm, 'p', {
-            write: () => { throw new Error('pipe broken'); },
+            write: () => {
+                throw new Error('pipe broken');
+            },
             flush: () => {},
         });
 

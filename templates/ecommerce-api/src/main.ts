@@ -27,13 +27,13 @@ const router = new Hono();
 router.route('/api', productRouter);
 
 app.register(new DbDriver());
-app.register(new WebPlugin({
-    port: config.web.port,
-    router: router,
-    features: [
-        new CacheFeature(config.cache)
-    ]
-}));
+app.register(
+    new WebPlugin({
+        port: config.web.port,
+        router: router,
+        features: [new CacheFeature(config.cache)],
+    }),
+);
 
 async function setupDb() {
     const dbDriver = app.context.get('db');

@@ -36,9 +36,7 @@ describe('loadAppConfig', () => {
     });
 
     it('loads and validates values from app.config.ts', async () => {
-        const dir = makeConfigDir(
-            `export default { name: 'MyApp', debug: true, logger: { level: 'debug' } };`,
-        );
+        const dir = makeConfigDir(`export default { name: 'MyApp', debug: true, logger: { level: 'debug' } };`);
         const config = await loadAppConfig(dir);
 
         expect(config.name).toBe('MyApp');
@@ -56,9 +54,7 @@ describe('loadAppConfig', () => {
     });
 
     it('parses and defaults nested otel config', async () => {
-        const dir = makeConfigDir(
-            `export default { name: 'OtelApp', otel: { endpoint: 'http://collector:4318' } };`,
-        );
+        const dir = makeConfigDir(`export default { name: 'OtelApp', otel: { endpoint: 'http://collector:4318' } };`);
         const config = await loadAppConfig(dir);
 
         expect(config.otel?.endpoint).toBe('http://collector:4318');

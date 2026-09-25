@@ -1,13 +1,13 @@
-import type { BaseStorageAdapter, PutOptions } from "@iskra-bun/storage-kit";
+import type { BaseStorageAdapter, PutOptions } from '@iskra-bun/storage-kit';
 
 // Defense-in-depth: reduce an attacker-controlled filename to a safe basename
 // and strip it to an allowlisted charset so traversal segments ("../",
 // "..\\", absolute paths) can never escape the project base path. storage-kit's
 // sanitizePath remains the primary control; this is a second, independent gate.
 export function safeBasename(filename: string): string {
-    const base = filename.split(/[\\/]/).pop() || "";
-    const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "");
-    return cleaned.length > 0 ? cleaned : "file";
+    const base = filename.split(/[\\/]/).pop() || '';
+    const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '');
+    return cleaned.length > 0 ? cleaned : 'file';
 }
 
 export interface UploadOptions {
@@ -25,7 +25,10 @@ export interface UploadResult {
 export class UploadHelper {
     private basePath: string;
 
-    constructor(private storage: BaseStorageAdapter, private projectName: string) {
+    constructor(
+        private storage: BaseStorageAdapter,
+        private projectName: string,
+    ) {
         this.basePath = `${projectName}/`;
     }
 
@@ -35,20 +38,27 @@ export class UploadHelper {
 
     private buildPath(filename: string, subfolder?: string): string {
         if (subfolder) {
-            const normalized = subfolder.replace(/^\/+|\/+$/g, "");
+            const normalized = subfolder.replace(/^\/+|\/+$/g, '');
             return `${this.basePath}${normalized}/${filename}`;
         }
         return `${this.basePath}${filename}`;
     }
 
-    async upload(filename: string, data: Uint8Array | string, subfolder?: string, options?: UploadOptions): Promise<UploadResult> {
+    async upload(
+        filename: string,
+        data: Uint8Array | string,
+        subfolder?: string,
+        options?: UploadOptions,
+    ): Promise<UploadResult> {
         const fullPath = this.buildPath(filename, subfolder);
-        const fileData = typeof data === "string" ? new TextEncoder().encode(data) : data;
+        const fileData = typeof data === 'string' ? new TextEncoder().encode(data) : data;
 
-        const putOptions: PutOptions | undefined = options ? {
-            contentType: options.contentType,
-            metadata: options.metadata
-        } : undefined;
+        const putOptions: PutOptions | undefined = options
+            ? {
+                  contentType: options.contentType,
+                  metadata: options.metadata,
+              }
+            : undefined;
 
         await this.storage.put(fullPath, fileData, putOptions);
 
@@ -56,13 +66,18 @@ export class UploadHelper {
             path: fullPath,
             filename,
             size: fileData.length,
-            uploadedAt: new Date()
+            uploadedAt: new Date(),
         };
     }
 
     // uploadFromRequest: Not implementing raw request reading here to avoid Node/Bun specific request stream issues unless necessary
     // or implementing simplified Version
-    async uploadFromRequest(request: Request, fieldName: string, subfolder?: string, options?: UploadOptions): Promise<UploadResult> {
+    async uploadFromRequest(
+        request: Request,
+        fieldName: string,
+        subfolder?: string,
+        options?: UploadOptions,
+    ): Promise<UploadResult> {
         const formData = await request.formData();
         const file = formData.get(fieldName);
         if (!file || !(file instanceof File)) throw new Error(`No file found in field: ${fieldName}`);
@@ -74,7 +89,7 @@ export class UploadHelper {
     }
 
     async list(subfolder?: string) {
-        const prefix = subfolder ? `${this.basePath}${subfolder.replace(/^\/+|\/+$/g, "")}/` : this.basePath;
+        const prefix = subfolder ? `${this.basePath}${subfolder.replace(/^\/+|\/+$/g, '')}/` : this.basePath;
         return await this.storage.list(prefix);
     }
 

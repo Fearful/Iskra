@@ -123,9 +123,7 @@ describe('enqueue validation: invalid repeat spec', () => {
         injectQueue(wm, q);
         wm.register('heartbeat', async () => {});
 
-        await expect(
-            wm.enqueue('heartbeat', {}, { repeat: { every: 0 } }),
-        ).rejects.toThrow(QueueError);
+        await expect(wm.enqueue('heartbeat', {}, { repeat: { every: 0 } })).rejects.toThrow(QueueError);
     });
 
     it('rejects an empty cron string repeat', async () => {
@@ -134,9 +132,7 @@ describe('enqueue validation: invalid repeat spec', () => {
         injectQueue(wm, q);
         wm.register('cron.job', async () => {});
 
-        await expect(
-            wm.enqueue('cron.job', {}, { repeat: '   ' }),
-        ).rejects.toThrow(QueueError);
+        await expect(wm.enqueue('cron.job', {}, { repeat: '   ' })).rejects.toThrow(QueueError);
     });
 
     it('still accepts a valid { every } interval', async () => {

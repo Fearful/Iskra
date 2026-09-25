@@ -104,12 +104,16 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
     } catch (err) {
         // Provide a clear error when OTel packages are not installed
         const e = err as { code?: string; message?: string } | null;
-        if (e?.code === 'ERR_MODULE_NOT_FOUND' || e?.code === 'MODULE_NOT_FOUND' || e?.message?.includes('Cannot find')) {
+        if (
+            e?.code === 'ERR_MODULE_NOT_FOUND' ||
+            e?.code === 'MODULE_NOT_FOUND' ||
+            e?.message?.includes('Cannot find')
+        ) {
             throw new Error(
                 `[iskra/otel] OpenTelemetry packages are not installed. ` +
-                `Install them with: bun add @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node ` +
-                `@opentelemetry/exporter-trace-otlp-http @opentelemetry/exporter-metrics-otlp-http ` +
-                `@opentelemetry/sdk-metrics @opentelemetry/resources @opentelemetry/semantic-conventions`,
+                    `Install them with: bun add @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node ` +
+                    `@opentelemetry/exporter-trace-otlp-http @opentelemetry/exporter-metrics-otlp-http ` +
+                    `@opentelemetry/sdk-metrics @opentelemetry/resources @opentelemetry/semantic-conventions`,
             );
         }
         throw err;

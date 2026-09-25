@@ -15,7 +15,7 @@ const app = new App({
     processes: appConfig.processes,
     kv: { driver: 'memory' },
     socket: { enabled: true, port: appConfig.socketPort },
-    db: { driver: 'sqlite', url: appConfig.databaseUrl }
+    db: { driver: 'sqlite', url: appConfig.databaseUrl },
 });
 
 // 2. Create Drivers
@@ -27,15 +27,17 @@ const httpRoutes = createHttpRoutes(kv, db);
 const socketRouter = createSocketRouter(kv);
 
 // 3. Register Drivers
-app.register(new WebDriver({
-    port: appConfig.port,
-    openApi: {
-        path: '/doc',
-        title: 'Full Stack App API',
-        version: '1.0.0'
-    },
-    routes: httpRoutes
-}));
+app.register(
+    new WebDriver({
+        port: appConfig.port,
+        openApi: {
+            path: '/doc',
+            title: 'Full Stack App API',
+            version: '1.0.0',
+        },
+        routes: httpRoutes,
+    }),
+);
 
 app.register(new ProcessManager());
 app.register(kv);
@@ -56,7 +58,7 @@ app.on('process:log', (ctx) => {
 });
 
 // 5. Start
-app.start().catch(err => {
+app.start().catch((err) => {
     console.error(err);
     process.exit(1);
 });

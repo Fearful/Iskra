@@ -1,7 +1,7 @@
-import { describe, it, expect, mock } from "bun:test";
-import { ApiKeyStore } from "../src/features/api-key";
-import type { Kernel } from "../src/kernel";
-import type { ApiKeyMetadata } from "../src/types";
+import { describe, it, expect, mock } from 'bun:test';
+import { ApiKeyStore } from '../src/features/api-key';
+import type { Kernel } from '../src/kernel';
+import type { ApiKeyMetadata } from '../src/types';
 
 // RED test for a MEDIUM api-key finding (the cache it also covered is gone):
 //   Metadata mutation (src/features/api-key.ts:94): metadata.lastUsedAt =
@@ -9,14 +9,14 @@ import type { ApiKeyMetadata } from "../src/types";
 //      a derived object { ...metadata, lastUsedAt } and leave the stored one
 //      untouched.
 
-describe("ApiKeyStore — metadata immutability", () => {
-    it("does not mutate the stored metadata object on validate", async () => {
+describe('ApiKeyStore — metadata immutability', () => {
+    it('does not mutate the stored metadata object on validate', async () => {
         const mockKernel: any = { getFeature: mock(() => undefined) };
         const staticKey = {
-            id: "key-imm",
-            key: "another-secret-key",
-            name: "Immutable Key",
-            scopes: ["read"],
+            id: 'key-imm',
+            key: 'another-secret-key',
+            name: 'Immutable Key',
+            scopes: ['read'],
             createdAt: new Date(),
         };
         const store = new ApiKeyStore(

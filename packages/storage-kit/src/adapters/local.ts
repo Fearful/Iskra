@@ -1,13 +1,13 @@
-import { BaseStorageAdapter, type PutOptions, type StorageConfig, type StorageFile } from "../base";
-import path from "node:path";
-import fs from "node:fs/promises";
+import { BaseStorageAdapter, type PutOptions, type StorageConfig, type StorageFile } from '../base';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 export class LocalStorageAdapter extends BaseStorageAdapter {
     private basePath: string;
 
     constructor(config: StorageConfig) {
         super();
-        this.basePath = config.basePath || "./storage";
+        this.basePath = config.basePath || './storage';
     }
 
     async connect(): Promise<void> {
@@ -57,7 +57,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
         try {
             return await fs.readFile(fullPath);
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
         }
     }
@@ -82,7 +82,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
         try {
             await fs.unlink(fullPath);
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
     }
 
@@ -120,9 +120,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
 
     async list(prefix?: string): Promise<StorageFile[]> {
         this.ensureConnected();
-        const searchPath = prefix
-            ? path.join(this.basePath, this.sanitizePath(prefix))
-            : this.basePath;
+        const searchPath = prefix ? path.join(this.basePath, this.sanitizePath(prefix)) : this.basePath;
         const files: StorageFile[] = [];
 
         const walk = async (dir: string): Promise<void> => {
@@ -146,7 +144,7 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
                     }
                 }
             } catch (e) {
-                if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+                if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
             }
         };
 

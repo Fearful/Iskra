@@ -7,8 +7,16 @@ describe('ProcessManager.spawn / kill – runtime process management', () => {
     let pm: ProcessManager;
 
     afterEach(async () => {
-        try { await pm?.stop(500); } catch { /* already stopped */ }
-        try { await app?.stop(); } catch { /* already stopped */ }
+        try {
+            await pm?.stop(500);
+        } catch {
+            /* already stopped */
+        }
+        try {
+            await app?.stop();
+        } catch {
+            /* already stopped */
+        }
     });
 
     it('spawn() adds a new process to the map at runtime', async () => {
@@ -37,9 +45,9 @@ describe('ProcessManager.spawn / kill – runtime process management', () => {
 
         await pm.spawn('dup', { command: 'sleep', args: ['10'], mode: 'daemon' });
 
-        await expect(
-            pm.spawn('dup', { command: 'sleep', args: ['10'], mode: 'daemon' })
-        ).rejects.toThrow("Process 'dup' is already registered");
+        await expect(pm.spawn('dup', { command: 'sleep', args: ['10'], mode: 'daemon' })).rejects.toThrow(
+            "Process 'dup' is already registered",
+        );
     });
 
     it('kill() removes the process from the map and terminates it', async () => {

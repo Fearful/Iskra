@@ -1,9 +1,9 @@
-import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from "../types";
-import { MailService } from "@sendgrid/mail";
-import { checkEmail, checkHeaders, cleanName } from "../headers";
+import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from '../types';
+import { MailService } from '@sendgrid/mail';
+import { checkEmail, checkHeaders, cleanName } from '../headers';
 
 /** The mail object MailService.send() takes (typed by @sendgrid/helpers, not a direct dependency). */
-type SendGridMail = Extract<Parameters<MailService["send"]>[0], { from: unknown }>;
+type SendGridMail = Extract<Parameters<MailService['send']>[0], { from: unknown }>;
 
 export class SendGridEmailAdapter implements EmailAdapter {
     /**
@@ -14,13 +14,13 @@ export class SendGridEmailAdapter implements EmailAdapter {
     private readonly client = new MailService();
 
     constructor(private config: EmailConfig) {
-        if (!config.apiKey) throw new Error("SendGrid API Key required");
+        if (!config.apiKey) throw new Error('SendGrid API Key required');
         this.client.setApiKey(config.apiKey);
     }
 
     async send(message: EmailMessage) {
         const from = message.from || this.config.from;
-        if (!from) throw new Error("From address required");
+        if (!from) throw new Error('From address required');
 
         const msg = {
             to: message.to,
@@ -31,13 +31,15 @@ export class SendGridEmailAdapter implements EmailAdapter {
             cc: message.cc,
             bcc: message.bcc,
             replyTo: message.replyTo,
-            attachments: message.attachments?.map(a => ({
+            attachments: message.attachments?.map((a) => ({
                 filename: a.filename,
                 // SendGrid takes base64; a string is text, as with the other
                 // providers (it was sent as is and arrived corrupted).
-                content: Buffer.from(typeof a.content === 'string' ? Buffer.from(a.content, "utf8") : a.content).toString("base64"),
+                content: Buffer.from(
+                    typeof a.content === 'string' ? Buffer.from(a.content, 'utf8') : a.content,
+                ).toString('base64'),
                 type: a.contentType,
-                disposition: "attachment"
+                disposition: 'attachment',
             })),
             headers: checkHeaders(message.headers),
             // SendGrid's type wants text or html statically present; here both
@@ -45,12 +47,16 @@ export class SendGridEmailAdapter implements EmailAdapter {
         } as SendGridMail;
 
         const [response] = await this.client.send(msg);
-        return { messageId: response.headers["x-message-id"] as string, success: true };
+        return { messageId: response.headers['x-message-id'] as string, success: true };
     }
 
-    async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {
+    async sendTemplate(
+        _templateName: string,
+        _to: string | string[],
+        _data: TemplateData,
+    ): Promise<{ messageId: string; success: boolean }> {
         // No template engine is implemented yet; fail loudly rather than
         // silently sending a placeholder body that looks like a real send.
-        throw new Error("sendTemplate not supported by sendgrid");
+        throw new Error('sendTemplate not supported by sendgrid');
     }
 }

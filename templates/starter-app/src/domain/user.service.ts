@@ -6,7 +6,7 @@ export interface User {
 export class UserService {
     private users: User[] = [
         { id: 1, name: 'Alice' },
-        { id: 2, name: 'Bob' }
+        { id: 2, name: 'Bob' },
     ];
 
     async findAll() {

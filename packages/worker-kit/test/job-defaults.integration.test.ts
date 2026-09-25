@@ -14,10 +14,20 @@ async function redisReachable(): Promise<boolean> {
             port: Number(url.port) || 6379,
             socket: {
                 data() {},
-                open(socket) { clearTimeout(timer); socket.end(); resolve(true); },
-                connectError() { clearTimeout(timer); resolve(false); },
+                open(socket) {
+                    clearTimeout(timer);
+                    socket.end();
+                    resolve(true);
+                },
+                connectError() {
+                    clearTimeout(timer);
+                    resolve(false);
+                },
             },
-        }).catch(() => { clearTimeout(timer); resolve(false); });
+        }).catch(() => {
+            clearTimeout(timer);
+            resolve(false);
+        });
     });
 }
 

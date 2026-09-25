@@ -25,7 +25,6 @@ app.post('/products', zValidator('json', CreateProductSchema), async (c) => {
     return c.json(product, 201);
 });
 
-
 import { OrderService } from '../../domain/orders/order.service.ts';
 import { CreateOrderSchema } from '../../domain/orders/order.model.ts';
 
@@ -47,4 +46,3 @@ app.get('/orders', async (c) => {
 });
 
 export default app;
-

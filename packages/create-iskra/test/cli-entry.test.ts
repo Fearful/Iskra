@@ -13,7 +13,11 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 function nodeWithTypes(): string | undefined {
     const node = Bun.which('node');
     if (!node) return undefined;
-    const [major, minor] = Bun.spawnSync([node, '--version']).stdout.toString().replace(/^v/, '').split('.').map(Number);
+    const [major, minor] = Bun.spawnSync([node, '--version'])
+        .stdout.toString()
+        .replace(/^v/, '')
+        .split('.')
+        .map(Number);
     return major! > 22 || (major === 22 && minor! >= 6) ? node : undefined;
 }
 

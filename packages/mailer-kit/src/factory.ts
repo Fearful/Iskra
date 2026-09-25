@@ -1,5 +1,5 @@
-import type { EmailAdapter, EmailConfig } from "./types";
-import { MockEmailAdapter } from "./mock";
+import type { EmailAdapter, EmailConfig } from './types';
+import { MockEmailAdapter } from './mock';
 
 /**
  * Builds the email adapter for the given provider. Providers are loaded
@@ -8,22 +8,22 @@ import { MockEmailAdapter } from "./mock";
  */
 export async function createEmailAdapter(config: EmailConfig): Promise<EmailAdapter> {
     switch (config.provider) {
-        case "mock":
+        case 'mock':
             return new MockEmailAdapter();
-        case "smtp": {
-            const { SmtpEmailAdapter } = await import("./providers/smtp");
+        case 'smtp': {
+            const { SmtpEmailAdapter } = await import('./providers/smtp');
             return new SmtpEmailAdapter(config);
         }
-        case "sendgrid": {
-            const { SendGridEmailAdapter } = await import("./providers/sendgrid");
+        case 'sendgrid': {
+            const { SendGridEmailAdapter } = await import('./providers/sendgrid');
             return new SendGridEmailAdapter(config);
         }
-        case "mailgun": {
-            const { MailgunEmailAdapter } = await import("./providers/mailgun");
+        case 'mailgun': {
+            const { MailgunEmailAdapter } = await import('./providers/mailgun');
             return new MailgunEmailAdapter(config);
         }
-        case "ses": {
-            const { SesEmailAdapter } = await import("./providers/ses");
+        case 'ses': {
+            const { SesEmailAdapter } = await import('./providers/ses');
             return new SesEmailAdapter(config);
         }
         default:

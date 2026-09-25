@@ -71,7 +71,7 @@ export class KVManager implements Driver, KVAdapter {
      * driver or before start().
      */
     get client(): Redis | undefined {
-        return this.adapter instanceof RedisAdapter ? this.adapter.nativeClient ?? undefined : undefined;
+        return this.adapter instanceof RedisAdapter ? (this.adapter.nativeClient ?? undefined) : undefined;
     }
 
     private prefixed(key: string): string {
@@ -102,26 +102,21 @@ export class KVManager implements Driver, KVAdapter {
     // do not implement them while avoiding the N+1 fan-out for those that do.
 
     async mget<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-        const prefixed = keys.map(k => this.prefixed(k));
+        const prefixed = keys.map((k) => this.prefixed(k));
 
         if (this.adapter.mget) {
             return this.adapter.mget<T>(prefixed);
         }
 
-        return Promise.all(prefixed.map(k => this.adapter.get<T>(k)));
+        return Promise.all(prefixed.map((k) => this.adapter.get<T>(k)));
     }
 
-    async mset<T = unknown>(
-        entries: Array<[string, T]> | Record<string, T>,
-        ttl?: number
-    ): Promise<void> {
+    async mset<T = unknown>(entries: Array<[string, T]> | Record<string, T>, ttl?: number): Promise<void> {
         const pairs: Array<[string, T]> = Array.isArray(entries)
             ? entries
             : (Object.entries(entries) as Array<[string, T]>);
 
-        const prefixed: Array<[string, T]> = pairs.map(
-            ([k, v]) => [this.prefixed(k), v] as [string, T]
-        );
+        const prefixed: Array<[string, T]> = pairs.map(([k, v]) => [this.prefixed(k), v] as [string, T]);
 
         if (this.adapter.mset) {
             await this.adapter.mset<T>(prefixed, ttl);
@@ -132,13 +127,13 @@ export class KVManager implements Driver, KVAdapter {
     }
 
     async mdel(keys: string[]): Promise<void> {
-        const prefixed = keys.map(k => this.prefixed(k));
+        const prefixed = keys.map((k) => this.prefixed(k));
 
         if (this.adapter.mdel) {
             await this.adapter.mdel(prefixed);
             return;
         }
 
-        await Promise.all(prefixed.map(k => this.adapter.del(k)));
+        await Promise.all(prefixed.map((k) => this.adapter.del(k)));
     }
 }

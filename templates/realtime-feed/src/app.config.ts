@@ -17,5 +17,5 @@ export const config: AppConfig = {
     },
     socket: {
         port: Number(process.env.SOCKET_PORT) || 3001,
-    }
+    },
 };

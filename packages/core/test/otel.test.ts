@@ -56,6 +56,8 @@ describe('OTel initialization', () => {
         class Resource {
             constructor(public attributes: Record<string, string>) {}
         }
-        expect(createResource({ Resource }, { 'service.name': 'legacy' }).attributes).toEqual({ 'service.name': 'legacy' });
+        expect(createResource({ Resource }, { 'service.name': 'legacy' }).attributes).toEqual({
+            'service.name': 'legacy',
+        });
     });
 });

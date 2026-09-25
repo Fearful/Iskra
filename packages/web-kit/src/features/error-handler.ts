@@ -1,23 +1,22 @@
-import type { Feature, ErrorHandlerConfig } from "../types";
-import type { Kernel } from "../kernel";
-import type { Context } from "hono";
-import { HTTPException } from "hono/http-exception";
+import type { Feature, ErrorHandlerConfig } from '../types';
+import type { Kernel } from '../kernel';
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { IskraError } from '@iskra-bun/core';
 import { HttpError, ValidationError } from '../errors';
-import { consoleLogger, type KernelLogger } from "../logging";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { consoleLogger, type KernelLogger } from '../logging';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 export class ErrorHandlerFeature implements Feature {
-    name = "error-handler";
+    name = 'error-handler';
     private log: KernelLogger = consoleLogger;
 
     private config: ErrorHandlerConfig;
 
     constructor(config: ErrorHandlerConfig = {}) {
         this.config = {
-            includeStack: config.includeStack !== undefined
-                ? config.includeStack
-                : process.env.NODE_ENV === "development",
+            includeStack:
+                config.includeStack !== undefined ? config.includeStack : process.env.NODE_ENV === 'development',
             customHandlers: config.customHandlers,
             logger: config.logger,
         };
@@ -31,14 +30,14 @@ export class ErrorHandlerFeature implements Feature {
             return this.handleError(err, c);
         });
 
-        this.log.debug("Error handler feature initialized");
+        this.log.debug('Error handler feature initialized');
     }
 
     private handleError(err: Error | HTTPException, c: Context): Response {
         if (this.config.logger) {
             this.config.logger(err as Error, c);
         } else {
-            this.log.error("Unhandled error", err);
+            this.log.error('Unhandled error', err);
         }
 
         // Iskra HttpError — convertir a HTTPException para mantener compatibilidad con Hono
@@ -66,7 +65,7 @@ export class ErrorHandlerFeature implements Feature {
                 response.stack = err.stack;
             }
 
-            const requestId = c.get("requestId");
+            const requestId = c.get('requestId');
             if (requestId) response.requestId = requestId;
 
             return c.json(response, status as ContentfulStatusCode);
@@ -80,7 +79,7 @@ export class ErrorHandlerFeature implements Feature {
             }
 
             const response: any = {
-                error: this.config.includeStack ? err.message : "Internal Server Error",
+                error: this.config.includeStack ? err.message : 'Internal Server Error',
                 status,
                 code: err.code,
             };
@@ -89,7 +88,7 @@ export class ErrorHandlerFeature implements Feature {
                 response.stack = err.stack;
             }
 
-            const requestId = c.get("requestId");
+            const requestId = c.get('requestId');
             if (requestId) response.requestId = requestId;
 
             return c.json(response, status);
@@ -124,7 +123,7 @@ export class ErrorHandlerFeature implements Feature {
         }
 
         const response: any = {
-            error: this.config.includeStack ? err.message : "Internal Server Error",
+            error: this.config.includeStack ? err.message : 'Internal Server Error',
             status,
         };
 
@@ -132,7 +131,7 @@ export class ErrorHandlerFeature implements Feature {
             response.stack = err.stack;
         }
 
-        const requestId = c.get("requestId");
+        const requestId = c.get('requestId');
         if (requestId) {
             response.requestId = requestId;
         }
@@ -142,13 +141,13 @@ export class ErrorHandlerFeature implements Feature {
 
     private getStatusText(status: number): string {
         const statusTexts: Record<number, string> = {
-            400: "Bad Request",
-            401: "Unauthorized",
-            403: "Forbidden",
-            404: "Not Found",
-            500: "Internal Server Error",
+            400: 'Bad Request',
+            401: 'Unauthorized',
+            403: 'Forbidden',
+            404: 'Not Found',
+            500: 'Internal Server Error',
         };
-        return statusTexts[status] || "Error";
+        return statusTexts[status] || 'Error';
     }
 }
 

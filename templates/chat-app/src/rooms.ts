@@ -46,7 +46,10 @@ const pending = new Map<string, Promise<unknown>>();
 function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const previous = pending.get(key) ?? Promise.resolve();
     const result = previous.then(fn, fn);
-    const settled = result.then(() => undefined, () => undefined);
+    const settled = result.then(
+        () => undefined,
+        () => undefined,
+    );
     pending.set(key, settled);
     void settled.then(() => {
         if (pending.get(key) === settled) pending.delete(key);

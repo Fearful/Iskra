@@ -12,12 +12,12 @@ describe('Process Manager', () => {
             name: 'ProcessTest',
             logger: { level: 'error' },
             processes: {
-                'mock': {
+                mock: {
                     command: process.execPath,
                     args: [`${import.meta.dir}/mock-process.ts`],
-                    mode: 'stdio'
-                }
-            }
+                    mode: 'stdio',
+                },
+            },
         };
 
         app = new App(config as any);
@@ -38,25 +38,25 @@ describe('Process Manager', () => {
         await app.start();
 
         // Wait for started message
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
 
-        const startedMsg = receivedMessages.find(m => m.status === 'started');
+        const startedMsg = receivedMessages.find((m) => m.status === 'started');
         expect(startedMsg).toBeDefined();
 
         // Send normal message
         await pm.send('mock', 'hello');
 
         // Wait for response
-        await new Promise(r => setTimeout(r, 500));
-        const responseMsg = receivedMessages.find(m => m.received === 'hello');
+        await new Promise((r) => setTimeout(r, 500));
+        const responseMsg = receivedMessages.find((m) => m.received === 'hello');
         expect(responseMsg).toBeDefined();
 
         // Send error trigger
         await pm.send('mock', 'error');
 
         // Wait for error
-        await new Promise(r => setTimeout(r, 500));
-        const errorMsg = receivedErrors.find(e => e && e.includes('This is an error'));
+        await new Promise((r) => setTimeout(r, 500));
+        const errorMsg = receivedErrors.find((e) => e && e.includes('This is an error'));
         expect(errorMsg).toBeDefined();
     });
 

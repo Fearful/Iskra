@@ -1,6 +1,6 @@
-import { describe, expect, it, afterEach, spyOn } from "bun:test";
-import * as nodemailer from "nodemailer";
-import { SmtpEmailAdapter } from "../src/providers/smtp";
+import { describe, expect, it, afterEach, spyOn } from 'bun:test';
+import * as nodemailer from 'nodemailer';
+import { SmtpEmailAdapter } from '../src/providers/smtp';
 
 /**
  * RED — Finding: MEDIUM SMTP TLS.
@@ -18,7 +18,7 @@ import { SmtpEmailAdapter } from "../src/providers/smtp";
  * They FAIL today because the adapter only sets `secure` and never sets
  * `requireTLS` or `tls`.
  */
-describe("SMTP transport TLS hardening", () => {
+describe('SMTP transport TLS hardening', () => {
     let createSpy: ReturnType<typeof spyOn> | null = null;
 
     afterEach(() => {
@@ -27,38 +27,38 @@ describe("SMTP transport TLS hardening", () => {
     });
 
     function capture() {
-        createSpy = spyOn(nodemailer, "createTransport").mockReturnValue({
-            sendMail: async () => ({ messageId: "x" }),
+        createSpy = spyOn(nodemailer, 'createTransport').mockReturnValue({
+            sendMail: async () => ({ messageId: 'x' }),
         } as any);
     }
 
     function optionsFor(smtp: { host: string; port: number; username: string; password: string; secure?: boolean }) {
-        new SmtpEmailAdapter({ provider: "smtp", smtp, from: { email: "no-reply@iskra.dev" } });
+        new SmtpEmailAdapter({ provider: 'smtp', smtp, from: { email: 'no-reply@iskra.dev' } });
         return createSpy!.mock.calls[0]![0] as any;
     }
 
-    it("defaults to secure:true for port 465 (implicit TLS)", () => {
+    it('defaults to secure:true for port 465 (implicit TLS)', () => {
         capture();
-        const opts = optionsFor({ host: "smtp.example.com", port: 465, username: "u", password: "p" });
+        const opts = optionsFor({ host: 'smtp.example.com', port: 465, username: 'u', password: 'p' });
         expect(opts.secure).toBe(true);
     });
 
-    it("uses secure:false but requireTLS:true for non-465 ports (e.g. 587 STARTTLS)", () => {
+    it('uses secure:false but requireTLS:true for non-465 ports (e.g. 587 STARTTLS)', () => {
         capture();
-        const opts = optionsFor({ host: "smtp.example.com", port: 587, username: "u", password: "p" });
+        const opts = optionsFor({ host: 'smtp.example.com', port: 587, username: 'u', password: 'p' });
         expect(opts.secure).toBe(false);
         expect(opts.requireTLS).toBe(true);
     });
 
-    it("honors an explicit secure:true override from config", () => {
+    it('honors an explicit secure:true override from config', () => {
         capture();
-        const opts = optionsFor({ host: "smtp.example.com", port: 2525, username: "u", password: "p", secure: true });
+        const opts = optionsFor({ host: 'smtp.example.com', port: 2525, username: 'u', password: 'p', secure: true });
         expect(opts.secure).toBe(true);
     });
 
-    it("surfaces tls.rejectUnauthorized defaulting to true", () => {
+    it('surfaces tls.rejectUnauthorized defaulting to true', () => {
         capture();
-        const opts = optionsFor({ host: "smtp.example.com", port: 587, username: "u", password: "p" });
+        const opts = optionsFor({ host: 'smtp.example.com', port: 587, username: 'u', password: 'p' });
         expect(opts.tls).toBeDefined();
         expect(opts.tls.rejectUnauthorized).toBe(true);
     });

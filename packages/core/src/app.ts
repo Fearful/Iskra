@@ -25,7 +25,7 @@ export class App {
     constructor(config?: AppConfig) {
         this.events = mitt();
         // Temporary config until init() is called (or passed in constructor)
-        this.config = config || { name: 'Bootstrapping', logger: { level: 'info' } } as AppConfig;
+        this.config = config || ({ name: 'Bootstrapping', logger: { level: 'info' } } as AppConfig);
         this.logger = createLogger(this.config.name, this.config.logger?.level);
     }
 
@@ -80,7 +80,7 @@ export class App {
                 app: this,
                 logger: this.logger.child({ event }),
                 payload,
-                reply: (data) => this.events.emit(`${event}:reply`, data)
+                reply: (data) => this.events.emit(`${event}:reply`, data),
             };
 
             try {
@@ -111,7 +111,10 @@ export class App {
                 if (driver.start) await driver.start();
                 started.push(driver);
             } catch (err) {
-                this.logger.error({ err, driver: driver.name }, 'Driver failed to start; stopping the drivers already started');
+                this.logger.error(
+                    { err, driver: driver.name },
+                    'Driver failed to start; stopping the drivers already started',
+                );
                 await this.stopDrivers(started.reverse());
                 this.startedDrivers = [];
                 throw err;
@@ -186,9 +189,10 @@ export class App {
      */
     private installSignalHandlers() {
         const configured = this.config.shutdownSignals;
-        const signals = configured === false
-            ? []
-            : configured ?? (process.env.NODE_ENV === 'test' ? [] : DEFAULT_SHUTDOWN_SIGNALS);
+        const signals =
+            configured === false
+                ? []
+                : (configured ?? (process.env.NODE_ENV === 'test' ? [] : DEFAULT_SHUTDOWN_SIGNALS));
         if (signals.length === 0 || this.signalHandler) return;
 
         const timeoutMs = this.config.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;

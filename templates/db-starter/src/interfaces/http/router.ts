@@ -9,7 +9,7 @@ export function createRouter(userService: UserService) {
             handler: async () => {
                 const allUsers = await userService.findAll();
                 return { users: allUsers };
-            }
+            },
         },
         {
             method: 'POST' as const,
@@ -18,7 +18,7 @@ export function createRouter(userService: UserService) {
                 const { name, email } = ctx.body;
                 const user = await userService.create(name, email);
                 return { created: user };
-            }
-        }
+            },
+        },
     ];
 }

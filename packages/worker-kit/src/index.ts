@@ -73,11 +73,7 @@ export class WorkerManager implements Driver {
      * los datos del job, expone `result()` para esperar el valor de retorno del
      * handler.
      */
-    async enqueue<T = unknown, R = unknown>(
-        name: string,
-        data: T,
-        opts?: JobOptions,
-    ): Promise<JobDescriptor<T, R>> {
+    async enqueue<T = unknown, R = unknown>(name: string, data: T, opts?: JobOptions): Promise<JobDescriptor<T, R>> {
         if (!this.queue) {
             throw new QueueError('Queue not initialized. Did you call init()?', {
                 context: { jobName: name },
@@ -169,10 +165,13 @@ export class WorkerManager implements Driver {
 
         this.worker.on('error', (err) => this.logConnectionError('worker', err));
 
-        this.app?.logger.info({
-            queue: this.options.queueName || 'iskra-jobs',
-            concurrency: this.options.concurrency || 1,
-        }, 'WorkerManager started');
+        this.app?.logger.info(
+            {
+                queue: this.options.queueName || 'iskra-jobs',
+                concurrency: this.options.concurrency || 1,
+            },
+            'WorkerManager started',
+        );
     }
 
     async stop() {

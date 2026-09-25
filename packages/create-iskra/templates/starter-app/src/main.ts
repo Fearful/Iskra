@@ -7,10 +7,12 @@ import { httpRouter } from './interfaces/http/router';
 const app = new App();
 
 // Register Web Driver
-app.register(new WebDriver({
-    port: Number(process.env.PORT) || 3000,
-    routes: httpRouter
-}));
+app.register(
+    new WebDriver({
+        port: Number(process.env.PORT) || 3000,
+        routes: httpRouter,
+    }),
+);
 
 // Register Process Manager
 app.register(new ProcessManager());

@@ -45,7 +45,11 @@ describe('KVManager — batch operations', () => {
     // ── mset (array form) ─────────────────────────────────────────────────────
 
     it('mset (array of tuples) sets all entries', async () => {
-        await kv.mset<number>([['x', 10], ['y', 20], ['z', 30]]);
+        await kv.mset<number>([
+            ['x', 10],
+            ['y', 20],
+            ['z', 30],
+        ]);
 
         expect(await kv.get<number>('x')).toBe(10);
         expect(await kv.get<number>('y')).toBe(20);
@@ -60,12 +64,18 @@ describe('KVManager — batch operations', () => {
     });
 
     it('mset propagates TTL to all entries', async () => {
-        await kv.mset<string>([['ttl1', 'v1'], ['ttl2', 'v2']], 0.1); // 100 ms
+        await kv.mset<string>(
+            [
+                ['ttl1', 'v1'],
+                ['ttl2', 'v2'],
+            ],
+            0.1,
+        ); // 100 ms
 
         expect(await kv.get<string>('ttl1')).toBe('v1');
         expect(await kv.get<string>('ttl2')).toBe('v2');
 
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
 
         expect(await kv.get('ttl1')).toBeUndefined();
         expect(await kv.get('ttl2')).toBeUndefined();
@@ -103,7 +113,10 @@ describe('KVManager — batch operations', () => {
         const ns = new KVManager({ namespace: 'batch' });
         await ns.connect();
 
-        await ns.mset<number>([['i', 1], ['j', 2]]);
+        await ns.mset<number>([
+            ['i', 1],
+            ['j', 2],
+        ]);
 
         const results = await ns.mget<number>(['i', 'j', 'k']);
         expect(results).toEqual([1, 2, undefined]);

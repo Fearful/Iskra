@@ -111,7 +111,13 @@ export class RedisAdapter implements KVAdapter {
         const timedOut = new Promise<'timeout'>((resolve) => {
             timer = setTimeout(() => resolve('timeout'), this.quitTimeoutMs);
         });
-        const outcome = await Promise.race([client.quit().then(() => 'quit' as const, () => 'error' as const), timedOut]);
+        const outcome = await Promise.race([
+            client.quit().then(
+                () => 'quit' as const,
+                () => 'error' as const,
+            ),
+            timedOut,
+        ]);
         clearTimeout(timer);
         if (outcome !== 'quit') client.disconnect();
     }
@@ -164,10 +170,7 @@ export class RedisAdapter implements KVAdapter {
         });
     }
 
-    async mset<T = unknown>(
-        entries: Array<[string, T]>,
-        ttl?: number
-    ): Promise<void> {
+    async mset<T = unknown>(entries: Array<[string, T]>, ttl?: number): Promise<void> {
         const seconds = checkTtl(ttl);
         if (entries.length === 0) return;
         const pipeline = this.redis.pipeline();

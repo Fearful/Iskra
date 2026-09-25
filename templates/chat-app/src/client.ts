@@ -46,7 +46,10 @@ ws.addEventListener('message', (ev) => {
             console.log(`En #${payload.room}. Presentes: ${payload.members.join(', ')}`);
             console.log(`Historial (${payload.history.length} mensajes, hasMore=${payload.hasMore})`);
             // Mandar un mensaje cada 3 segundos.
-            setInterval(() => send('message', { text: `Hola desde ${username} (${new Date().toLocaleTimeString()})` }), 3000);
+            setInterval(
+                () => send('message', { text: `Hola desde ${username} (${new Date().toLocaleTimeString()})` }),
+                3000,
+            );
             break;
 
         case 'presence':

@@ -98,7 +98,10 @@ describe('RedisAdapter — native batch methods', () => {
             adapter as unknown as {
                 mset: <T>(entries: Array<[string, T]>, ttl?: number) => Promise<void>;
             }
-        ).mset<number>([['x', 10], ['y', 20]]);
+        ).mset<number>([
+            ['x', 10],
+            ['y', 20],
+        ]);
 
         expect(await adapter.get<number>('x')).toBe(10);
         expect(await adapter.get<number>('y')).toBe(20);
@@ -118,9 +121,7 @@ describe('RedisAdapter — native batch methods', () => {
             return origDel(...keys);
         };
 
-        await (
-            adapter as unknown as { mdel: (keys: string[]) => Promise<void> }
-        ).mdel(['d1', 'd2']);
+        await (adapter as unknown as { mdel: (keys: string[]) => Promise<void> }).mdel(['d1', 'd2']);
 
         expect(await adapter.get('d1')).toBeUndefined();
         expect(await adapter.get('d2')).toBeUndefined();
@@ -189,7 +190,10 @@ describe('KVManager — prefers native batch methods', () => {
         const spy = new SpyBatchAdapter();
         const kv = managerWith(spy);
 
-        await kv.mset<number>([['x', 9], ['y', 8]]);
+        await kv.mset<number>([
+            ['x', 9],
+            ['y', 8],
+        ]);
         expect(spy.msetUsed).toBe(true);
         expect(await kv.get<number>('x')).toBe(9);
     });

@@ -1,7 +1,7 @@
-import { describe, test, expect } from "bun:test";
-import { DbDriver } from "../src/driver";
-import { QueryError } from "../src/errors";
-import { App } from "@iskra-bun/core";
+import { describe, test, expect } from 'bun:test';
+import { DbDriver } from '../src/driver';
+import { QueryError } from '../src/errors';
+import { App } from '@iskra-bun/core';
 
 /**
  * MEDIUM finding (src/driver.ts:236): stop() has no try/catch, so a client whose
@@ -15,11 +15,11 @@ import { App } from "@iskra-bun/core";
  *   2. After stop(), client and db are undefined, so ping() returns false and
  *      transaction() throws the not-started QueryError.
  */
-describe("DbDriver.stop hardening", () => {
-    test("swallows a throwing close() and resolves without rejecting", async () => {
+describe('DbDriver.stop hardening', () => {
+    test('swallows a throwing close() and resolves without rejecting', async () => {
         const app = new App({
-            name: "StopThrowClose",
-            db: { driver: "sqlite", url: ":memory:" },
+            name: 'StopThrowClose',
+            db: { driver: 'sqlite', url: ':memory:' },
         });
         const driver = new DbDriver();
         app.register(driver);
@@ -29,7 +29,7 @@ describe("DbDriver.stop hardening", () => {
         // bun:sqlite / libsql handle that errors on teardown.
         (driver as any).client = {
             close: () => {
-                throw new Error("close exploded");
+                throw new Error('close exploded');
             },
         };
 
@@ -37,10 +37,10 @@ describe("DbDriver.stop hardening", () => {
         await expect(driver.stop()).resolves.toBeUndefined();
     });
 
-    test("swallows a throwing end() and resolves without rejecting", async () => {
+    test('swallows a throwing end() and resolves without rejecting', async () => {
         const app = new App({
-            name: "StopThrowEnd",
-            db: { driver: "sqlite", url: ":memory:" },
+            name: 'StopThrowEnd',
+            db: { driver: 'sqlite', url: ':memory:' },
         });
         const driver = new DbDriver();
         app.register(driver);
@@ -49,17 +49,17 @@ describe("DbDriver.stop hardening", () => {
         // mysql2 / postgres-js expose async end(); simulate it rejecting.
         (driver as any).client = {
             end: async () => {
-                throw new Error("end rejected");
+                throw new Error('end rejected');
             },
         };
 
         await expect(driver.stop()).resolves.toBeUndefined();
     });
 
-    test("nulls client and db after stop so a later ping() returns false", async () => {
+    test('nulls client and db after stop so a later ping() returns false', async () => {
         const app = new App({
-            name: "StopNullsHandlePing",
-            db: { driver: "sqlite", url: ":memory:" },
+            name: 'StopNullsHandlePing',
+            db: { driver: 'sqlite', url: ':memory:' },
         });
         const driver = new DbDriver();
         app.register(driver);
@@ -75,10 +75,10 @@ describe("DbDriver.stop hardening", () => {
         expect(await driver.ping()).toBe(false);
     });
 
-    test("nulls db after stop so a later transaction() hits the not-started guard", async () => {
+    test('nulls db after stop so a later transaction() hits the not-started guard', async () => {
         const app = new App({
-            name: "StopNullsHandleTx",
-            db: { driver: "sqlite", url: ":memory:" },
+            name: 'StopNullsHandleTx',
+            db: { driver: 'sqlite', url: ':memory:' },
         });
         const driver = new DbDriver();
         app.register(driver);
@@ -92,14 +92,14 @@ describe("DbDriver.stop hardening", () => {
             expect(true).toBe(false); // should not reach
         } catch (err) {
             expect(err).toBeInstanceOf(QueryError);
-            expect((err as QueryError).message).toContain("not started");
+            expect((err as QueryError).message).toContain('not started');
         }
     });
 
-    test("a throwing teardown still nulls the handles", async () => {
+    test('a throwing teardown still nulls the handles', async () => {
         const app = new App({
-            name: "StopThrowStillNulls",
-            db: { driver: "sqlite", url: ":memory:" },
+            name: 'StopThrowStillNulls',
+            db: { driver: 'sqlite', url: ':memory:' },
         });
         const driver = new DbDriver();
         app.register(driver);
@@ -107,7 +107,7 @@ describe("DbDriver.stop hardening", () => {
 
         (driver as any).client = {
             close: () => {
-                throw new Error("close exploded");
+                throw new Error('close exploded');
             },
         };
 

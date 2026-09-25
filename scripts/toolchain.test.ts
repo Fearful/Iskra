@@ -42,12 +42,17 @@ describe('toolchain pins', () => {
         // promise. create-iskra is a Node-compatible CLI (npm create iskra).
         const [major, minor] = BUN_VERSION.split('.');
         const bunRange = `>=${major}.${minor}.0`;
-        const manifests = [join(ROOT, 'package.json'), ...readdirSync(join(ROOT, 'packages')).map((d) => join(ROOT, 'packages', d, 'package.json'))];
+        const manifests = [
+            join(ROOT, 'package.json'),
+            ...readdirSync(join(ROOT, 'packages')).map((d) => join(ROOT, 'packages', d, 'package.json')),
+        ];
         const wrong = manifests.flatMap((file) => {
             const manifest = JSON.parse(readFileSync(file, 'utf8'));
             if (manifest.private && file !== join(ROOT, 'package.json')) return [];
             const expected = manifest.name === 'create-iskra' ? { node: '>=18' } : { bun: bunRange };
-            return JSON.stringify(manifest.engines) === JSON.stringify(expected) ? [] : [`${relative(ROOT, file)}: ${JSON.stringify(manifest.engines)}`];
+            return JSON.stringify(manifest.engines) === JSON.stringify(expected)
+                ? []
+                : [`${relative(ROOT, file)}: ${JSON.stringify(manifest.engines)}`];
         });
         expect(wrong).toEqual([]);
     });
@@ -59,8 +64,11 @@ describe('toolchain pins', () => {
             const { access, provenance } = manifest.publishConfig ?? {};
             const repo = manifest.repository ?? {};
             // npm rejects a provenance publish whose repository does not match the source repo.
-            const ok = access === 'public' && provenance === true
-                && repo.url === 'git+https://github.com/fearful/iskra.git' && repo.directory === `packages/${dir}`;
+            const ok =
+                access === 'public' &&
+                provenance === true &&
+                repo.url === 'git+https://github.com/fearful/iskra.git' &&
+                repo.directory === `packages/${dir}`;
             return ok ? [] : [manifest.name];
         });
         expect(wrong).toEqual([]);

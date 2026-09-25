@@ -1,9 +1,9 @@
-import { describe, expect, it, beforeAll, beforeEach, afterAll } from "bun:test";
-import { LocalStorageAdapter } from "../src/adapters/local";
-import { BaseStorageAdapter } from "../src/base";
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs/promises";
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { LocalStorageAdapter } from '../src/adapters/local';
+import { BaseStorageAdapter } from '../src/base';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 // Covers: CRITICAL path traversal (src/base.ts sanitizePath + src/adapters/local.ts).
 // Fix expectation:
@@ -18,15 +18,15 @@ import fs from "node:fs/promises";
 // (rather than the absolute tmpdir) makes traversal resolution deterministic
 // regardless of how deep the OS temp directory is.
 const ROOT = path.join(os.tmpdir(), `storage-kit-traversal-${process.pid}`);
-const BASE = path.join(ROOT, "store");
-const OUTSIDE = path.resolve(path.join(BASE, "..", "secret.txt")); // === ROOT/secret.txt
-const OUTSIDE_CONTENT = "TOP-SECRET-DO-NOT-LEAK";
+const BASE = path.join(ROOT, 'store');
+const OUTSIDE = path.resolve(path.join(BASE, '..', 'secret.txt')); // === ROOT/secret.txt
+const OUTSIDE_CONTENT = 'TOP-SECRET-DO-NOT-LEAK';
 
 let adapter: LocalStorageAdapter;
 
 beforeAll(async () => {
     await fs.mkdir(ROOT, { recursive: true });
-    adapter = new LocalStorageAdapter({ adapter: "local", basePath: BASE });
+    adapter = new LocalStorageAdapter({ adapter: 'local', basePath: BASE });
     await adapter.connect();
 });
 
@@ -45,39 +45,53 @@ afterAll(async () => {
 class ExposedAdapter extends BaseStorageAdapter {
     async connect() {}
     async disconnect() {}
-    async put(): Promise<any> { return {}; }
-    async get() { return null; }
-    async getStream() { return null; }
+    async put(): Promise<any> {
+        return {};
+    }
+    async get() {
+        return null;
+    }
+    async getStream() {
+        return null;
+    }
     async delete() {}
-    async exists() { return false; }
-    async list() { return []; }
-    async url() { return ""; }
-    async isDirectory() { return false; }
+    async exists() {
+        return false;
+    }
+    async list() {
+        return [];
+    }
+    async url() {
+        return '';
+    }
+    async isDirectory() {
+        return false;
+    }
     public sanitize(p: string) {
         return this.sanitizePath(p);
     }
 }
 
 const TRAVERSAL_PATHS = [
-    "../../etc/passwd",
-    "foo/../../../../etc/passwd",
-    "..\\..\\etc\\passwd",
-    "foo\\..\\..\\..\\..\\etc\\passwd",
-    "....//....//etc/passwd",
-    "/../../etc/passwd",
+    '../../etc/passwd',
+    'foo/../../../../etc/passwd',
+    '..\\..\\etc\\passwd',
+    'foo\\..\\..\\..\\..\\etc\\passwd',
+    '....//....//etc/passwd',
+    '/../../etc/passwd',
 ];
 
-describe("sanitizePath strips traversal segments", () => {
+describe('sanitizePath strips traversal segments', () => {
     const exposed = new ExposedAdapter();
 
     for (const input of TRAVERSAL_PATHS) {
         it(`removes ".." segments from "${input}"`, () => {
             const result = exposed.sanitize(input);
             // After sanitization no ".." segment may survive.
-            const segments = result.split("/");
-            expect(segments).not.toContain("..");
+            const segments = result.split('/');
+            expect(segments).not.toContain('..');
             // And the result must not start with a parent reference.
-            expect(result.startsWith("..")).toBe(false);
+            expect(result.startsWith('..')).toBe(false);
         });
     }
 });
@@ -86,32 +100,28 @@ describe("sanitizePath strips traversal segments", () => {
 // ROOT/secret.txt. We deliberately target the real sentinel so that a passing
 // test proves containment, not a lucky miss against a non-existent path.
 const PUT_PAYLOADS = [
-    "../secret.txt", // direct escape to the sentinel
-    "a/../../secret.txt", // escape that resolves to the sentinel
-    "..\\secret.txt", // backslash escape to the sentinel
+    '../secret.txt', // direct escape to the sentinel
+    'a/../../secret.txt', // escape that resolves to the sentinel
+    '..\\secret.txt', // backslash escape to the sentinel
 ];
 
-describe("LocalStorageAdapter contains traversal in put()", () => {
+describe('LocalStorageAdapter contains traversal in put()', () => {
     for (const payload of PUT_PAYLOADS) {
         it(`does not overwrite the outside sentinel via "${payload}"`, async () => {
             try {
-                await adapter.put(payload, Buffer.from("HACKED"));
+                await adapter.put(payload, Buffer.from('HACKED'));
             } catch (err: any) {
                 expect(err.message).toMatch(/escapes storage root/i);
             }
             // The sentinel content must be intact regardless of throw-or-contain.
-            const after = await fs.readFile(OUTSIDE, "utf8");
+            const after = await fs.readFile(OUTSIDE, 'utf8');
             expect(after).toBe(OUTSIDE_CONTENT);
         });
     }
 });
 
-describe("LocalStorageAdapter contains traversal in get()", () => {
-    const GET_PAYLOADS = [
-        "../secret.txt",
-        "x/y/../../../secret.txt",
-        "..\\secret.txt",
-    ];
+describe('LocalStorageAdapter contains traversal in get()', () => {
+    const GET_PAYLOADS = ['../secret.txt', 'x/y/../../../secret.txt', '..\\secret.txt'];
 
     for (const payload of GET_PAYLOADS) {
         it(`cannot read the outside sentinel via "${payload}"`, async () => {
@@ -130,13 +140,13 @@ describe("LocalStorageAdapter contains traversal in get()", () => {
     }
 });
 
-describe("LocalStorageAdapter contains traversal in delete()", () => {
-    it("cannot delete the outside sentinel via ..", async () => {
+describe('LocalStorageAdapter contains traversal in delete()', () => {
+    it('cannot delete the outside sentinel via ..', async () => {
         // Recreate the sentinel in case an earlier test contained a write into it.
         await fs.writeFile(OUTSIDE, OUTSIDE_CONTENT);
 
         try {
-            await adapter.delete("../secret.txt");
+            await adapter.delete('../secret.txt');
         } catch (err: any) {
             expect(err.message).toMatch(/escapes storage root/i);
         }

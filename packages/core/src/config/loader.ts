@@ -7,7 +7,7 @@ export async function loadAppConfig(cwd: string = process.cwd()): Promise<AppCon
         name: 'app',
         configFile: 'app.config',
         cwd,
-        dotenv: true
+        dotenv: true,
     });
 
     const validConfig = AppConfigSchema.parse(config || {});

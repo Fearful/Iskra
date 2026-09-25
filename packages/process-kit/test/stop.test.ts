@@ -8,8 +8,16 @@ describe('ProcessManager.stop – graceful shutdown', () => {
 
     afterEach(async () => {
         // Belt-and-suspenders: ensure we always clean up even if a test fails
-        try { await pm?.stop(500); } catch { /* already stopped */ }
-        try { await app?.stop(); } catch { /* already stopped */ }
+        try {
+            await pm?.stop(500);
+        } catch {
+            /* already stopped */
+        }
+        try {
+            await app?.stop();
+        } catch {
+            /* already stopped */
+        }
     });
 
     it('awaits process exit before returning (no orphaned process)', async () => {
@@ -18,17 +26,17 @@ describe('ProcessManager.stop – graceful shutdown', () => {
         app.register(pm);
 
         app.config.processes = {
-            'sleeper': {
+            sleeper: {
                 command: 'sleep',
                 args: ['10'],
                 mode: 'daemon',
-            }
+            },
         };
 
         await app.start();
 
         // Give it a moment to appear in the map
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 100));
 
         const exitedBefore = (pm as any).processes.size;
         expect(exitedBefore).toBe(1);
@@ -55,19 +63,21 @@ describe('ProcessManager.stop – graceful shutdown', () => {
                 args: [
                     '-e',
                     // Write "SIGTERM" to flagFile when the signal arrives, then exit
-                    `process.on('SIGTERM', () => { require('fs').writeFileSync(${JSON.stringify(flagFile)}, 'SIGTERM'); process.exit(0); }); await new Promise(r => setTimeout(r, 30000));`
+                    `process.on('SIGTERM', () => { require('fs').writeFileSync(${JSON.stringify(flagFile)}, 'SIGTERM'); process.exit(0); }); await new Promise(r => setTimeout(r, 30000));`,
                 ],
                 mode: 'daemon',
-            }
+            },
         };
 
         await app.start();
         // Wait for process to be running
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 300));
 
         await pm.stop(2000);
 
-        const flag = await Bun.file(flagFile).text().catch(() => '');
+        const flag = await Bun.file(flagFile)
+            .text()
+            .catch(() => '');
         // Clean up the temp file
         await Bun.write(flagFile, '').catch(() => {});
 
@@ -85,11 +95,11 @@ describe('ProcessManager.stop – graceful shutdown', () => {
                 command: 'sh',
                 args: ['-c', 'trap "" TERM; sleep 30'],
                 mode: 'daemon',
-            }
+            },
         };
 
         await app.start();
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 300));
 
         const t0 = Date.now();
         // Timeout of 300ms graceful — SIGKILL fires at 300ms, deadline at 600ms

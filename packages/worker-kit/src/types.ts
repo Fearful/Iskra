@@ -1,6 +1,8 @@
 export interface WorkerManagerOptions {
     /** URL de conexión a Redis (ej: 'redis://user:pass@localhost:6379/0'; `rediss://` activa TLS) */
-    connection: string | { host: string; port: number; username?: string; password?: string; db?: number; tls?: object };
+    connection:
+        | string
+        | { host: string; port: number; username?: string; password?: string; db?: number; tls?: object };
     /**
      * `false` = solo productor: `start()` no crea un Worker y `enqueue` acepta
      * jobs sin handler local (los procesa otro proceso). Default: true.
@@ -27,10 +29,7 @@ export interface WorkerManagerOptions {
  * - `{ every: ms }` repite cada `ms` milisegundos.
  * - `{ pattern: cron }` repite según el patrón cron, con opciones extra.
  */
-export type RepeatSpec =
-    | string
-    | { every: number; limit?: number }
-    | { pattern: string; limit?: number; tz?: string };
+export type RepeatSpec = string | { every: number; limit?: number } | { pattern: string; limit?: number; tz?: string };
 
 export interface JobOptions {
     /** Reintentos en caso de fallo */

@@ -70,7 +70,7 @@ export function createMockLogger(): MockLogger {
         isLevelEnabled: (_level: string) => false,
         setBindings: (_bindings: Record<string, unknown>) => {},
         flush: (_cb?: (err?: Error) => void) => {},
-        bindings: () => ({} as Record<string, unknown>),
+        bindings: () => ({}) as Record<string, unknown>,
     } as unknown as MockLogger;
 
     return mock;

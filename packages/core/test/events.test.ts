@@ -5,7 +5,7 @@ describe('App Events', () => {
     it('should propagate context correctly', async () => {
         const app = new App({ name: 'ContextTest' });
 
-        await new Promise<void>(resolve => {
+        await new Promise<void>((resolve) => {
             app.on('msg', (ctx) => {
                 expect(ctx.app).toBe(app);
                 expect(ctx.logger).toBeDefined();
@@ -24,7 +24,7 @@ describe('App Events', () => {
             ctx.reply('pong');
         });
 
-        const replyPromise = new Promise(resolve => {
+        const replyPromise = new Promise((resolve) => {
             app.events.on('ping:reply', (data) => {
                 expect(data).toBe('pong');
                 resolve(true);
@@ -38,7 +38,7 @@ describe('App Events', () => {
     it('should handle handler errors gracefully', async () => {
         const app = new App({ name: 'ErrorTest' });
         // We mock the logger to verify it catches the error
-        const logSpy = mock(() => { });
+        const logSpy = mock(() => {});
         app.logger.error = logSpy;
 
         app.on('boom', () => {
@@ -48,7 +48,7 @@ describe('App Events', () => {
         app.emit('boom', {});
 
         // Wait for async handler
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise((r) => setTimeout(r, 10));
 
         expect(logSpy).toHaveBeenCalled();
         const callArgs = logSpy.mock.calls[0] as unknown as [Record<string, any>, ...unknown[]];

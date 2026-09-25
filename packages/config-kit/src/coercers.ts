@@ -70,7 +70,7 @@ export function envEnum<T extends string>(values: readonly [T, ...T[]]) {
             if (!(values as readonly string[]).includes(val)) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    message: `Expected one of [${values.map(v => `"${v}"`).join(', ')}]`,
+                    message: `Expected one of [${values.map((v) => `"${v}"`).join(', ')}]`,
                 });
                 return z.NEVER;
             }

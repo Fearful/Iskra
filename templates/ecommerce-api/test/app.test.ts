@@ -23,10 +23,12 @@ describe('Ecommerce API App', () => {
         router.route('/api', productRouter);
 
         app.register(new DbDriver());
-        app.register(new WebPlugin({
-            port: TEST_PORT,
-            router: router
-        }));
+        app.register(
+            new WebPlugin({
+                port: TEST_PORT,
+                router: router,
+            }),
+        );
 
         await app.start();
 

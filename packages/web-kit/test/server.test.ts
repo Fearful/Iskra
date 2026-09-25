@@ -16,17 +16,17 @@ describe('WebDriver', () => {
                 {
                     method: 'GET',
                     path: '/hello',
-                    handler: () => ({ message: 'world' })
+                    handler: () => ({ message: 'world' }),
                 },
                 {
                     method: 'POST',
                     path: '/echo',
                     schema: {
-                        body: z.object({ name: z.string() })
+                        body: z.object({ name: z.string() }),
                     },
-                    handler: (ctx) => ({ name: ctx.body.name })
-                }
-            ]
+                    handler: (ctx) => ({ name: ctx.body.name }),
+                },
+            ],
         });
 
         app.register(driver);
@@ -48,7 +48,7 @@ describe('WebDriver', () => {
         const res = await fetch(`http://localhost:${PORT}/echo`, {
             method: 'POST',
             body: JSON.stringify({ name: 'iskra' }),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
         });
         expect(res.status).toBe(200);
         const json = await res.json();
@@ -59,13 +59,13 @@ describe('WebDriver', () => {
         const res = await fetch(`http://localhost:${PORT}/echo`, {
             method: 'POST',
             body: JSON.stringify({ wrong: 'field' }),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
         });
         expect(res.status).toBe(400);
     });
 
     it('should serve OpenAPI documentation', async () => {
-        // We didn't enable openApi in the beforeAll config. 
+        // We didn't enable openApi in the beforeAll config.
         // We need to create a separate instance or update beforeAll.
         // Let's create a separate instance for this test
         const app2 = new App({ name: 'DocApp' });
@@ -74,9 +74,9 @@ describe('WebDriver', () => {
             openApi: {
                 path: '/doc',
                 title: 'Test API',
-                version: '1.0.0'
+                version: '1.0.0',
             },
-            routes: []
+            routes: [],
         });
 
         app2.register(driver2);

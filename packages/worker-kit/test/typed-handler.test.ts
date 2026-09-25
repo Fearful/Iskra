@@ -50,7 +50,10 @@ describe('register<T> typed handler', () => {
     });
 
     it('is chainable and accepts multiple typed handlers', () => {
-        interface ResizePayload { url: string; width: number }
+        interface ResizePayload {
+            url: string;
+            width: number;
+        }
 
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
 
@@ -79,26 +82,22 @@ describe('enqueue<T> typed payload', () => {
 
         // TypeScript accepts enqueue<SendEmailPayload>(...) — if the payload did
         // not match the generic T, the compiler would error here.
-        await expect(
-            wm.enqueue<SendEmailPayload>('email.send', { to: 'x@y.com', subject: 'Hi' }),
-        ).rejects.toThrow('not initialized');
+        await expect(wm.enqueue<SendEmailPayload>('email.send', { to: 'x@y.com', subject: 'Hi' })).rejects.toThrow(
+            'not initialized',
+        );
     });
 
     it('infers T from the data argument without an explicit type parameter', async () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
 
         // T is inferred as { tag: string } — no explicit type arg needed.
-        await expect(
-            wm.enqueue('some.job', { tag: 'inferred' }),
-        ).rejects.toThrow('not initialized');
+        await expect(wm.enqueue('some.job', { tag: 'inferred' })).rejects.toThrow('not initialized');
     });
 
     it('accepts unknown payload (default T=unknown) for backward compat', async () => {
         const wm = new WorkerManager({ connection: 'redis://localhost:6379' });
 
         // Old call sites pass data without a type arg — should still compile.
-        await expect(
-            wm.enqueue('legacy.job', { whatever: true }),
-        ).rejects.toThrow('not initialized');
+        await expect(wm.enqueue('legacy.job', { whatever: true })).rejects.toThrow('not initialized');
     });
 });

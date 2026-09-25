@@ -1,8 +1,8 @@
-import type { Feature, CacheConfig } from "../types";
-import type { Kernel } from "../kernel";
-import type { Context, Next } from "hono";
-import Redis from "ioredis";
-import { consoleLogger, type KernelLogger } from "../logging";
+import type { Feature, CacheConfig } from '../types';
+import type { Kernel } from '../kernel';
+import type { Context, Next } from 'hono';
+import Redis from 'ioredis';
+import { consoleLogger, type KernelLogger } from '../logging';
 
 // Standard Cache Interface
 export interface CacheAdapter {
@@ -21,7 +21,7 @@ export interface CacheAdapter {
 
 // Simple Memory Adapter
 class MemoryAdapter implements CacheAdapter {
-    private store = new Map<string, { value: any, expires: number | null }>();
+    private store = new Map<string, { value: any; expires: number | null }>();
 
     async get(key: string) {
         const item = this.store.get(key);
@@ -125,34 +125,34 @@ class RedisAdapter implements CacheAdapter {
     }
 }
 
-declare module "hono" {
+declare module 'hono' {
     interface ContextVariableMap {
         cache: CacheAdapter;
     }
 }
 
 export class CacheFeature implements Feature {
-    name = "cache";
+    name = 'cache';
     private log: KernelLogger = consoleLogger;
     public client!: CacheAdapter;
 
-    constructor(private config: CacheConfig = { adapter: "memory" }) { }
+    constructor(private config: CacheConfig = { adapter: 'memory' }) {}
 
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         this.log.debug(`Initializing Cache: ${this.config.adapter}`);
 
-        if (this.config.adapter === "redis") {
+        if (this.config.adapter === 'redis') {
             const conn = this.config.connection || {};
             try {
                 this.client = new RedisAdapter({
-                    host: conn.host || "localhost",
+                    host: conn.host || 'localhost',
                     port: conn.port || 6379,
                     password: conn.password,
-                    db: conn.db || 0
+                    db: conn.db || 0,
                 });
             } catch {
-                this.log.warn("Redis connection failed, falling back to memory cache");
+                this.log.warn('Redis connection failed, falling back to memory cache');
                 this.client = new MemoryAdapter();
             }
         } else {
@@ -160,8 +160,8 @@ export class CacheFeature implements Feature {
         }
 
         const app = kernel.getApp();
-        app.use("*", async (c: Context, next: Next) => {
-            c.set("cache", this.client);
+        app.use('*', async (c: Context, next: Next) => {
+            c.set('cache', this.client);
             await next();
         });
 

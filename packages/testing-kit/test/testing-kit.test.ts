@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { existsSync } from 'node:fs';
-import {
-    createTestApp,
-    createMockLogger,
-    createMockDriver,
-    withTempDir,
-    createTestServer,
-} from '../src/index';
+import { createTestApp, createMockLogger, createMockDriver, withTempDir, createTestServer } from '../src/index';
 
 // ─── createTestApp ────────────────────────────────────────────────────────────
 
@@ -136,7 +130,9 @@ describe('createMockDriver', () => {
         const hookCalls: string[] = [];
         const app = createTestApp();
         const driver = createMockDriver('hooked', {
-            init: async () => { hookCalls.push('init-hook'); },
+            init: async () => {
+                hookCalls.push('init-hook');
+            },
         });
         app.register(driver);
         await app.start();
@@ -148,7 +144,9 @@ describe('createMockDriver', () => {
     it('propagates a throwing stop hook', async () => {
         const app = createTestApp();
         const driver = createMockDriver('boom', {
-            stop: async () => { throw new Error('stop-exploded'); },
+            stop: async () => {
+                throw new Error('stop-exploded');
+            },
         });
         app.register(driver);
         await app.start();
@@ -231,7 +229,7 @@ describe('createTestServer', () => {
         const client = createTestServer(makeHandler());
         const res = await client.get('/ping');
         expect(res.status).toBe(200);
-        const body = await res.json() as { url: string; method: string };
+        const body = (await res.json()) as { url: string; method: string };
         expect(body.method).toBe('GET');
         expect(body.url).toContain('/ping');
     });
@@ -240,7 +238,7 @@ describe('createTestServer', () => {
         const captured: string[] = [];
         const client = createTestServer({
             request(_input, init) {
-                captured.push(init?.body as string ?? '');
+                captured.push((init?.body as string) ?? '');
                 return new Response('ok', { status: 201 });
             },
         });
@@ -251,7 +249,7 @@ describe('createTestServer', () => {
     it('DELETE sends the right method', async () => {
         const client = createTestServer(makeHandler());
         const res = await client.delete('/items/1');
-        const body = await res.json() as { method: string };
+        const body = (await res.json()) as { method: string };
         expect(body.method).toBe('DELETE');
     });
 });

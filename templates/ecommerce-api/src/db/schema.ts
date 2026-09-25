@@ -1,4 +1,3 @@
-
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
@@ -22,8 +21,12 @@ export const orders = sqliteTable('orders', {
 
 export const orderItems = sqliteTable('order_items', {
     id: text('id').primaryKey(),
-    orderId: text('order_id').notNull().references(() => orders.id),
-    productId: text('product_id').notNull().references(() => products.id),
+    orderId: text('order_id')
+        .notNull()
+        .references(() => orders.id),
+    productId: text('product_id')
+        .notNull()
+        .references(() => products.id),
     quantity: integer('quantity').notNull(),
     price: real('price').notNull(),
 });

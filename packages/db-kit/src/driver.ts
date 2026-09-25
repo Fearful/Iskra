@@ -22,8 +22,7 @@ export type OnQueryHook = (query: string, params: unknown[]) => void;
  * the union of the supported dialect databases for the same schema. Callers can
  * narrow by dialect if they need dialect-specific transaction APIs.
  */
-export type IskraDrizzleTx<TSchema extends Record<string, unknown> = Record<string, never>> =
-    IskraDrizzleDb<TSchema>;
+export type IskraDrizzleTx<TSchema extends Record<string, unknown> = Record<string, never>> = IskraDrizzleDb<TSchema>;
 
 /**
  * The Drizzle database handle exposed by {@link DbDriver}, parameterized by the
@@ -144,8 +143,8 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
                     break;
                 }
                 case 'sqlite': {
-                    const { Database } = await import("bun:sqlite");
-                    const { drizzle: drizzleSqlite } = await import("drizzle-orm/bun-sqlite");
+                    const { Database } = await import('bun:sqlite');
+                    const { drizzle: drizzleSqlite } = await import('drizzle-orm/bun-sqlite');
                     const client = new Database(config.url);
                     this.client = client;
                     this.db = drizzleSqlite<TSchema>(client, { logger });
@@ -255,9 +254,11 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
             // The dialect-specific `transaction` overloads do not unify across the
             // union, so we route through the runtime method with a faithful cast
             // of the public handle types.
-            return await (this.db as IskraDrizzleDb<TSchema> & {
-                transaction(cb: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R>;
-            }).transaction((tx) => fn(tx));
+            return await (
+                this.db as IskraDrizzleDb<TSchema> & {
+                    transaction(cb: (tx: IskraDrizzleTx<TSchema>) => Promise<R>): Promise<R>;
+                }
+            ).transaction((tx) => fn(tx));
         } catch (error) {
             if (error instanceof QueryError) throw error;
             throw new QueryError('Transaction failed', {

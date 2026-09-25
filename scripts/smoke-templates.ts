@@ -51,7 +51,13 @@ const CASES: Case[] = [
     { kind: 'image', name: 'full-stack-app', port: 3000, probes: [{ path: '/doc', status: 200 }] },
     { kind: 'image', name: 'python-data-processor', port: 3000, probes: [{ path: '/health', status: 200 }] },
     // A WebSocket server: a plain GET gets 426 Upgrade Required.
-    { kind: 'image', name: 'chat-app', port: 3001, probes: [{ path: '/', status: 426 }], env: { CHAT_AUTH_SECRET: 'smoke-test-secret' } },
+    {
+        kind: 'image',
+        name: 'chat-app',
+        port: 3001,
+        probes: [{ path: '/', status: 426 }],
+        env: { CHAT_AUTH_SECRET: 'smoke-test-secret' },
+    },
     {
         kind: 'image',
         name: 'job-worker',
@@ -80,7 +86,10 @@ const START_TIMEOUT_MS = 60_000;
 const SETTLE_MS = 3_000;
 
 function docker(args: string[], opts: { quiet?: boolean; allowFail?: boolean } = {}): { ok: boolean; out: string } {
-    const res = spawnSync('docker', args, { encoding: 'utf8', stdio: opts.quiet ? 'pipe' : ['ignore', 'inherit', 'inherit'] });
+    const res = spawnSync('docker', args, {
+        encoding: 'utf8',
+        stdio: opts.quiet ? 'pipe' : ['ignore', 'inherit', 'inherit'],
+    });
     const ok = res.status === 0;
     if (!ok && !opts.allowFail) throw new Error(`docker ${args.join(' ')} failed (${res.status})\n${res.stderr ?? ''}`);
     return { ok, out: (res.stdout ?? '').trim() };
@@ -131,15 +140,22 @@ async function runImage(c: ImageCase, build: boolean): Promise<string | null> {
     if (build) docker(['build', '-f', `templates/${c.name}/Dockerfile`, '-t', image, '.']);
     if (c.redis && !running(REDIS)) {
         docker(['rm', '-f', REDIS], { quiet: true, allowFail: true });
-        docker(['run', '-d', '--name', REDIS, '--network', NETWORK, '--network-alias', 'redis', 'redis:7-alpine'], { quiet: true });
+        docker(['run', '-d', '--name', REDIS, '--network', NETWORK, '--network-alias', 'redis', 'redis:7-alpine'], {
+            quiet: true,
+        });
     }
 
     docker(['rm', '-f', container], { quiet: true, allowFail: true });
     const env = Object.entries(c.env ?? {}).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
-    docker(['run', '-d', '--name', container, '--network', NETWORK, '-p', `127.0.0.1::${c.port}`, ...env, image], { quiet: true });
+    docker(['run', '-d', '--name', container, '--network', NETWORK, '-p', `127.0.0.1::${c.port}`, ...env, image], {
+        quiet: true,
+    });
     let failure: string | null = null;
     try {
-        const hostPort = docker(['port', container, `${c.port}/tcp`], { quiet: true }).out.split('\n')[0].split(':').pop();
+        const hostPort = docker(['port', container, `${c.port}/tcp`], { quiet: true })
+            .out.split('\n')[0]
+            .split(':')
+            .pop();
         failure = await waitForProbes(`http://127.0.0.1:${hostPort}`, c.probes, () => running(container));
         if (!failure) {
             await sleep(SETTLE_MS);
@@ -167,7 +183,8 @@ async function runCompose(c: ComposeCase, build: boolean): Promise<string | null
 
 async function probeCompose(c: ComposeCase, compose: string[]): Promise<string | null> {
     try {
-        const exited = () => docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true }).out;
+        const exited = () =>
+            docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true }).out;
         const failure = await waitForProbes('http://127.0.0.1:80', c.probes, () => exited() === '');
         if (failure) return `${failure}${exited() ? `; exited: ${exited().replace(/\n/g, ', ')}` : ''}`;
         // Services start at different speeds: retried until the same deadline.

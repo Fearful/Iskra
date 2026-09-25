@@ -24,7 +24,9 @@ describe('handleExit – oneshot early return', () => {
     it('oneshot never schedules a restart even with restartOnCrash set', () => {
         const { app, pm } = makeManager();
         const exits: any[] = [];
-        app.on('process:exit', (ctx) => { exits.push(ctx.payload); });
+        app.on('process:exit', (ctx) => {
+            exits.push(ctx.payload);
+        });
 
         const scheduled: number[] = [];
         const realSetTimeout = globalThis.setTimeout;
@@ -172,7 +174,9 @@ describe('kill() – SIGKILL escalation timer', () => {
                     resolveExited(137);
                 }
             }),
-            exited: new Promise<number>((r) => { resolveExited = r; }),
+            exited: new Promise<number>((r) => {
+                resolveExited = r;
+            }),
         };
 
         (pm as any).processes.set('stubborn', {

@@ -30,8 +30,12 @@ function makeManager() {
 function makeUnkillableProc() {
     return {
         killed: false, // stays false forever — the process never dies
-        kill: mock(() => { /* ignores SIGTERM and SIGKILL */ }),
-        exited: new Promise<number>(() => { /* never resolves */ }),
+        kill: mock(() => {
+            /* ignores SIGTERM and SIGKILL */
+        }),
+        exited: new Promise<number>(() => {
+            /* never resolves */
+        }),
     };
 }
 
@@ -66,7 +70,9 @@ describe('ProcessManager orphan detection – kill()', () => {
 
         const proc = {
             killed: false,
-            kill: mock(function (this: any) { this.killed = true; }),
+            kill: mock(function (this: any) {
+                this.killed = true;
+            }),
             exited: Promise.resolve(0),
         };
         (pm as any).processes.set('clean', {

@@ -1,10 +1,10 @@
-import { betterAuth, type Auth as BetterAuthInstance } from "better-auth";
-import { drizzleAdapter, type DB as DrizzleAdapterDb } from "better-auth/adapters/drizzle";
-import { genericOAuth } from "better-auth/plugins/generic-oauth";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import type { MySqlDatabase, MySqlQueryResultHKT, PreparedQueryHKTBase } from "drizzle-orm/mysql-core";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
-import { pgSchema, mysqlSchema, sqliteSchema } from "./schema";
+import { betterAuth, type Auth as BetterAuthInstance } from 'better-auth';
+import { drizzleAdapter, type DB as DrizzleAdapterDb } from 'better-auth/adapters/drizzle';
+import { genericOAuth } from 'better-auth/plugins/generic-oauth';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import type { MySqlDatabase, MySqlQueryResultHKT, PreparedQueryHKTBase } from 'drizzle-orm/mysql-core';
+import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
+import { pgSchema, mysqlSchema, sqliteSchema } from './schema';
 
 /**
  * The Drizzle database handle auth-kit accepts. A union of the supported dialect
@@ -15,14 +15,14 @@ import { pgSchema, mysqlSchema, sqliteSchema } from "./schema";
 export type AuthKitDrizzleDb =
     | PgDatabase<PgQueryResultHKT, Record<string, unknown>>
     | MySqlDatabase<MySqlQueryResultHKT, PreparedQueryHKTBase, Record<string, unknown>>
-    | BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
+    | BaseSQLiteDatabase<'sync' | 'async', unknown, Record<string, unknown>>;
 
 /** Minimum length, in characters, for the session-signing secret. */
 const MIN_SECRET_LENGTH = 32;
 
 export interface BetterAuthConfigOptions {
     db: AuthKitDrizzleDb;
-    adapterType: "postgres" | "mysql" | "sqlite";
+    adapterType: 'postgres' | 'mysql' | 'sqlite';
     secret: string;
     baseURL?: string;
     basePath?: string;
@@ -79,8 +79,8 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         db,
         adapterType,
         secret,
-        baseURL = "http://localhost:3000",
-        basePath = "/api/auth",
+        baseURL = 'http://localhost:3000',
+        basePath = '/api/auth',
         trustedOrigins = [],
         enableEmailPassword = true,
         disableSignUp = false,
@@ -101,25 +101,23 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
     }
 
     const baseOrigin = new URL(baseURL).origin;
-    const allTrustedOrigins = trustedOrigins.includes(baseOrigin)
-        ? trustedOrigins
-        : [baseOrigin, ...trustedOrigins];
+    const allTrustedOrigins = trustedOrigins.includes(baseOrigin) ? trustedOrigins : [baseOrigin, ...trustedOrigins];
 
     let schema;
-    let provider: "pg" | "mysql" | "sqlite";
+    let provider: 'pg' | 'mysql' | 'sqlite';
 
     switch (adapterType) {
-        case "postgres":
+        case 'postgres':
             schema = pgSchema;
-            provider = "pg";
+            provider = 'pg';
             break;
-        case "mysql":
+        case 'mysql':
             schema = mysqlSchema;
-            provider = "mysql";
+            provider = 'mysql';
             break;
-        case "sqlite":
+        case 'sqlite':
             schema = sqliteSchema;
-            provider = "sqlite";
+            provider = 'sqlite';
             break;
         default:
             throw new Error(`Unsupported adapter type: ${adapterType}`);
@@ -127,31 +125,29 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
 
     const database = drizzleAdapter(db as unknown as DrizzleAdapterDb, {
         provider,
-        schema
+        schema,
     });
 
     const plugins = [];
     if (oidcConfig) {
-        const authorizationUrl = oidcConfig.authorizationEndpoint ||
-            `${oidcConfig.issuer}/protocol/openid-connect/auth`;
-        const tokenUrl = oidcConfig.tokenEndpoint ||
-            `${oidcConfig.issuer}/protocol/openid-connect/token`;
-        const userInfoUrl = oidcConfig.userinfoEndpoint ||
-            `${oidcConfig.issuer}/protocol/openid-connect/userinfo`;
+        const authorizationUrl =
+            oidcConfig.authorizationEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/auth`;
+        const tokenUrl = oidcConfig.tokenEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/token`;
+        const userInfoUrl = oidcConfig.userinfoEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/userinfo`;
 
         plugins.push(
             genericOAuth({
                 config: [
                     {
-                        providerId: oidcConfig.providerId || "oidc",
+                        providerId: oidcConfig.providerId || 'oidc',
                         clientId: oidcConfig.clientId,
                         clientSecret: oidcConfig.clientSecret,
                         authorizationUrl,
                         tokenUrl,
                         userInfoUrl,
-                        discoveryUrl: oidcConfig.discoveryEndpoint ||
-                            `${oidcConfig.issuer}/.well-known/openid-configuration`,
-                        scopes: oidcConfig.scopes || ["openid", "email", "profile"],
+                        discoveryUrl:
+                            oidcConfig.discoveryEndpoint || `${oidcConfig.issuer}/.well-known/openid-configuration`,
+                        scopes: oidcConfig.scopes || ['openid', 'email', 'profile'],
                         // Secure default: PKCE on. Disabling exposes auth-code
                         // interception/injection and requires an explicit false.
                         pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
@@ -178,10 +174,10 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         trustedOrigins: allTrustedOrigins,
         emailAndPassword: enableEmailPassword
             ? {
-                enabled: true,
-                autoSignIn: true,
-                disableSignUp,
-            }
+                  enabled: true,
+                  autoSignIn: true,
+                  disableSignUp,
+              }
             : undefined,
         socialProviders: Object.keys(socialProviders || {}).length > 0 ? socialProviders : undefined,
         plugins,
@@ -196,7 +192,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         ...(rateLimit === false ? { rateLimit: { enabled: false } } : {}),
         advanced: {
             disableCSRFCheck,
-            generateId: () => crypto.randomUUID().replace(/-/g, ""),
+            generateId: () => crypto.randomUUID().replace(/-/g, ''),
             ...(ipAddressHeaders ? { ipAddress: { ipAddressHeaders } } : {}),
         },
     }) as unknown as BetterAuthInstance;

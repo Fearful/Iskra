@@ -18,31 +18,26 @@ export interface LoadConfigOptions<TSchema extends z.ZodTypeAny> {
  * On failure, throws a `ConfigError` listing each invalid or missing field by name
  * and reason — never echoing secret values.
  */
-export function loadConfig<TSchema extends z.ZodTypeAny>(
-    options: LoadConfigOptions<TSchema>,
-): z.output<TSchema> {
+export function loadConfig<TSchema extends z.ZodTypeAny>(options: LoadConfigOptions<TSchema>): z.output<TSchema> {
     const { schema, source = process.env } = options;
 
     const result = schema.safeParse(source, { errorMap: valueFreeErrors });
 
     if (!result.success) {
-        const issues = result.error.issues.map(issue => {
+        const issues = result.error.issues.map((issue) => {
             const path = issue.path.length > 0 ? issue.path.join('.') : '<root>';
             return `  • ${path}: ${issue.message}`;
         });
 
-        throw new ConfigError(
-            `Config validation failed:\n${issues.join('\n')}`,
-            {
-                context: {
-                    // Only report field names and messages — never values.
-                    fields: result.error.issues.map(i => ({
-                        path: i.path.join('.') || '<root>',
-                        message: i.message,
-                    })),
-                },
+        throw new ConfigError(`Config validation failed:\n${issues.join('\n')}`, {
+            context: {
+                // Only report field names and messages — never values.
+                fields: result.error.issues.map((i) => ({
+                    path: i.path.join('.') || '<root>',
+                    message: i.message,
+                })),
             },
-        );
+        });
     }
 
     return deepFreeze(result.data) as z.output<TSchema>;

@@ -10,17 +10,17 @@ export const httpRouter = createRouter([
         path: '/users',
         handler: async () => {
             return await userService.findAll();
-        }
+        },
     },
     {
         method: 'POST',
         path: '/users',
         schema: {
-            body: z.object({ name: z.string() })
+            body: z.object({ name: z.string() }),
         },
         handler: async (ctx) => {
             const user = await userService.create(ctx.body.name);
             return user;
-        }
-    }
+        },
+    },
 ]);

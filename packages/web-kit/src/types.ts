@@ -1,6 +1,6 @@
-import type { TrustProxy } from "./client-ip";
-import type { KernelLogger } from "./logging";
-import type { Kernel } from "./kernel";
+import type { TrustProxy } from './client-ip';
+import type { KernelLogger } from './logging';
+import type { Kernel } from './kernel';
 
 export type { Kernel };
 
@@ -19,7 +19,7 @@ export interface KernelConfig {
     idleTimeout?: number;
     /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
     shutdownGraceMs?: number;
-    environment?: "development" | "production" | "test";
+    environment?: 'development' | 'production' | 'test';
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
     /**
      * Number of reverse proxies in front of the app (`true` = 1). Only then are
@@ -37,11 +37,11 @@ export interface KernelConfig {
 
 export interface SecurityHeadersConfig {
     contentSecurityPolicy?:
-    | string
-    | {
-        directives?: Record<string, string | string[]>;
-    };
-    xFrameOptions?: "DENY" | "SAMEORIGIN" | string;
+        | string
+        | {
+              directives?: Record<string, string | string[]>;
+          };
+    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string;
     xContentTypeOptions?: boolean;
     strictTransportSecurity?: {
         maxAge?: number;
@@ -50,14 +50,14 @@ export interface SecurityHeadersConfig {
     };
     xXssProtection?: boolean;
     referrerPolicy?:
-    | "no-referrer"
-    | "no-referrer-when-downgrade"
-    | "origin"
-    | "origin-when-cross-origin"
-    | "same-origin"
-    | "strict-origin"
-    | "strict-origin-when-cross-origin"
-    | "unsafe-url";
+        | 'no-referrer'
+        | 'no-referrer-when-downgrade'
+        | 'origin'
+        | 'origin-when-cross-origin'
+        | 'same-origin'
+        | 'strict-origin'
+        | 'strict-origin-when-cross-origin'
+        | 'unsafe-url';
     permissionsPolicy?: Record<string, string[]>;
 }
 
@@ -86,7 +86,7 @@ export interface ApiKeyConfig {
     staticKeys?: Array<Partial<ApiKeyMetadata> & { key: string }>;
     headerName?: string;
     queryParamName?: string;
-    extractStrategies?: ("header" | "bearer" | "query" | "custom")[];
+    extractStrategies?: ('header' | 'bearer' | 'query' | 'custom')[];
     /** Not used yet: only `staticKeys` are validated. */
     vaultService?: any;
     customExtractor?: (c: any) => string | null;
@@ -111,7 +111,7 @@ export interface CsrfConfig {
     cookieOptions?: {
         httpOnly?: boolean;
         secure?: boolean;
-        sameSite?: "Strict" | "Lax" | "None";
+        sameSite?: 'Strict' | 'Lax' | 'None';
         maxAge?: number;
     };
 }
@@ -144,7 +144,7 @@ export interface RateLimitConfig {
     skip?: (c: any) => boolean;
     handler?: (c: any) => Response;
     standardHeaders?: boolean;
-    store?: "memory" | "cache";
+    store?: 'memory' | 'cache';
 }
 
 export interface HealthCheckConfig {
@@ -156,7 +156,7 @@ export interface HealthCheckConfig {
     checkTimeoutMs?: number;
     checks?: {
         [key: string]: (context?: any) => Promise<{
-            status: "ok" | "error";
+            status: 'ok' | 'error';
             message?: string;
             details?: any;
         }>;
@@ -180,14 +180,15 @@ export interface ErrorHandlerConfig {
 }
 
 export interface LoggerConfig {
-    level?: "debug" | "info" | "error" | "trace" | "warning" | "fatal" | null | undefined;
-    format?: "json" | "pretty";
+    level?: 'debug' | 'info' | 'error' | 'trace' | 'warning' | 'fatal' | null | undefined;
+    format?: 'json' | 'pretty';
     sinks?: Array<
-        {
-            type: "console" | "file";
-            path?: string;
-            level?: "debug" | "info" | "warn" | "error";
-        } | Sink
+        | {
+              type: 'console' | 'file';
+              path?: string;
+              level?: 'debug' | 'info' | 'warn' | 'error';
+          }
+        | Sink
     >;
     logRequests?: boolean;
     logResponses?: boolean;
@@ -205,7 +206,7 @@ export interface AuthConfig {
      */
     rateLimit?: false | { max?: number; windowMs?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
-    authMode?: "oidc" | "email"; // Authentication mode
+    authMode?: 'oidc' | 'email'; // Authentication mode
     /**
      * Email/password sign-in. Defaults to `authMode === "email"`, so an OIDC
      * deployment does not also expose an open email/password login.
@@ -241,20 +242,20 @@ export interface AuthConfig {
 }
 
 export interface SessionConfig {
-    store: "db" | "cache" | "memory";
+    store: 'db' | 'cache' | 'memory';
     secret: string;
     ttl?: number;
     cookieName?: string;
     cookieOptions?: {
         secure?: boolean;
-        sameSite?: "Strict" | "Lax" | "None";
+        sameSite?: 'Strict' | 'Lax' | 'None';
         domain?: string;
         path?: string;
     };
 }
 
 export interface DbConfig {
-    adapter: "postgres" | "mysql" | "sqlite";
+    adapter: 'postgres' | 'mysql' | 'sqlite';
     connection?: {
         host?: string;
         port?: number;
@@ -266,7 +267,7 @@ export interface DbConfig {
 }
 
 export interface CacheConfig {
-    adapter: "redis" | "memory";
+    adapter: 'redis' | 'memory';
     connection?: {
         host?: string;
         port?: number;
@@ -306,7 +307,7 @@ export interface OpenAPIConfig {
     securitySchemes?: Record<string, any>;
 }
 
-export type UploadAction = "upload" | "list" | "download" | "delete";
+export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
 
 export interface UploadConfig {
     projectName: string;

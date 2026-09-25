@@ -33,12 +33,12 @@ describe('SocketKit', () => {
     it('should connect and receive echo', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
 
-        const openPromise = new Promise(resolve => {
+        const openPromise = new Promise((resolve) => {
             ws.onopen = () => resolve(true);
         });
         await openPromise;
 
-        const messagePromise = new Promise(resolve => {
+        const messagePromise = new Promise((resolve) => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
                 if (data.event === 'echo:reply') {
@@ -56,9 +56,11 @@ describe('SocketKit', () => {
 
     it('should route to correct handler', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
-        const messagePromise = new Promise(resolve => {
+        const messagePromise = new Promise((resolve) => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
                 if (data.event === 'uppercase:reply') {
@@ -76,10 +78,12 @@ describe('SocketKit', () => {
 
     it('should handle complex payload objects', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         const payload = { msg: 'test', nested: { a: 1 } };
-        const messagePromise = new Promise(resolve => {
+        const messagePromise = new Promise((resolve) => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
                 if (data.event === 'echo:reply') {
@@ -97,16 +101,18 @@ describe('SocketKit', () => {
 
     it('should handle invalid JSON gracefully', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         // Send invalid JSON — should not crash the server
         ws.send('not valid json {{{');
 
         // Wait a bit, then verify the server still accepts connections
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 100));
 
         const ws2 = new WebSocket(`ws://localhost:${PORT}`);
-        const connected = new Promise(resolve => {
+        const connected = new Promise((resolve) => {
             ws2.onopen = () => resolve(true);
         });
         const result = await connected;
@@ -117,14 +123,16 @@ describe('SocketKit', () => {
     });
 
     it('should emit socket:connected event on connection', async () => {
-        const connectedPromise = new Promise(resolve => {
+        const connectedPromise = new Promise((resolve) => {
             app.on('socket:connected', (ctx) => {
                 resolve(ctx.payload);
             });
         });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         const payload = await connectedPromise;
         expect(payload).toBeDefined();
@@ -132,14 +140,16 @@ describe('SocketKit', () => {
     });
 
     it('should fallback to app event bus for unregistered events', async () => {
-        const eventPromise = new Promise(resolve => {
+        const eventPromise = new Promise((resolve) => {
             app.on('socket:custom-event', (ctx) => {
                 resolve(ctx.payload);
             });
         });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         ws.send(JSON.stringify({ event: 'custom-event', payload: { data: 'test' } }));
 
@@ -150,14 +160,18 @@ describe('SocketKit', () => {
 
     it('ignores messages without an event field', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         // No `event` key → handler returns early; server must stay healthy.
         ws.send(JSON.stringify({ payload: 'orphan' }));
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 100));
 
         const ws2 = new WebSocket(`ws://localhost:${PORT}`);
-        const ok = await new Promise(resolve => { ws2.onopen = () => resolve(true); });
+        const ok = await new Promise((resolve) => {
+            ws2.onopen = () => resolve(true);
+        });
         expect(ok).toBe(true);
         ws.close();
         ws2.close();
@@ -165,10 +179,12 @@ describe('SocketKit', () => {
 
     it('broadcasts a message to all connected clients via driver.broadcast', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
-        await new Promise(r => setTimeout(r, 50)); // let the server-side subscribe('global') settle
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
+        await new Promise((r) => setTimeout(r, 50)); // let the server-side subscribe('global') settle
 
-        const newsPromise = new Promise(resolve => {
+        const newsPromise = new Promise((resolve) => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
                 if (data.event === 'news') resolve(data.payload);
@@ -183,10 +199,12 @@ describe('SocketKit', () => {
 
     it('lets a router handler broadcast to a topic via ctx.broadcast', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise(resolve => { ws.onopen = () => resolve(true); });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
+        await new Promise((r) => setTimeout(r, 50));
 
-        const announcePromise = new Promise(resolve => {
+        const announcePromise = new Promise((resolve) => {
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString());
                 // ctx.broadcast now wraps frames in the {event: topic, payload}

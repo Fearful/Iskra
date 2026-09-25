@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { Kernel } from "../src/kernel";
-import { CacheFeature } from "../src/features/cache";
-import Redis from "ioredis";
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { Kernel } from '../src/kernel';
+import { CacheFeature } from '../src/features/cache';
+import Redis from 'ioredis';
 
 // Exercises the Redis cache adapter against a real Redis. Skipped when no Redis
 // is reachable so the unit suite (memory adapter) stays infra-free.
-const REDIS_URL = process.env.TEST_REDIS_URL || "redis://127.0.0.1:6379";
+const REDIS_URL = process.env.TEST_REDIS_URL || 'redis://127.0.0.1:6379';
 
 async function redisReachable(): Promise<boolean> {
     const url = new URL(REDIS_URL);
@@ -35,7 +35,7 @@ async function redisReachable(): Promise<boolean> {
 
 const redisUp = await redisReachable();
 
-describe.if(redisUp)("CacheFeature with the Redis adapter (requires Redis)", () => {
+describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () => {
     const url = new URL(REDIS_URL);
     const prefix = `cachetest:${Date.now()}:`;
     let kernel: Kernel;
@@ -44,7 +44,7 @@ describe.if(redisUp)("CacheFeature with the Redis adapter (requires Redis)", () 
     beforeAll(async () => {
         kernel = new Kernel();
         cache = new CacheFeature({
-            adapter: "redis",
+            adapter: 'redis',
             connection: { host: url.hostname, port: Number(url.port) || 6379 },
         });
         kernel.registerFeature(cache);
@@ -52,46 +52,46 @@ describe.if(redisUp)("CacheFeature with the Redis adapter (requires Redis)", () 
     });
 
     afterAll(async () => {
-        for (const k of ["str", "obj", "ttl", "ex", "counter"]) {
+        for (const k of ['str', 'obj', 'ttl', 'ex', 'counter']) {
             await cache.client.delete(prefix + k);
         }
         await kernel.shutdown();
     });
 
-    it("stores and reads back a plain string", async () => {
-        await cache.client.set(prefix + "str", "plain");
-        expect(await cache.client.get(prefix + "str")).toBe("plain");
+    it('stores and reads back a plain string', async () => {
+        await cache.client.set(prefix + 'str', 'plain');
+        expect(await cache.client.get(prefix + 'str')).toBe('plain');
     });
 
-    it("round-trips an object through JSON", async () => {
-        await cache.client.set(prefix + "obj", { a: 1, b: [2, 3] });
-        expect(await cache.client.get(prefix + "obj")).toEqual({ a: 1, b: [2, 3] });
+    it('round-trips an object through JSON', async () => {
+        await cache.client.set(prefix + 'obj', { a: 1, b: [2, 3] });
+        expect(await cache.client.get(prefix + 'obj')).toEqual({ a: 1, b: [2, 3] });
     });
 
-    it("returns null for a missing key", async () => {
-        expect(await cache.client.get(prefix + "missing")).toBeNull();
+    it('returns null for a missing key', async () => {
+        expect(await cache.client.get(prefix + 'missing')).toBeNull();
     });
 
-    it("applies a TTL on set", async () => {
-        await cache.client.set(prefix + "ttl", "temp", 60);
-        expect(await cache.client.get(prefix + "ttl")).toBe("temp");
+    it('applies a TTL on set', async () => {
+        await cache.client.set(prefix + 'ttl', 'temp', 60);
+        expect(await cache.client.get(prefix + 'ttl')).toBe('temp');
     });
 
-    it("reports existence and deletes keys", async () => {
-        await cache.client.set(prefix + "ex", "1");
-        expect(await cache.client.exists(prefix + "ex")).toBe(true);
-        await cache.client.delete(prefix + "ex");
-        expect(await cache.client.exists(prefix + "ex")).toBe(false);
+    it('reports existence and deletes keys', async () => {
+        await cache.client.set(prefix + 'ex', '1');
+        expect(await cache.client.exists(prefix + 'ex')).toBe(true);
+        await cache.client.delete(prefix + 'ex');
+        expect(await cache.client.exists(prefix + 'ex')).toBe(false);
     });
 
-    it("increments a counter", async () => {
-        await cache.client.delete(prefix + "counter");
-        expect(await cache.client.increment!(prefix + "counter")).toBe(1);
-        expect(await cache.client.increment!(prefix + "counter")).toBe(2);
+    it('increments a counter', async () => {
+        await cache.client.delete(prefix + 'counter');
+        expect(await cache.client.increment!(prefix + 'counter')).toBe(1);
+        expect(await cache.client.increment!(prefix + 'counter')).toBe(2);
     });
 
-    it("incrementWithTtl always leaves the counter with an expiry", async () => {
-        const key = prefix + "rl";
+    it('incrementWithTtl always leaves the counter with an expiry', async () => {
+        const key = prefix + 'rl';
         await cache.client.delete(key);
         expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(1);
         expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(2);
@@ -101,7 +101,7 @@ describe.if(redisUp)("CacheFeature with the Redis adapter (requires Redis)", () 
 
             // Regression: a counter left without a TTL (the old GET-then-INCR race)
             // must regain one instead of blocking the client forever.
-            await redis.set(key, "7");
+            await redis.set(key, '7');
             expect(await cache.client.incrementWithTtl!(key, 60_000)).toBe(8);
             expect(await redis.pttl(key)).toBeGreaterThan(0);
         } finally {

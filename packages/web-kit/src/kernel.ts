@@ -1,9 +1,9 @@
-import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
-import type { Context, Next } from "hono";
-import type { Feature, KernelConfig, SecurityHeadersConfig } from "./types";
-import { consoleLogger, silentLogger, type KernelLogger } from "./logging";
-import type { FeatureRegistry } from "./feature-registry";
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import type { Context, Next } from 'hono';
+import type { Feature, KernelConfig, SecurityHeadersConfig } from './types';
+import { consoleLogger, silentLogger, type KernelLogger } from './logging';
+import type { FeatureRegistry } from './feature-registry';
 
 /**
  * Core microkernel orchestrator that manages features, dependencies, and application lifecycle.
@@ -20,7 +20,7 @@ export class Kernel {
             port: 8000,
             // All interfaces, like Bun.serve itself: "localhost" made the server
             // unreachable from outside a container. Set "127.0.0.1" to restrict.
-            hostname: "0.0.0.0",
+            hostname: '0.0.0.0',
             maxRequestBodySize: 16 * 1024 * 1024,
             ...config,
         };
@@ -33,26 +33,20 @@ export class Kernel {
             // is sent as is.
             if (err instanceof HTTPException && err.res) return err.getResponse();
             if (err instanceof HTTPException) {
-                return c.json(
-                    { message: err.message },
-                    err.status,
-                );
+                return c.json({ message: err.message }, err.status);
             }
 
-            this.logger.error("Unhandled error", err);
-            return c.json(
-                { message: "Internal Server Error" },
-                500,
-            );
+            this.logger.error('Unhandled error', err);
+            return c.json({ message: 'Internal Server Error' }, 500);
         });
     }
 
     async initialize(): Promise<void> {
         if (this.initialized) {
-            throw new Error("Kernel already initialized");
+            throw new Error('Kernel already initialized');
         }
 
-        this.logger.debug("Initializing Web-Kit Kernel");
+        this.logger.debug('Initializing Web-Kit Kernel');
 
         this.validateFeatureDependencies();
         await this.validatePeerDependencies();
@@ -73,7 +67,9 @@ export class Kernel {
         }
 
         this.initialized = true;
-        this.logger.info(`Web-Kit Kernel initialized (${orderedFeatures.map((f) => f.name).join(", ") || "no features"})`);
+        this.logger.info(
+            `Web-Kit Kernel initialized (${orderedFeatures.map((f) => f.name).join(', ') || 'no features'})`,
+        );
     }
 
     private applySecurityHeaders(): void {
@@ -82,66 +78,61 @@ export class Kernel {
         // X-XSS-Protection is off by default: the legacy auditor it enables is
         // gone from modern browsers and could itself be abused (OWASP).
         const headers: SecurityHeadersConfig = {
-            xFrameOptions: "SAMEORIGIN",
+            xFrameOptions: 'SAMEORIGIN',
             xContentTypeOptions: true,
             xXssProtection: false,
-            referrerPolicy: "strict-origin-when-cross-origin",
+            referrerPolicy: 'strict-origin-when-cross-origin',
             ...this.config.securityHeaders,
         };
         this.config.securityHeaders = headers;
 
-        this.app.use("*", async (c: Context, next: Next) => {
+        this.app.use('*', async (c: Context, next: Next) => {
             await next();
 
             if (headers.xFrameOptions) {
-                c.res.headers.set("X-Frame-Options", headers.xFrameOptions);
+                c.res.headers.set('X-Frame-Options', headers.xFrameOptions);
             }
             if (headers.xContentTypeOptions) {
-                c.res.headers.set("X-Content-Type-Options", "nosniff");
+                c.res.headers.set('X-Content-Type-Options', 'nosniff');
             }
             if (headers.xXssProtection) {
-                c.res.headers.set("X-XSS-Protection", "1; mode=block");
+                c.res.headers.set('X-XSS-Protection', '1; mode=block');
             }
             if (headers.referrerPolicy) {
-                c.res.headers.set("Referrer-Policy", headers.referrerPolicy);
+                c.res.headers.set('Referrer-Policy', headers.referrerPolicy);
             }
             if (headers.strictTransportSecurity) {
                 const hsts = headers.strictTransportSecurity;
                 let hstsValue = `max-age=${hsts.maxAge || 31536000}`;
-                if (hsts.includeSubDomains) hstsValue += "; includeSubDomains";
-                if (hsts.preload) hstsValue += "; preload";
-                c.res.headers.set("Strict-Transport-Security", hstsValue);
+                if (hsts.includeSubDomains) hstsValue += '; includeSubDomains';
+                if (hsts.preload) hstsValue += '; preload';
+                c.res.headers.set('Strict-Transport-Security', hstsValue);
             }
             if (headers.contentSecurityPolicy) {
-                if (typeof headers.contentSecurityPolicy === "string") {
-                    c.res.headers.set(
-                        "Content-Security-Policy",
-                        headers.contentSecurityPolicy,
-                    );
+                if (typeof headers.contentSecurityPolicy === 'string') {
+                    c.res.headers.set('Content-Security-Policy', headers.contentSecurityPolicy);
                 } else if (headers.contentSecurityPolicy.directives) {
-                    const directives = Object.entries(
-                        headers.contentSecurityPolicy.directives,
-                    )
+                    const directives = Object.entries(headers.contentSecurityPolicy.directives)
                         .map(([key, value]) => {
-                            const values = Array.isArray(value) ? value.join(" ") : value;
+                            const values = Array.isArray(value) ? value.join(' ') : value;
                             return `${key} ${values}`;
                         })
-                        .join("; ");
-                    c.res.headers.set("Content-Security-Policy", directives);
+                        .join('; ');
+                    c.res.headers.set('Content-Security-Policy', directives);
                 }
             }
             if (headers.permissionsPolicy) {
                 const policy = Object.entries(headers.permissionsPolicy)
-                    .map(([key, value]) => `${key}=(${value.join(" ")})`)
-                    .join(", ");
-                c.res.headers.set("Permissions-Policy", policy);
+                    .map(([key, value]) => `${key}=(${value.join(' ')})`)
+                    .join(', ');
+                c.res.headers.set('Permissions-Policy', policy);
             }
         });
     }
 
     registerFeature(feature: Feature): void {
         if (this.initialized) {
-            throw new Error("Cannot register features after initialization");
+            throw new Error('Cannot register features after initialization');
         }
 
         this.features.set(feature.name, feature);
@@ -152,9 +143,7 @@ export class Kernel {
             if (feature.dependencies) {
                 for (const dep of feature.dependencies) {
                     if (!this.features.has(dep)) {
-                        throw new Error(
-                            `Feature '${name}' requires feature '${dep}' which is not registered`,
-                        );
+                        throw new Error(`Feature '${name}' requires feature '${dep}' which is not registered`);
                     }
                 }
             }
@@ -223,7 +212,7 @@ export class Kernel {
 
     /** Replaces the logger; only before initialize() (WebPlugin passes the App's). */
     setLogger(logger: KernelLogger): void {
-        if (this.initialized) throw new Error("Cannot change the logger after initialization");
+        if (this.initialized) throw new Error('Cannot change the logger after initialization');
         this.logger = logger;
     }
 
@@ -249,7 +238,7 @@ export class Kernel {
         // But let's assume standard Bun usage from the user
         this.logger.info(`Server running at http://${this.config.hostname}:${this.config.port}`);
 
-        if (typeof Bun !== "undefined") {
+        if (typeof Bun !== 'undefined') {
             this.server = Bun.serve({
                 port: this.config.port,
                 hostname: this.config.hostname,
@@ -258,7 +247,7 @@ export class Kernel {
                 fetch: this.app.fetch,
             });
         } else {
-            this.logger.warn("Not running in Bun, start() might strictly need an adapter.");
+            this.logger.warn('Not running in Bun, start() might strictly need an adapter.');
         }
     }
 
@@ -269,7 +258,7 @@ export class Kernel {
      * failures are rethrown together at the end.
      */
     async shutdown(): Promise<void> {
-        this.logger.info("Shutting down");
+        this.logger.info('Shutting down');
 
         if (this.server) {
             const server = this.server;
@@ -307,6 +296,6 @@ export class Kernel {
         if (errors.length > 0) {
             throw new AggregateError(errors, `${errors.length} feature(s) failed to shut down`);
         }
-        this.logger.info("Server shut down gracefully");
+        this.logger.info('Server shut down gracefully');
     }
 }
