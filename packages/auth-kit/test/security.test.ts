@@ -112,3 +112,42 @@ describe('createBetterAuth cookie cache maxAge', () => {
         expect(cookieCacheMaxAge(auth)).toBe(30);
     });
 });
+
+// HIGH — better-auth skips its Origin check (CSRF on cookie requests) and its
+// callbackURL validation (open redirects) when it believes it runs under test:
+// NODE_ENV=test or any TEST variable other than "false". `bun test` sets
+// NODE_ENV=test, so these requests were accepted before auth-kit pinned
+// `advanced.disableOriginCheck: false`.
+describe('createBetterAuth origin checks outside the test runner too', () => {
+    const auth = createBetterAuth({
+        db: fakeDb,
+        adapterType: 'sqlite',
+        secret: VALID_SECRET,
+        baseURL: 'https://app.example.com',
+    });
+
+    it('rejects a callbackURL on an untrusted origin', async () => {
+        const res = await auth.handler(
+            new Request('https://app.example.com/api/auth/sign-in/email', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+                body: JSON.stringify({
+                    email: 'user@example.com',
+                    password: 'correct-horse-battery',
+                    callbackURL: 'https://evil.example/phish',
+                }),
+            }),
+        );
+        expect(res.status).toBe(403);
+    });
+
+    it('rejects a cookie-bearing POST from another origin', async () => {
+        const res = await auth.handler(
+            new Request('https://app.example.com/api/auth/sign-out', {
+                method: 'POST',
+                headers: { origin: 'https://evil.example', cookie: 'better-auth.session_token=abc.def' },
+            }),
+        );
+        expect(res.status).toBe(403);
+    });
+});
