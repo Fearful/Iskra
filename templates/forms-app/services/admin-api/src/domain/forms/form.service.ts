@@ -14,6 +14,23 @@ import { generateJsonSchema } from './schema-generator.ts';
 import { enforceConstraints } from '@forms-app/shared/validation';
 import type { FieldType } from '@forms-app/shared';
 
+export const DEFAULT_PAGE_SIZE = 50;
+export const MAX_PAGE_SIZE = 100;
+// Keeps the OFFSET a safe integer (and within Postgres' bigint).
+const MAX_PAGE = Math.floor(Number.MAX_SAFE_INTEGER / MAX_PAGE_SIZE);
+
+/**
+ * A page of answers that can be queried: whole numbers, page >= 1 and
+ * pageSize 1..100, the defaults for anything that is not a number. page=-1
+ * made a negative OFFSET and a pageSize that was not a number a LIMIT of NaN,
+ * which failed in Postgres with a 500.
+ */
+export function normalizePagination(page: number, pageSize: number): { page: number; pageSize: number } {
+    const clamp = (value: number, fallback: number, max: number) =>
+        Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), max) : fallback;
+    return { page: clamp(page, 1, MAX_PAGE), pageSize: clamp(pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE) };
+}
+
 export class FormService {
     private static db: any;
 
@@ -168,7 +185,12 @@ export class FormService {
         await this.db.update(forms).set({ status, updatedAt: new Date() }).where(eq(forms.id, id));
     }
 
-    static async getAnswers(formId: string, page = 1, pageSize = 50): Promise<PaginatedResponse<Answer>> {
+    static async getAnswers(
+        formId: string,
+        requestedPage = 1,
+        requestedPageSize = DEFAULT_PAGE_SIZE,
+    ): Promise<PaginatedResponse<Answer>> {
+        const { page, pageSize } = normalizePagination(requestedPage, requestedPageSize);
         const offset = (page - 1) * pageSize;
 
         const [data, countResult] = await Promise.all([
