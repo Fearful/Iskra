@@ -33,13 +33,14 @@ bun install
 
 ## Verifying your changes
 
-Iskra's `main` branch is kept green. Before opening a pull request, run all three
+Iskra's `main` branch is kept green. Before opening a pull request, run these
 checks locally and make sure they pass:
 
 ```bash
-bun test          # all tests must pass
-bun run lint      # ESLint — 0 errors
-bun run typecheck # tsc --noEmit — 0 errors
+bun test             # all tests must pass
+bun run lint         # ESLint — 0 errors
+bun run format:check # Prettier — `bun run format` fixes it
+bun run typecheck    # tsc --noEmit — 0 errors
 ```
 
 `bun run ci` runs all of them plus `bun run build` (the tsup/`.d.ts` build that
