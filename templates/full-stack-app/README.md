@@ -33,7 +33,7 @@ La documentacion OpenAPI esta disponible en `http://localhost:3000/doc`.
 | `PORT` | Puerto del servidor HTTP | `3000` |
 | `SOCKET_PORT` | Puerto del servidor WebSocket | `3001` |
 | `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `:memory:` |
-| `ORACLE_USER` | Usuario de Oracle (opcional) | — |
+| `ORACLE_USER` | Usuario de Oracle (opcional): uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
 | `ORACLE_PASSWORD` | Password de Oracle (opcional) | — |
 | `ORACLE_CONNECTION_STRING` | Connection string de Oracle (opcional) | — |
 

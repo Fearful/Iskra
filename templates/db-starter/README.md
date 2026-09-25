@@ -27,7 +27,7 @@ El servidor levanta en `http://localhost:3000`.
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
 | `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `:memory:` |
-| `ORACLE_USER` | Usuario de Oracle (opcional) | — |
+| `ORACLE_USER` | Usuario de Oracle (opcional): uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
 | `ORACLE_PASSWORD` | Password de Oracle (opcional) | — |
 | `ORACLE_CONNECTION_STRING` | Connection string de Oracle (opcional) | — |
 
@@ -35,8 +35,11 @@ El servidor levanta en `http://localhost:3000`.
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| `GET` | `/users` | Listar todos los usuarios |
-| `POST` | `/users` | Crear un usuario (body: `{ "name": "...", "email": "..." }`) |
+| `GET` | `/users` | Listar los usuarios (`id` y `name`: los emails no se exponen) |
+| `POST` | `/users` | Crear un usuario (body: `{ "name": "...", "email": "..." }`, validado con Zod; `409` si el email ya existe) |
+
+El listado es publico, asi que no devuelve emails. Si un panel necesita verlos, sumale
+una ruta con autenticacion (por ejemplo con los features de auth de web-kit).
 
 ## Estructura del proyecto
 
@@ -56,13 +59,22 @@ src/
 
 Si configuras las variables `ORACLE_*` en `.env`, el `OracleDriver` se conecta automaticamente via el Bridge/Sidecar. Si no estan definidas, se omite sin errores.
 
+Conectate con un usuario propio de la app, con solo los permisos que usa (`CREATE SESSION`
+y los de sus tablas), nunca con `SYSTEM` o `SYS`:
+
+```sql
+CREATE USER app_user IDENTIFIED BY "<password larga y aleatoria>";
+GRANT CREATE SESSION TO app_user;
+-- y los permisos sobre sus tablas, por ejemplo:
+GRANT SELECT, INSERT, UPDATE, DELETE ON app_schema.users TO app_user;
+```
+
 ## Proximos pasos
 
 A partir de aca podes:
 
 - Agregar migraciones con [Drizzle Kit](https://iskra-docs.fly.dev/es/guides/migrations/)
 - Cambiar a PostgreSQL o MySQL modificando la config de `db`
-- Agregar validacion con Zod en las rutas
 - Sumar cache con [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/)
 
 ## Despliegue
