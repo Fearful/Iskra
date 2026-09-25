@@ -50,7 +50,10 @@ La documentacion OpenAPI esta disponible en `http://localhost:3000/doc`.
 
 | Evento | Direccion | Descripcion |
 |--------|-----------|-------------|
-| `chat:message` | Cliente → Servidor | Enviar mensaje (se guarda en KV y se hace echo) |
+| `chat:message` | Cliente → Servidor | Enviar `{ text }` (1 a 500 caracteres): se guarda solo el texto en KV y responde `{ ok, message }` |
+
+`GET /status` muestra el ultimo mensaje a cualquiera y el socket no pide autenticacion,
+asi que del payload se guarda solo un texto acotado (antes, cualquier JSON de hasta 16 KiB).
 
 ## Procesos externos
 
