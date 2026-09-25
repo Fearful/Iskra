@@ -1,7 +1,8 @@
 import type { AuthConfig, Feature, Kernel } from '../../types';
 import type { Context, Hono, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { getClientIp } from '../../client-ip';
+import { clientIpKey, getClientIp } from '../../client-ip';
+import { HitCounter } from '../../hit-counter';
 import { type Auth, createBetterAuth } from '@iskra-bun/auth-kit';
 import { z } from '@hono/zod-openapi';
 import type { User } from '@iskra-bun/auth-kit';
@@ -171,7 +172,8 @@ export class AuthFeature implements Feature {
         // Per-IP rate limiting on the auth routes by default, throttling
         // credential-stuffing / brute-force against sign-in and sign-up.
         if (this.config.rateLimit !== false) {
-            app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
+            this.authRateLimitHits = new HitCounter(this.config.rateLimit?.maxKeys);
+            app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware(this.authRateLimitHits));
         }
 
         app.use('*', async (c: Context, next: Next) => {
@@ -198,8 +200,7 @@ export class AuthFeature implements Feature {
     }
 
     // ─── Auth-route rate limiting ────────────────────────────────────────────
-    private authRateLimitHits = new Map<string, { count: number; expiresAt: number }>();
-    private authRateLimitLastSweep = 0;
+    private authRateLimitHits?: HitCounter;
     private get authRateLimitWindowMs(): number {
         return (this.config.rateLimit || undefined)?.windowMs ?? 15 * 60 * 1000;
     }
@@ -213,7 +214,7 @@ export class AuthFeature implements Feature {
      * attempts: counting them locked out a SPA polling get-session, and its
      * users out of signing in or out.
      */
-    private authRateLimitMiddleware() {
+    private authRateLimitMiddleware(hits: HitCounter) {
         return async (c: Context, next: Next) => {
             if (c.req.method !== 'POST' || /\/sign-out\/?$/.test(c.req.path)) {
                 await next();
@@ -221,28 +222,23 @@ export class AuthFeature implements Feature {
             }
             // Socket address unless the kernel is configured with `trustProxy`:
             // a raw X-Forwarded-For is client-controlled and would let an
-            // attacker rotate it to bypass the limit (and grow this map).
-            const ip = getClientIp(c, this.kernel?.getConfig().trustProxy) ?? 'unknown';
-            const now = Date.now();
-            if (now - this.authRateLimitLastSweep >= this.authRateLimitWindowMs) {
-                this.authRateLimitLastSweep = now;
-                for (const [key, hit] of this.authRateLimitHits) {
-                    if (now > hit.expiresAt) this.authRateLimitHits.delete(key);
-                }
-            }
-            const entry = this.authRateLimitHits.get(ip);
-
-            const next_entry =
-                !entry || now > entry.expiresAt
-                    ? { count: 1, expiresAt: now + this.authRateLimitWindowMs }
-                    : { count: entry.count + 1, expiresAt: entry.expiresAt };
-            this.authRateLimitHits.set(ip, next_entry);
-
-            if (next_entry.count > this.authRateLimitMax) {
+            // attacker rotate it to bypass the limit. IPv6 clients count by /64.
+            const ip = this.clientIp(c);
+            if (hits.hit(ip ? clientIpKey(ip) : 'unknown', this.authRateLimitWindowMs) > this.authRateLimitMax) {
                 throw new HTTPException(429, { message: 'Too many authentication attempts' });
             }
             await next();
         };
+    }
+
+    /** The client IP, as the kernel's `trustProxy` / `clientIpHeader` resolve it. */
+    private clientIp(c: Context): string | undefined {
+        const config = this.kernel?.getConfig();
+        return getClientIp(c, config?.trustProxy, config?.clientIpHeader);
+    }
+
+    async shutdown(): Promise<void> {
+        this.authRateLimitHits?.dispose();
     }
 
     routes(app: Hono): void {
@@ -343,7 +339,7 @@ export class AuthFeature implements Feature {
     private async withClientIp(c: Context): Promise<Request> {
         const raw = c.req.raw;
         const headers = new Headers(raw.headers);
-        const ip = getClientIp(c, this.kernel?.getConfig().trustProxy);
+        const ip = this.clientIp(c);
         if (ip) headers.set(CLIENT_IP_HEADER, ip);
         else headers.delete(CLIENT_IP_HEADER);
         // Only a request that had one gets a body: an empty one made

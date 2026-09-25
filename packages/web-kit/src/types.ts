@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
-import type { TrustProxy } from './client-ip';
+import type { ClientIpHeader, TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
 
@@ -25,11 +25,16 @@ export interface KernelConfig {
     environment?: 'development' | 'production' | 'test';
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
     /**
-     * Number of reverse proxies in front of the app (`true` = 1). Only then are
-     * `X-Forwarded-For` / `X-Real-IP` used to identify clients (rate limiting);
-     * by default the socket address is used. See `getClientIp`.
+     * Number of reverse proxies in front of the app (`true` = 1). Only then is
+     * `clientIpHeader` used to identify clients (rate limiting); by default the
+     * socket address is used. See `getClientIp`.
      */
     trustProxy?: TrustProxy;
+    /**
+     * The header those proxies put the client address in: `'x-forwarded-for'`
+     * (default) or `'x-real-ip'`. Only that one is read.
+     */
+    clientIpHeader?: ClientIpHeader;
     /**
      * Where the Kernel and its features log (startup, fallbacks, errors they
      * handle). Default: the console. `false`: nothing. WebPlugin passes the
@@ -152,6 +157,11 @@ export interface RateLimitConfig {
     handler?: (c: Context) => Response;
     standardHeaders?: boolean;
     store?: 'memory' | 'cache';
+    /**
+     * Most clients the memory store tracks at once (default 100 000). Past it
+     * the oldest are dropped, and they start a new window.
+     */
+    maxKeys?: number;
 }
 
 export interface HealthCheckConfig {
@@ -207,11 +217,12 @@ export interface AuthConfig {
     baseURL?: string; // For better-auth
     trustedOrigins?: string[]; // For better-auth CORS
     /**
-     * Per-client-IP limit on the auth routes (default 20 requests / 15 min).
+     * Per-client-IP limit on the auth routes (default 20 requests / 15 min,
+     * IPv6 clients by /64, at most `maxKeys` clients tracked: 100 000).
      * Raise it when a backend calls these routes on behalf of many users from
      * one IP (e.g. through the SDKs), or pass `false` to disable it.
      */
-    rateLimit?: false | { max?: number; windowMs?: number };
+    rateLimit?: false | { max?: number; windowMs?: number; maxKeys?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
     /**
      * Lifetime of better-auth's signed session cookie cache, in seconds
@@ -291,6 +302,11 @@ export interface CacheConfig {
     secret?: string;
     // ... (CacheConfig end)
     ttl?: number;
+    /**
+     * Memory adapter only: most entries kept (default 100 000). Past it the
+     * oldest writes are dropped; expired entries are swept every minute.
+     */
+    maxEntries?: number;
 }
 
 export interface PermissionsConfig {

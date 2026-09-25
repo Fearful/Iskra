@@ -52,6 +52,8 @@ class MemorySessionStore implements SessionStore {
 
     constructor() {
         this.cleanupInterval = setInterval(() => this.cleanup(), 300_000);
+        // A store nobody shut down must not keep the process alive.
+        this.cleanupInterval.unref?.();
     }
 
     async get(id: string) {
