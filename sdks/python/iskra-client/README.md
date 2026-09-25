@@ -118,10 +118,12 @@ Notas:
   que las peticiones con sesion envian `Origin` = origen de `base_url`. Si el
   `baseURL` del `AuthFeature` es otra URL (por ejemplo, la publica y no la interna),
   pasa `origin="https://app.ejemplo.com"` o agrega `base_url` a `trustedOrigins`.
-- El `AuthFeature` limita las rutas de auth a 20 peticiones cada 15 minutos por IP.
-  Si tu backend inicia sesion por todos sus usuarios desde una IP, ajusta
-  `rateLimit: { max, windowMs }` en el servicio (o `rateLimit: false` si limitas por
-  tu cuenta).
+- El `AuthFeature` limita los intentos de auth (sign-in, sign-up...) a 20 cada 15
+  minutos por IP. Tu backend los hace todos desde su IP, asi que ese limite frena a
+  todos tus usuarios juntos: subilo con `rateLimit: { max, windowMs }` en el servicio y
+  limita por usuario en tu app (por IP del cliente o por email), que el SDK no lo hace.
+  `rateLimit: false` deja los intentos de adivinar passwords sin ningun freno: usalo
+  solo si tu app ya tiene ese limite.
 
 ### Health — Verificacion de Salud
 
@@ -148,6 +150,34 @@ health = await iskra.health.async_check()
 Usa las rutas que expone el `UploadFeature` (`exposeRoutes: true`). Pasan por su
 callback `authorize`, que normalmente exige un usuario con sesion: llamalas desde
 `iskra.with_session(session)`.
+
+Todos los usuarios comparten los archivos del proyecto: un `authorize` que solo pide
+sesion (`(c) => Boolean(c.get('user'))`) deja que cualquiera liste, descargue o borre
+los archivos de los demas. Para que cada usuario vea solo los suyos, el servicio puede
+exigir una carpeta propia en `authorize`:
+
+```typescript
+// Servicio Iskra: cada usuario solo usa la subcarpeta users/<su id>
+new UploadFeature({
+    projectName: 'app',
+    exposeRoutes: true,
+    authorize: (c, action) => {
+        const user = c.get('user');
+        if (!user) return false;
+        // upload y list la reciben en ?subfolder=; download y delete, en la ruta.
+        const folder =
+            action === 'upload' || action === 'list'
+                ? c.req.query('subfolder')
+                : c.req.path.slice('/upload/'.length).split('/').slice(0, -1).join('/');
+        return folder === `users/${user.id}`;
+    },
+});
+```
+
+```python
+carpeta = f"users/{session.user.id}"          # la que exige ese authorize
+iskra.with_session(session).storage.upload(Path("reporte.pdf"), subfolder=carpeta)
+```
 
 ```python
 from pathlib import Path
