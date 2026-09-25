@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { WebDriver } from '../src/server';
+import { defineRoute } from '../src/router';
 import { App } from '@iskra-bun/core';
 import { z } from 'zod';
 
@@ -18,14 +19,14 @@ describe('WebDriver', () => {
                     path: '/hello',
                     handler: () => ({ message: 'world' }),
                 },
-                {
+                defineRoute({
                     method: 'POST',
                     path: '/echo',
                     schema: {
                         body: z.object({ name: z.string() }),
                     },
                     handler: (ctx) => ({ name: ctx.body.name }),
-                },
+                }),
             ],
         });
 

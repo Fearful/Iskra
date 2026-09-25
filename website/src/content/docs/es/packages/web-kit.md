@@ -57,6 +57,19 @@ app.register(driver);
 await app.start();
 ```
 
+Una ruta con `schema` valida el request con el; envolvela en `defineRoute()` para que `ctx.body` y `ctx.query` del handler tomen sus tipos del schema (dentro de una lista `routes` comun son `unknown`):
+
+```typescript
+import { defineRoute } from '@iskra-bun/web-kit';
+
+defineRoute({
+    method: 'POST',
+    path: '/api/users',
+    schema: { body: z.object({ name: z.string() }) },
+    handler: async (ctx) => userService.create(ctx.body.name), // ctx.body.name: string
+});
+```
+
 Aplica los headers de seguridad por defecto del Kernel (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). El `schema.body` de una ruta se valida sea cual sea el `Content-Type` del request. Los errores lanzados por un handler se registran en el servidor; al cliente solo se le devuelve `{ error: 'Internal Server Error' }` con status 500 (nunca se serializa el mensaje crudo, que podria filtrar connection strings u otros secretos).
 
 ## Kernel
@@ -91,8 +104,7 @@ El Kernel y sus features reportan el arranque, los fallbacks y los errores que m
 | `CorsFeature` | Control de origenes (CORS) |
 | `CsrfFeature` | Proteccion CSRF con tokens |
 | `RateLimitFeature` | Limitacion de requests (memory o Redis) |
-| `ApiKeyFeature` | Validacion de API keys con cache y scopes |
-| `ValidationFeature` | Validacion de request con Zod |
+| `ApiKeyFeature` | Validacion de API keys con scopes |
 | `DbFeature` | Integracion con Drizzle ORM |
 | `CacheFeature` | Cache con Redis o memoria |
 | `SessionFeature` | Sesiones (DB, cache, o memoria) |
@@ -102,10 +114,26 @@ El Kernel y sus features reportan el arranque, los fallbacks y los errores que m
 | `LoggerFeature` | Logging de request/response |
 | `ErrorHandlerFeature` | Manejo centralizado de errores |
 | `RequestIdFeature` | Tracking de request con ID unico |
-| `TracingFeature` | Observabilidad |
+| `OtelTracingFeature` | Tracing con OpenTelemetry (`@hono/otel`) |
 | `UploadFeature` | Subida de archivos |
 | `StorageFeature` | Almacenamiento de archivos (local) — impulsado por [`@iskra-bun/storage-kit`](/packages/storage-kit/) |
 | `EmailFeature` | Envio de emails (SMTP, SendGrid) — impulsado por [`@iskra-bun/mailer-kit`](/packages/mailer-kit/) |
+
+## Validacion de requests
+
+La validacion es un middleware, no una feature: `validate()` recibe schemas de Zod (v3 o v4) y `validateJson()` JSON Schemas (AJV, con `ajv-formats` y los mensajes de `ajv-errors`). Ambos responden 400 con los errores si la entrada no es valida; si no, el handler lee los datos de `c.get('validated')`, tipados.
+
+```typescript
+import { validate, validateJson } from '@iskra-bun/web-kit';
+
+app.post('/users', validate({ body: z.object({ name: z.string() }) }), (c) => {
+    const { name } = c.get('validated').body; // string, inferido del schema
+    return c.json({ name }, 201);
+});
+
+// Un JSON Schema no tiene tipo de TypeScript: nombra la forma validada.
+app.post('/orders', validateJson<CreateOrder>({ body: orderSchema }), (c) => c.json(c.get('validated').body));
+```
 
 ## Generic de Schema en DbFeature
 
@@ -232,6 +260,7 @@ new SessionFeature({
 });
 ```
 
+- `c.get('session')` es un objeto `SessionData`: sus campos son `unknown` hasta que los declaras (`declare module '@iskra-bun/web-kit' { interface SessionData { userId?: string } }`), y desde ahi quedan tipados en cada request.
 - Para cerrar sesion, vacia la sesion (`delete c.get('session').userId`) o llama a `await c.get('destroySession')()`: en ambos casos se borra del store y se elimina la cookie.
 - Despues del login llama a `await c.get('regenerateSession')()` para emitir un ID nuevo e invalidar el anterior (evita session fixation).
 - Una sesion que destruye una request (logout, `regenerateSession`) no la vuelve a crear otra request que la habia cargado y termina despues. Cada request trabaja sobre su propia copia de los datos de sesion, tambien con el store en memoria, asi que los datos deben poder copiarse con `structuredClone` (para los otros stores ya tenian que ser JSON).

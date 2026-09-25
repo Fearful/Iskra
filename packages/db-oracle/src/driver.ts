@@ -250,3 +250,10 @@ export class OracleDriver implements Driver {
         }
     }
 }
+
+// `app.context.get('oracle')` is the OracleDriver registered on the app.
+declare module '@iskra-bun/core' {
+    interface AppContextRegistry {
+        oracle: OracleDriver;
+    }
+}

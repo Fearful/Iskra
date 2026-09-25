@@ -1,6 +1,6 @@
-import { betterAuth, type Auth as BetterAuthInstance } from 'better-auth';
+import { betterAuth, type Auth as BetterAuthInstance, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter, type DB as DrizzleAdapterDb } from 'better-auth/adapters/drizzle';
-import { genericOAuth } from 'better-auth/plugins/generic-oauth';
+import { genericOAuth, type GenericOAuthUserInfo } from 'better-auth/plugins/generic-oauth';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { MySqlDatabase, MySqlQueryResultHKT, PreparedQueryHKTBase } from 'drizzle-orm/mysql-core';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
@@ -49,8 +49,8 @@ export interface BetterAuthConfigOptions {
      * entry). Without a usable one, every client shares one rate-limit bucket.
      */
     ipAddressHeaders?: string[];
-    // deno-lint-ignore no-explicit-any
-    socialProviders?: Record<string, any>;
+    /** better-auth's socialProviders option, as is. */
+    socialProviders?: BetterAuthOptions['socialProviders'];
     oidcConfig?: {
         clientId: string;
         clientSecret: string;
@@ -71,6 +71,22 @@ export interface BetterAuthConfigOptions {
             image?: string;
             extraFields?: Record<string, string>;
         };
+    };
+}
+
+/**
+ * The local user fields for an OIDC login (standard claims, with the common
+ * non-standard fallbacks). No `id`: better-auth takes the account's identity
+ * from the verified `sub` (accountSubject) and ignores one returned here.
+ */
+export function mapOidcProfile(profile: GenericOAuthUserInfo) {
+    const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+    return {
+        email: profile.email,
+        name: profile.name || str(profile.preferred_username),
+        image: str(profile.picture) ?? profile.image,
+        emailVerified:
+            profile.emailVerified === true || profile.email_verified === true || profile.email_verified === 'true',
     };
 }
 
@@ -151,15 +167,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
                         // Secure default: PKCE on. Disabling exposes auth-code
                         // interception/injection and requires an explicit false.
                         pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
-                        mapProfileToUser: (profile: any) => {
-                            return {
-                                id: profile.sub || profile.id,
-                                email: profile.email,
-                                name: profile.name || profile.preferred_username,
-                                image: profile.picture || profile.image,
-                                emailVerified: profile.email_verified || false,
-                            };
-                        },
+                        mapProfileToUser: mapOidcProfile,
                     },
                 ],
             }),

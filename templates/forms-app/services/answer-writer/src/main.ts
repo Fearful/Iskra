@@ -3,7 +3,7 @@ import { DbDriver } from '@iskra-bun/db-kit';
 import { WorkerManager } from '@iskra-bun/worker-kit';
 import { config } from './app.config.ts';
 import { WriterService } from './domain/writer/writer.service.ts';
-import { QUEUE_NAMES, JOB_NAMES } from '@forms-app/shared';
+import { QUEUE_NAMES, JOB_NAMES, type AnswerJob } from '@forms-app/shared';
 
 const app = new App({ name: 'AnswerWriter' });
 
@@ -21,7 +21,7 @@ const worker = new WorkerManager({
     },
 });
 
-worker.register(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
+worker.register<AnswerJob>(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
     await WriterService.bufferAnswer(job.data);
 });
 

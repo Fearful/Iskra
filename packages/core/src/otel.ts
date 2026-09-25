@@ -26,9 +26,37 @@ const OTEL_MODULES = {
     semconv: '@opentelemetry/semantic-conventions',
 } as const;
 
+// The optional OTel packages are loaded by specifier, untyped; these are the
+// parts of them used here.
+type Ctor<T = unknown> = new (options: Record<string, unknown>) => T;
+interface OtelSdkNode {
+    NodeSDK: Ctor<{ start(): void; shutdown(): Promise<void> }>;
+}
+interface OtelAutoInstrumentations {
+    getNodeAutoInstrumentations(overrides: Record<string, unknown>): unknown;
+}
+interface OtelTraceExporter {
+    OTLPTraceExporter: Ctor;
+}
+interface OtelMetricExporter {
+    OTLPMetricExporter: Ctor;
+}
+interface OtelSdkMetrics {
+    PeriodicExportingMetricReader: Ctor;
+}
+interface OtelSemconv {
+    ATTR_SERVICE_NAME?: string;
+    ATTR_SERVICE_VERSION?: string;
+}
+/** `@opentelemetry/resources`: 2.x exports resourceFromAttributes(), 1.x the Resource class. */
+export interface OtelResourcesModule {
+    resourceFromAttributes?: (attributes: Record<string, string>) => unknown;
+    Resource?: new (attributes: Record<string, string>) => unknown;
+}
+
 /** Import an optional module by specifier; the indirection keeps tsc from resolving it. */
-function importOptional(specifier: string): Promise<any> {
-    return import(specifier);
+function importOptional<T>(specifier: string): Promise<T> {
+    return import(specifier) as Promise<T>;
 }
 
 /**
@@ -36,7 +64,7 @@ function importOptional(specifier: string): Promise<any> {
  * provides: 2.x only exports `resourceFromAttributes()` (`Resource` is a type
  * there, so `new Resource()` throws), 1.x exports the `Resource` class.
  */
-export function createResource(resources: any, attributes: Record<string, string>): any {
+export function createResource(resources: OtelResourcesModule, attributes: Record<string, string>): unknown {
     if (typeof resources?.resourceFromAttributes === 'function') {
         return resources.resourceFromAttributes(attributes);
     }
@@ -65,13 +93,13 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
             resources,
             semconv,
         ] = await Promise.all([
-            importOptional(OTEL_MODULES.sdkNode),
-            importOptional(OTEL_MODULES.autoInstrumentations),
-            importOptional(OTEL_MODULES.traceExporter),
-            importOptional(OTEL_MODULES.metricExporter),
-            importOptional(OTEL_MODULES.sdkMetrics),
-            importOptional(OTEL_MODULES.resources),
-            importOptional(OTEL_MODULES.semconv),
+            importOptional<OtelSdkNode>(OTEL_MODULES.sdkNode),
+            importOptional<OtelAutoInstrumentations>(OTEL_MODULES.autoInstrumentations),
+            importOptional<OtelTraceExporter>(OTEL_MODULES.traceExporter),
+            importOptional<OtelMetricExporter>(OTEL_MODULES.metricExporter),
+            importOptional<OtelSdkMetrics>(OTEL_MODULES.sdkMetrics),
+            importOptional<OtelResourcesModule>(OTEL_MODULES.resources),
+            importOptional<OtelSemconv>(OTEL_MODULES.semconv),
         ]);
 
         const serviceName = config.serviceName || appName;

@@ -20,15 +20,12 @@ export class CorsFeature implements Feature {
         this.log = kernel.getLogger();
         const app = kernel.getApp();
 
-        const honoConfig: any = { ...this.config };
-
-        if (typeof this.config.origin === 'function') {
-            honoConfig.origin = (origin: string) => {
-                // @ts-expect-error - origin is narrowed to a function above
-                const result = this.config.origin(origin);
-                return result ? origin : null;
-            };
-        }
+        // Hono's cors() wants the allowed origin back (or null), not a boolean.
+        const { origin, ...rest } = this.config;
+        const honoConfig: Parameters<typeof cors>[0] = {
+            ...rest,
+            origin: typeof origin === 'function' ? (o: string) => (origin(o) ? o : null) : (origin ?? '*'),
+        };
 
         app.use('*', cors(honoConfig));
         this.log.debug('CORS feature initialized');

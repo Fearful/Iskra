@@ -47,7 +47,7 @@ export class ErrorHandlerFeature implements Feature {
                 return this.config.customHandlers[status](err, c);
             }
 
-            const response: any = {
+            const response: Record<string, unknown> = {
                 error: err.message,
                 status,
                 code: err.code,
@@ -78,7 +78,7 @@ export class ErrorHandlerFeature implements Feature {
                 return this.config.customHandlers[status](err, c);
             }
 
-            const response: any = {
+            const response: Record<string, unknown> = {
                 error: this.config.includeStack ? err.message : 'Internal Server Error',
                 status,
                 code: err.code,
@@ -104,7 +104,7 @@ export class ErrorHandlerFeature implements Feature {
             // which makes the browser prompt) is sent as is.
             if (err.res) return err.getResponse();
 
-            const response: any = {
+            const response: Record<string, unknown> = {
                 error: err.message || this.getStatusText(status),
                 status,
             };
@@ -122,7 +122,7 @@ export class ErrorHandlerFeature implements Feature {
             return this.config.customHandlers[status](err, c);
         }
 
-        const response: any = {
+        const response: Record<string, unknown> = {
             error: this.config.includeStack ? err.message : 'Internal Server Error',
             status,
         };

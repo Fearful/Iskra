@@ -48,7 +48,8 @@ app.register(new SocketDriver({ port: appConfig.socketPort, router: socketRouter
 // 4. Event Listeners
 app.on('process:message', (ctx) => {
     const { message } = ctx.payload;
-    if (message.type === 'worker:ping') {
+    // The worker prints JSON: check its shape before use.
+    if (typeof message === 'object' && message !== null && (message as { type?: unknown }).type === 'worker:ping') {
         ctx.app.context.set('worker_last_ping', message);
     }
 });

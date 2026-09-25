@@ -226,7 +226,7 @@ export class Kernel {
         return this.features.get(name);
     }
 
-    private server: any;
+    private server: ReturnType<typeof Bun.serve> | null = null;
 
     async start(): Promise<void> {
         if (!this.initialized) {

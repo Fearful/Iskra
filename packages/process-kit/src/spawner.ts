@@ -556,3 +556,20 @@ export class ProcessManager implements Driver {
         );
     }
 }
+
+// Events a ProcessManager emits on the app (see the README).
+declare module '@iskra-bun/core' {
+    interface AppEvents {
+        /** A stdio child printed a line that parses as JSON. */
+        'process:message': { name: string; message: unknown };
+        /** A stdio child printed a line that is not JSON. */
+        'process:log': { name: string; text: string };
+        /** A line a stdio child wrote to stderr. */
+        'process:error': { name: string; text: string };
+        /** A child exited on its own (not after kill()/stop()); exitCode is null when a signal ended it. */
+        'process:exit': { name: string; exitCode: number | null; signal: string | null };
+        'process:max-restarts': { name: string; restarts: number; maxRestarts: number };
+        /** The command could not be spawned (a supervised process is retried). */
+        'process:spawn-error': { name: string; error: unknown };
+    }
+}

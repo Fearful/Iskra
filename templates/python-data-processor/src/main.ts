@@ -38,9 +38,23 @@ function sendToProcess(processName: string, data: Record<string, unknown>, timeo
     });
 }
 
+/** What processor.py prints: replies carry the requestId they answer. */
+interface ProcessReply {
+    requestId?: string;
+    type?: string;
+    msg?: string;
+    data?: unknown;
+}
+
+// Any JSON line the script prints arrives here: check its shape before use.
+function asReply(message: unknown): ProcessReply {
+    return typeof message === 'object' && message !== null ? (message as ProcessReply) : {};
+}
+
 // Listen for messages from Python and resolve pending requests
 app.on('process:message', (ctx) => {
-    const { name, message } = ctx.payload;
+    const { name } = ctx.payload;
+    const message = asReply(ctx.payload.message);
 
     if (message.requestId && pendingRequests.has(message.requestId)) {
         const pending = pendingRequests.get(message.requestId)!;

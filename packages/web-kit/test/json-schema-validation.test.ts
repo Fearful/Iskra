@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { Kernel } from '../src/kernel';
-import {
-    JsonSchemaValidationFeature,
-    createJsonSchemaValidationMiddleware,
-} from '../src/features/json-schema-validation';
-import { ValidationFeature } from '../src/features/validation';
+import { validateJson } from '../src/features/json-schema-validation';
+import { validate } from '../src/features/validation';
 import { z } from 'zod';
 
 describe('JSON Schema Validation Feature', () => {
     async function createKernel() {
-        const kernel = new Kernel();
-        kernel.registerFeature(new JsonSchemaValidationFeature());
+        // The validation middlewares need no feature: any Kernel's app takes them.
+        const kernel = new Kernel({ logger: false });
         await kernel.initialize();
         return kernel;
     }
@@ -31,9 +28,9 @@ describe('JSON Schema Validation Feature', () => {
             additionalProperties: false,
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/users', middleware, (c) => {
-            const data = c.valid();
+            const data = c.get('validated');
             return c.json({ success: true, data });
         });
 
@@ -66,9 +63,9 @@ describe('JSON Schema Validation Feature', () => {
             required: ['name', 'age'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/users', middleware, (c) => {
-            const data = c.valid();
+            const data = c.get('validated');
             return c.json({ success: true, data });
         });
 
@@ -107,7 +104,7 @@ describe('JSON Schema Validation Feature', () => {
             required: ['email'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/register', middleware, (c) => c.json({ success: true }));
 
         const res = await app.request('/register', {
@@ -138,7 +135,7 @@ describe('JSON Schema Validation Feature', () => {
             errorMessage: 'The input data is invalid',
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/check', middleware, (c) => c.json({ success: true }));
 
         const res = await app.request('/check', {
@@ -175,7 +172,7 @@ describe('JSON Schema Validation Feature', () => {
             },
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/profile', middleware, (c) => c.json({ success: true }));
 
         const res = await app.request('/profile', {
@@ -208,9 +205,9 @@ describe('JSON Schema Validation Feature', () => {
             required: ['page'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ query: schema });
+        const middleware = validateJson({ query: schema });
         app.get('/items', middleware, (c) => {
-            const data = c.valid();
+            const data = c.get('validated');
             return c.json({ success: true, data });
         });
 
@@ -241,9 +238,9 @@ describe('JSON Schema Validation Feature', () => {
             required: ['id'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ params: schema });
+        const middleware = validateJson({ params: schema });
         app.get('/users/:id', middleware, (c) => {
-            const data = c.valid();
+            const data = c.get('validated');
             return c.json({ success: true, data });
         });
 
@@ -258,11 +255,8 @@ describe('JSON Schema Validation Feature', () => {
 
     // ─── Coexistence with Zod Validation ────────────────────────────────────
 
-    it('should coexist with Zod validation feature', async () => {
-        const kernel = new Kernel();
-        kernel.registerFeature(new ValidationFeature());
-        kernel.registerFeature(new JsonSchemaValidationFeature());
-        await kernel.initialize();
+    it('should coexist with Zod validation', async () => {
+        const kernel = await createKernel();
 
         const app = kernel.getApp();
 
@@ -272,17 +266,12 @@ describe('JSON Schema Validation Feature', () => {
             properties: { name: { type: 'string' } },
             required: ['name'],
         };
-        const jsonMiddleware = createJsonSchemaValidationMiddleware({ body: jsonSchema });
+        const jsonMiddleware = validateJson({ body: jsonSchema });
         app.post('/json-route', jsonMiddleware, (c) => c.json({ source: 'json-schema' }));
 
-        // Zod route (using the *Validated method from ValidationFeature)
-        // @ts-expect-error - postValidated is augmented by ValidationFeature at runtime
-        app.postValidated(
-            '/zod-route',
-            {
-                body: z.object({ name: z.string() }),
-            },
-            (c: any) => c.json({ source: 'zod' }),
+        // Zod route
+        app.post('/zod-route', validate({ body: z.object({ name: z.string() }) }), (c) =>
+            c.json({ source: 'zod', name: c.get('validated').body.name }),
         );
 
         // Test JSON Schema route
@@ -321,9 +310,9 @@ describe('JSON Schema Validation Feature', () => {
             required: ['age', 'active'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema });
+        const middleware = validateJson({ body: schema });
         app.post('/coerce', middleware, (c) => {
-            const data = c.valid();
+            const data = c.get('validated');
             return c.json({ success: true, data });
         });
 
@@ -353,7 +342,7 @@ describe('JSON Schema Validation Feature', () => {
             required: ['age'],
         };
 
-        const middleware = createJsonSchemaValidationMiddleware({ body: schema }, { coerceTypes: false });
+        const middleware = validateJson({ body: schema }, { coerceTypes: false });
         app.post('/strict', middleware, (c) => c.json({ success: true }));
 
         const res = await app.request('/strict', {

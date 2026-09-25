@@ -20,6 +20,11 @@ const DEFAULT_ROLES: Record<string, Role> = {
     guest: { name: 'guest', permissions: ['read:public'], description: 'Guest access' },
 };
 
+/** The strings of `value` when it is an array (a cached entry is not trusted blindly). */
+function stringList(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
 export class PermissionsFeature implements Feature {
     name = 'permissions';
     private log: KernelLogger = consoleLogger;
@@ -49,8 +54,12 @@ export class PermissionsFeature implements Feature {
     }
 
     private async permissionsMiddleware(c: Context, next: Next, _kernel: Kernel) {
-        const user = c.get('user') || (c.get('session') as any)?.user;
-        const userId = user?.id;
+        // The auth feature's user, else a `user` a session holds (`{ id }`).
+        const sessionUser = c.get('session')?.user;
+        const user =
+            c.get('user') ??
+            (sessionUser && typeof sessionUser === 'object' ? (sessionUser as { id?: unknown }) : undefined);
+        const userId = user?.id == null ? undefined : String(user.id);
 
         let permissions: string[] = [];
         let roles: string[] = [];
@@ -59,10 +68,12 @@ export class PermissionsFeature implements Feature {
             if (this.config.cachePermissions) {
                 const cache = c.get('cache');
                 if (cache) {
+                    // What this feature stored below: { permissions, roles }.
                     const cached = await cache.get(`permissions:${userId}`);
-                    if (cached) {
-                        permissions = cached.permissions || [];
-                        roles = cached.roles || [];
+                    if (cached && typeof cached === 'object') {
+                        const entry = cached as { permissions?: unknown; roles?: unknown };
+                        permissions = stringList(entry.permissions);
+                        roles = stringList(entry.roles);
                     }
                 }
             }

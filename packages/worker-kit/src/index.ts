@@ -428,3 +428,10 @@ export class WorkerManager implements Driver {
         return this.queueEvents;
     }
 }
+
+// A job that failed for good (see WorkerManager's dead-letter handling).
+declare module '@iskra-bun/core' {
+    interface AppEvents {
+        'worker:dead-letter': DeadLetterPayload;
+    }
+}

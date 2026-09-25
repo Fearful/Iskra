@@ -48,12 +48,32 @@ Despues de `start()`, `SIGTERM` y `SIGINT` ejecutan `app.stop()` y terminan el p
 
 ### Contexto (DI)
 
-```typescript
-// Guardar
-app.context.set('miServicio', instancia);
+`app.context` es un `Map` cuyas claves se tipan con `AppContextRegistry`: los kits registran las suyas (`db`, `kv`, `oracle`) y vos agregas las tuyas con declaration merging. Una clave no registrada guarda `unknown`.
 
-// Obtener
-const srv = app.context.get('miServicio');
+```typescript
+declare module '@iskra-bun/core' {
+    interface AppContextRegistry {
+        miServicio: MiServicio;
+    }
+}
+
+app.context.set('miServicio', instancia);
+const srv = app.context.get('miServicio'); // MiServicio | undefined
+const db = app.context.get('db');          // DbDriver | undefined (db-kit)
+```
+
+### Eventos
+
+`app.on(evento, handler)` le da al handler `ctx.payload`; `app.emit(evento, payload)` lo envia. Los eventos declarados en `AppEvents` (los kits declaran los suyos: `process:*`, `socket:connected`, `worker:dead-letter`, …) tienen payloads tipados, y `emit()` los valida; el payload de cualquier otro evento es `unknown`.
+
+```typescript
+declare module '@iskra-bun/core' {
+    interface AppEvents {
+        'user:created': { id: string; email: string };
+    }
+}
+
+app.on('user:created', (ctx) => ctx.logger.info({ email: ctx.payload.email }, 'Usuario creado'));
 ```
 
 ## Logger
@@ -120,9 +140,9 @@ interface AppConfig {
     logger?: { level?: string };
     db?: { driver: 'postgres' | 'mysql' | 'sqlite' | 'libsql'; url: string };
     socket?: { enabled: boolean; port?: number; adapter?: 'bun' | 'socket.io' };
-    kv?: { driver: 'memory' | 'redis' | 'libsql'; connection?: any };
+    kv?: { driver: 'memory' | 'redis'; connection?: string | Record<string, unknown> };
     processes?: Record<string, ProcessConfig>;
-    [key: string]: any; // extensible
+    [key: string]: unknown; // otras secciones: leelas con su propio tipo
 }
 ```
 

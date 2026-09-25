@@ -14,7 +14,7 @@
         "build": "bun run scripts/build-packages.ts",
         "version": "changeset version && bun run packages/create-iskra/scripts/sync.ts",
         "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc --noEmit && bun run scripts/typecheck-templates.ts",
         "contract:server": "bun run sdks/contract/server.ts",
         "smoke:templates": "bun run scripts/smoke-templates.ts",
         "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",

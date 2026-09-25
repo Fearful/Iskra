@@ -137,3 +137,10 @@ export class KVManager implements Driver, KVAdapter {
         await Promise.all(prefixed.map((k) => this.adapter.del(k)));
     }
 }
+
+// `app.context.get('kv')` is the KVManager registered on the app.
+declare module '@iskra-bun/core' {
+    interface AppContextRegistry {
+        kv: KVManager;
+    }
+}

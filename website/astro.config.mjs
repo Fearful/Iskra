@@ -73,6 +73,7 @@ export default defineConfig({
                         { slug: 'guides/migrations' },
                         { slug: 'guides/security' },
                         { slug: 'guides/upgrading-to-0-2' },
+                        { slug: 'guides/upgrading-typed-apis' },
                         { slug: 'guides/deployment' },
                         { slug: 'guides/sdks' },
                         { slug: 'templates' },

@@ -13,7 +13,7 @@ async function example1_AutoGenerateAll() {
     const kernel = new Kernel({ port: 8000 });
 
     // Register all features BEFORE OpenAPI
-    kernel.registerFeature(new DbFeature({ adapter: "sqlite", config: { filename: ":memory:" } })); // Memory SQLite
+    kernel.registerFeature(new DbFeature({ adapter: "sqlite", connection: { database: ":memory:" } })); // Memory SQLite
     kernel.registerFeature(new CacheFeature({ adapter: "memory" }));
     kernel.registerFeature(
         new StorageFeature({

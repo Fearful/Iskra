@@ -296,3 +296,12 @@ export class SocketDriver implements Driver {
         this.runningServer?.publish(topic, JSON.stringify({ event: topic, payload: data }));
     }
 }
+
+// Lifecycle events a SocketDriver emits on the app. Unrouted messages are
+// emitted as `socket:<event>` with `{ socket, payload }` (not typed here).
+declare module '@iskra-bun/core' {
+    interface AppEvents {
+        'socket:connected': { connectionId: string };
+        'socket:disconnected': { connectionId: string };
+    }
+}

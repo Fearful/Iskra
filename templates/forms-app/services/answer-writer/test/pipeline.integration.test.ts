@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import { answers } from "@forms-app/shared/db";
-import { JOB_NAMES } from "@forms-app/shared";
+import { JOB_NAMES, type AnswerJob } from "@forms-app/shared";
 import { WriterService } from "../src/domain/writer/writer.service.ts";
 import { SubmissionService } from "../../forms-api/src/domain/submission/submission.service.ts";
 
@@ -87,7 +87,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 
         app = new App({ name: "PipelineE2E", logger: { level: "error" } });
         wm = new WorkerManager({ connection: REDIS_URL, queueName, concurrency: 1 });
-        wm.register(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
+        wm.register<AnswerJob>(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
             await WriterService.bufferAnswer(job.data);
         });
         await wm.init(app);

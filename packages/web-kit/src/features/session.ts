@@ -8,12 +8,33 @@ import { pgTable, text as pgText, bigint as pgBigint } from 'drizzle-orm/pg-core
 import { mysqlTable, varchar as myVarchar, text as myText, bigint as myBigint } from 'drizzle-orm/mysql-core';
 import { sqliteTable, text as sqliteText, integer as sqliteInteger } from 'drizzle-orm/sqlite-core';
 import { consoleLogger, type KernelLogger } from '../logging';
+import type { WebKitDrizzleDb } from './db';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { MySql2Database } from 'drizzle-orm/mysql2';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import type { CacheAdapter } from './cache';
+
+/**
+ * What a request's session holds (`c.get("session")`): JSON-serializable data.
+ * Declare your fields with declaration merging and they are typed everywhere:
+ *
+ * ```ts
+ * declare module "@iskra-bun/web-kit" {
+ *     interface SessionData {
+ *         userId?: string;
+ *     }
+ * }
+ * ```
+ */
+export interface SessionData {
+    [key: string]: unknown;
+}
 
 // ─── Session Store Interface ─────────────────────────────────────────────────
 
 interface SessionStore {
-    get(id: string): Promise<Record<string, any> | null>;
-    set(id: string, data: Record<string, any>, ttl: number): Promise<void>;
+    get(id: string): Promise<SessionData | null>;
+    set(id: string, data: SessionData, ttl: number): Promise<void>;
     destroy(id: string): Promise<void>;
 }
 
@@ -26,7 +47,7 @@ interface SessionStore {
  * setting `userId`) reach another request's session and be saved under its ID.
  */
 class MemorySessionStore implements SessionStore {
-    private store = new Map<string, { data: Record<string, any>; expiresAt: number }>();
+    private store = new Map<string, { data: SessionData; expiresAt: number }>();
     private cleanupInterval: ReturnType<typeof setInterval>;
 
     constructor() {
@@ -43,7 +64,7 @@ class MemorySessionStore implements SessionStore {
         return structuredClone(entry.data);
     }
 
-    async set(id: string, data: Record<string, any>, ttl: number) {
+    async set(id: string, data: SessionData, ttl: number) {
         this.store.set(id, { data: structuredClone(data), expiresAt: Date.now() + ttl * 1000 });
     }
 
@@ -67,14 +88,15 @@ class MemorySessionStore implements SessionStore {
 
 /** Copies in and out for the same reason as MemorySessionStore: the cache's memory adapter keeps references. */
 class CacheSessionStore implements SessionStore {
-    constructor(private cache: any) {}
+    constructor(private cache: CacheAdapter) {}
 
-    async get(id: string) {
+    async get(id: string): Promise<SessionData | null> {
         const data = await this.cache.get(`session:${id}`);
-        return data ? structuredClone(data) : null;
+        // Only set() writes under this key, always with a session object.
+        return data && typeof data === 'object' ? (structuredClone(data) as SessionData) : null;
     }
 
-    async set(id: string, data: Record<string, any>, ttl: number) {
+    async set(id: string, data: SessionData, ttl: number) {
         await this.cache.set(`session:${id}`, structuredClone(data), ttl);
     }
 
@@ -115,18 +137,72 @@ const createTableDdl: Record<SessionDialect, string> = {
     sqlite: 'CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)',
 };
 
+/** A stored session row. */
+interface SessionRow {
+    id: string;
+    data: string;
+    expiresAt: number;
+}
+
+/** The four table operations DbSessionStore needs, typed for one dialect. */
+interface SessionTable {
+    create(): Promise<unknown>;
+    find(id: string): Promise<SessionRow | undefined>;
+    remove(id: string): Promise<unknown>;
+    insert(row: SessionRow): Promise<unknown>;
+}
+
+/**
+ * Drizzle's builders cannot be called on a union of dialect databases, so each
+ * dialect gets its own typed implementation. `db` is the DbFeature's handle for
+ * `dialect` (the feature's configured adapter), hence the one narrowing cast.
+ */
+function sessionTableFor(db: WebKitDrizzleDb<Record<string, unknown>>, dialect: SessionDialect): SessionTable {
+    const ddl = sql.raw(createTableDdl[dialect]);
+    switch (dialect) {
+        case 'postgres': {
+            const pg = db as PostgresJsDatabase<Record<string, unknown>>;
+            const t = sessionTables.postgres;
+            return {
+                create: () => pg.execute(ddl),
+                find: async (id) => (await pg.select().from(t).where(eq(t.id, id)).limit(1))[0],
+                remove: (id) => pg.delete(t).where(eq(t.id, id)),
+                insert: (row) => pg.insert(t).values(row),
+            };
+        }
+        case 'mysql': {
+            const my = db as MySql2Database<Record<string, unknown>>;
+            const t = sessionTables.mysql;
+            return {
+                create: () => my.execute(ddl),
+                find: async (id) => (await my.select().from(t).where(eq(t.id, id)).limit(1))[0],
+                remove: (id) => my.delete(t).where(eq(t.id, id)),
+                insert: (row) => my.insert(t).values(row),
+            };
+        }
+        case 'sqlite': {
+            const lite = db as BunSQLiteDatabase<Record<string, unknown>>;
+            const t = sessionTables.sqlite;
+            return {
+                create: async () => lite.run(ddl),
+                find: async (id) => (await lite.select().from(t).where(eq(t.id, id)).limit(1))[0],
+                remove: async (id) => lite.delete(t).where(eq(t.id, id)),
+                insert: async (row) => lite.insert(t).values(row),
+            };
+        }
+    }
+}
+
 class DbSessionStore implements SessionStore {
     private initialized = false;
-    private dialect: SessionDialect;
-    private table: (typeof sessionTables)[SessionDialect];
+    private table: SessionTable;
 
     constructor(
-        private db: any,
+        db: WebKitDrizzleDb<Record<string, unknown>>,
         dialect: SessionDialect = 'sqlite',
         private log: KernelLogger = consoleLogger,
     ) {
-        this.dialect = sessionTables[dialect] ? dialect : 'sqlite';
-        this.table = sessionTables[this.dialect];
+        this.table = sessionTableFor(db, sessionTables[dialect] ? dialect : 'sqlite');
     }
 
     /** No new CREATE TABLE attempt before this time, after a failed one. */
@@ -141,13 +217,7 @@ class DbSessionStore implements SessionStore {
     private async ensureTable() {
         if (this.initialized || Date.now() < this.retryAt) return;
         try {
-            const ddl = sql.raw(createTableDdl[this.dialect]);
-            // sqlite drivers expose run(); postgres/mysql expose execute().
-            if (this.dialect === 'sqlite') {
-                await this.db.run(ddl);
-            } else {
-                await this.db.execute(ddl);
-            }
+            await this.table.create();
             this.initialized = true;
         } catch (err) {
             this.retryAt = Date.now() + 5000;
@@ -155,34 +225,32 @@ class DbSessionStore implements SessionStore {
         }
     }
 
-    async get(id: string) {
+    async get(id: string): Promise<SessionData | null> {
         await this.ensureTable();
         try {
-            const rows = await this.db.select().from(this.table).where(eq(this.table.id, id)).limit(1);
-
-            const row = rows?.[0];
+            const row = await this.table.find(id);
             if (!row) return null;
 
             if (Date.now() > Number(row.expiresAt)) {
                 await this.destroy(id);
                 return null;
             }
-            return JSON.parse(row.data);
+            return JSON.parse(row.data) as SessionData;
         } catch (err) {
             this.log.error('[session] Failed to read session', err);
             return null;
         }
     }
 
-    async set(id: string, data: Record<string, any>, ttl: number) {
+    async set(id: string, data: SessionData, ttl: number) {
         await this.ensureTable();
         const row = { id, data: JSON.stringify(data), expiresAt: Date.now() + ttl * 1000 };
 
         try {
             // Portable upsert: delete-then-insert works identically across all
             // three dialects without per-dialect ON CONFLICT / ON DUPLICATE syntax.
-            await this.db.delete(this.table).where(eq(this.table.id, id));
-            await this.db.insert(this.table).values(row);
+            await this.table.remove(id);
+            await this.table.insert(row);
         } catch (err) {
             this.log.error('[session] Failed to write session', err);
         }
@@ -190,7 +258,7 @@ class DbSessionStore implements SessionStore {
 
     async destroy(id: string) {
         try {
-            await this.db.delete(this.table).where(eq(this.table.id, id));
+            await this.table.remove(id);
         } catch (err) {
             this.log.error('[session] Failed to destroy session', err);
         }
@@ -225,7 +293,7 @@ const MIN_SECRET_LENGTH = 32;
 
 declare module 'hono' {
     interface ContextVariableMap {
-        session: Record<string, any>;
+        session: SessionData;
         sessionId: string;
         destroySession: () => Promise<void>;
         /**
@@ -300,7 +368,7 @@ export class SessionFeature implements Feature {
         app.use('*', async (c: Context, next: Next) => {
             const signedCookie = getCookie(c, this.cookieName);
             let sessionId: string | null = null;
-            let session: Record<string, any> = {};
+            let session: SessionData = {};
 
             if (signedCookie) {
                 sessionId = verifySignedValue(signedCookie, this.config.secret);
@@ -380,7 +448,7 @@ export class SessionFeature implements Feature {
 
     async shutdown(): Promise<void> {
         if (this.store instanceof MemorySessionStore) {
-            (this.store as any).dispose?.();
+            this.store.dispose();
         }
     }
 }

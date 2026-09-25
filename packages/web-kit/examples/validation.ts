@@ -1,14 +1,16 @@
 import { Kernel } from "../src/kernel";
-import { ValidationFeature } from "../src/features/validation";
+import { validate } from "../src/features/validation";
 import { z } from "zod";
 
 // ============================================================================
-// Example 1: Basic Request Validation
+// Example: request validation with Zod
 // ============================================================================
+// validate() is a plain Hono middleware: no feature to register. The handler
+// reads the parsed data from c.get("validated"), typed from the schemas.
 
-const basicKernel = new Kernel({ port: 8001 });
-
-basicKernel.registerFeature(new ValidationFeature());
+const kernel = new Kernel({ port: 8001 });
+await kernel.initialize();
+const app = kernel.getApp();
 
 const userSchema = z.object({
     name: z.string().min(2).max(50),
@@ -16,30 +18,24 @@ const userSchema = z.object({
     age: z.number().int().positive().max(150),
 });
 
-// Initialize kernel to ensure ValidationFeature patches the app
-await basicKernel.initialize();
-
-// @ts-ignore - Assuming module augmentation works or strict types might complain about *Validated methods if not fully set up in types.ts
-basicKernel.getApp().postValidated("/users", {
-    body: userSchema
-}, async (c) => {
-    // Validated body is automatically available or passed?
-    // In ValidationFeature implementation, we had *Validated(path, schema, handler)
-    // The handler receives `c` and can valid input via `c.req.valid('json')` if using Hono Validator under hood,
-    // OR the feature implementation might pass it differently.
-    // Looking at ValidationFeature:
-    // app.postValidated = function(path, schemas, handler) { ... }
-    // It uses standard Hono validator.
-
-    const body = c.req.valid("json");
-
-    return c.json({
-        message: "User created",
-        user: body,
-    }, 201);
+app.post("/users", validate({ body: userSchema }), (c) => {
+    const user = c.get("validated").body; // { name: string; email: string; age: number }
+    return c.json({ message: "User created", user }, 201);
 });
 
+app.get(
+    "/users/:id",
+    validate({
+        params: z.object({ id: z.string().uuid() }),
+        query: z.object({ fields: z.string().optional() }),
+    }),
+    (c) => {
+        const { params, query } = c.get("validated");
+        return c.json({ id: params.id, fields: query.fields ?? "all" });
+    },
+);
+
 if (import.meta.main) {
-    console.log("Starting Basic Validation Example on port 8001...");
-    await basicKernel.start();
+    console.log("Starting Validation Example on port 8001...");
+    await kernel.start();
 }

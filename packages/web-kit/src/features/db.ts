@@ -30,7 +30,11 @@ declare module 'hono' {
 export class DbFeature<TSchema extends Record<string, unknown> = Record<string, never>> implements Feature {
     name = 'db';
     private log: KernelLogger = consoleLogger;
-    private client: any;
+    /** The driver's own client, by dialect (ping and shutdown use it). */
+    private client?:
+        | { dialect: 'postgres'; sql: postgres.Sql }
+        | { dialect: 'mysql'; pool: mysql.Pool }
+        | { dialect: 'sqlite'; database: Database };
     public db!: WebKitDrizzleDb<TSchema>;
     public readonly adapter: DbConfig['adapter'];
 
@@ -47,40 +51,44 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
             switch (config.adapter) {
                 case 'postgres': {
                     if (!config.connection) throw new Error('Missing connection info');
-                    const pgConfig = config.connection.connectionString
-                        ? config.connection.connectionString
-                        : {
-                              host: config.connection.host || 'localhost',
-                              port: config.connection.port || 5432,
-                              database: config.connection.database!,
-                              user: config.connection.user!,
-                              password: config.connection.password!,
-                          };
-                    this.client = postgres(pgConfig as any);
-                    this.db = drizzle<TSchema>(this.client);
+                    const conn = config.connection;
+                    const sql = conn.connectionString
+                        ? postgres(conn.connectionString)
+                        : postgres({
+                              host: conn.host || 'localhost',
+                              port: conn.port || 5432,
+                              database: conn.database,
+                              user: conn.user,
+                              password: conn.password,
+                          });
+                    this.client = { dialect: 'postgres', sql };
+                    this.db = drizzle<TSchema>(sql);
                     break;
                 }
                 case 'mysql': {
                     if (!config.connection) throw new Error('Missing connection info');
-                    const mysqlConfig = config.connection.connectionString
-                        ? config.connection.connectionString
-                        : {
-                              host: config.connection.host || 'localhost',
-                              port: config.connection.port || 3306,
-                              database: config.connection.database!,
-                              user: config.connection.user!,
-                              password: config.connection.password!,
-                          };
+                    const conn = config.connection;
                     // A pool, not a single connection: one dropped connection must
                     // not take the app's database access down with it.
-                    this.client = mysql.createPool(mysqlConfig as any);
-                    this.db = drizzleMysql<TSchema>(this.client);
+                    const pool = conn.connectionString
+                        ? mysql.createPool(conn.connectionString)
+                        : mysql.createPool({
+                              host: conn.host || 'localhost',
+                              port: conn.port || 3306,
+                              database: conn.database,
+                              user: conn.user,
+                              password: conn.password,
+                          });
+                    this.client = { dialect: 'mysql', pool };
+                    // Name the client type, as db-kit does: with only TSchema, drizzle infers another Pool.
+                    this.db = drizzleMysql<TSchema, typeof pool>(pool);
                     break;
                 }
                 case 'sqlite': {
                     const url = config.connection?.database || ':memory:';
-                    this.client = new Database(url);
-                    this.db = drizzleBunSqlite<TSchema>(this.client);
+                    const database = new Database(url);
+                    this.client = { dialect: 'sqlite', database };
+                    this.db = drizzleBunSqlite<TSchema>(database);
                     break;
                 }
                 default:
@@ -104,26 +112,26 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
 
     /** One round-trip to the database (used by HealthCheckFeature). */
     async ping(): Promise<void> {
-        switch (this.config.adapter) {
+        const client = this.client;
+        if (!client) throw new Error('DB not initialized');
+        switch (client.dialect) {
             case 'postgres':
-                await this.client`select 1`;
+                await client.sql`select 1`;
                 break;
             case 'mysql':
-                await this.client.query('select 1');
+                await client.pool.query('select 1');
                 break;
             case 'sqlite':
-                this.client.query('select 1').get();
+                client.database.query('select 1').get();
                 break;
         }
     }
 
     async shutdown(): Promise<void> {
-        if (this.client) {
-            if (this.client.end) {
-                await this.client.end();
-            } else if (this.client.close) {
-                this.client.close();
-            }
-        }
+        const client = this.client;
+        this.client = undefined;
+        if (client?.dialect === 'postgres') await client.sql.end();
+        else if (client?.dialect === 'mysql') await client.pool.end();
+        else client?.database.close();
     }
 }

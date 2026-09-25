@@ -1,24 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 import { Kernel } from '../src/kernel';
-import { ValidationFeature } from '../src/features/validation';
+import { validate } from '../src/features/validation';
 import { OpenAPIFeature, z } from '../src/features/openapi';
 import { UploadFeature } from '../src/features/upload';
 import { StorageFeature } from '../src/features/storage';
 
 describe('API Features', () => {
-    it('should validation requests', async () => {
-        const kernel = new Kernel();
-        kernel.registerFeature(new ValidationFeature());
+    it('should validate requests', async () => {
+        const kernel = new Kernel({ logger: false });
         await kernel.initialize();
 
         const app = kernel.getApp();
-        // @ts-expect-error - postValidated is augmented by ValidationFeature at runtime
-        app.postValidated(
-            '/test',
-            {
-                body: z.object({ name: z.string() }),
-            },
-            (c: { json: (o: unknown) => Response }) => c.json({ ok: true }),
+        app.post('/test', validate({ body: z.object({ name: z.string() }) }), (c) =>
+            c.json({ ok: true, name: c.get('validated').body.name }),
         );
 
         const res1 = await app.request('/test', {

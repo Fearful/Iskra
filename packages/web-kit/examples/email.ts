@@ -10,30 +10,19 @@ const basicKernel = new Kernel({ port: 8001 });
 basicKernel.registerFeature(
     new EmailFeature({
         provider: "smtp",
-        // @ts-ignore
-        config: {
+        smtp: {
             host: "smtp.example.com",
             port: 587,
             username: "user",
             password: "password",
-            from: { email: "noreply@example.com" },
-        }
+        },
+        from: { email: "noreply@example.com" },
     }),
 );
-// In the new implementation config is directly passed to constructor, not nested in `config` property if that was the case?
-// Checking EmailFeature implementation: constructor(config: EmailConfig)
-// EmailConfig has { provider, smtp: { ... }, from: ... }
-// So the structure above might need adjustment.
-// Let's adjust to match new implementation.
 
-/*
-export interface EmailConfig {
-  provider: "smtp" | "sendgrid" | "mock" | "mailgun" | "ses";
-  smtp?: { ... };
-  apiKey?: string;
-  ...
-}
-*/
+// ============================================================================
+// Example 2: The mock provider (nothing is sent), and sending from a route
+// ============================================================================
 
 const correctedKernel = new Kernel({ port: 8001 });
 correctedKernel.registerFeature(
@@ -44,7 +33,6 @@ correctedKernel.registerFeature(
 );
 
 correctedKernel.getApp().post("/send-email", async (c) => {
-    // @ts-ignore
     const email = c.get("email");
     const body = await c.req.json();
 
@@ -56,8 +44,8 @@ correctedKernel.getApp().post("/send-email", async (c) => {
         });
 
         return c.json({ message: "Email sent successfully" });
-    } catch (error: any) {
-        return c.json({ error: error.message }, 500);
+    } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
     }
 });
 

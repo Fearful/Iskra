@@ -87,7 +87,7 @@ export class CsrfFeature implements Feature {
             setCookie(c, this.config.cookieName, token, {
                 httpOnly: this.config.cookieOptions.httpOnly,
                 secure: this.config.cookieOptions.secure,
-                sameSite: this.config.cookieOptions.sameSite as any,
+                sameSite: this.config.cookieOptions.sameSite,
                 maxAge: this.config.cookieOptions.maxAge,
                 path: '/',
             });

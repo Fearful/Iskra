@@ -1,4 +1,4 @@
-import { createRouter } from '@iskra-bun/web-kit';
+import { createRouter, defineRoute } from '@iskra-bun/web-kit';
 import { z } from 'zod';
 import { UserService } from '../../domain/user.service';
 
@@ -12,7 +12,8 @@ export const httpRouter = createRouter([
             return await userService.findAll();
         },
     },
-    {
+    // defineRoute() types ctx.body from the schema: { name: string }.
+    defineRoute({
         method: 'POST',
         path: '/users',
         schema: {
@@ -22,5 +23,5 @@ export const httpRouter = createRouter([
             const user = await userService.create(ctx.body.name);
             return user;
         },
-    },
+    }),
 ]);

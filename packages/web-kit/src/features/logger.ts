@@ -3,9 +3,17 @@ import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
 import { consoleLogger, type KernelLogger } from '../logging';
 
+/** The per-request logger LoggerFeature puts on the context (`c.get("logger")`). */
+export interface RequestLogger {
+    info(message: string, ...args: unknown[]): void;
+    error(message: string, ...args: unknown[]): void;
+    warn(message: string, ...args: unknown[]): void;
+    debug(message: string, ...args: unknown[]): void;
+}
+
 declare module 'hono' {
     interface ContextVariableMap {
-        logger: any;
+        logger: RequestLogger;
     }
 }
 
@@ -16,19 +24,19 @@ type Level = (typeof LEVELS)[number];
 // Simple Logger implementation to avoid heavy dependency unless necessary.
 // Writing to the console with [LEVEL] prefixes is what this feature is for.
 /* eslint-disable no-console */
-class SimpleLogger {
+class SimpleLogger implements RequestLogger {
     constructor(private config: LoggerConfig) {}
 
-    info(message: string, ...args: any[]) {
+    info(message: string, ...args: unknown[]) {
         if (this.shouldLog('info')) console.log(`[INFO] ${message}`, ...args);
     }
-    error(message: string, ...args: any[]) {
+    error(message: string, ...args: unknown[]) {
         if (this.shouldLog('error')) console.error(`[ERROR] ${message}`, ...args);
     }
-    warn(message: string, ...args: any[]) {
+    warn(message: string, ...args: unknown[]) {
         if (this.shouldLog('warning')) console.warn(`[WARN] ${message}`, ...args);
     }
-    debug(message: string, ...args: any[]) {
+    debug(message: string, ...args: unknown[]) {
         if (this.shouldLog('debug')) console.debug(`[DEBUG] ${message}`, ...args);
     }
 

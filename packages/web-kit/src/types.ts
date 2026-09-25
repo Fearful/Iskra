@@ -1,3 +1,6 @@
+import type { Context, Hono } from 'hono';
+import type { OpenAPIHono } from '@hono/zod-openapi';
+import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
 import type { TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
@@ -79,7 +82,7 @@ export interface ApiKeyMetadata {
     expiresAt?: Date;
     createdAt: Date;
     lastUsedAt?: Date;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface ApiKeyConfig {
@@ -87,9 +90,7 @@ export interface ApiKeyConfig {
     headerName?: string;
     queryParamName?: string;
     extractStrategies?: ('header' | 'bearer' | 'query' | 'custom')[];
-    /** Not used yet: only `staticKeys` are validated. */
-    vaultService?: any;
-    customExtractor?: (c: any) => string | null;
+    customExtractor?: (c: Context) => string | null;
     /**
      * @deprecated Ignored. Keys are looked up in memory on every request; the
      * cache kept a revoked key working and stored it in plaintext.
@@ -99,8 +100,8 @@ export interface ApiKeyConfig {
     cacheTtl?: number;
     requireScopes?: boolean;
     skipPaths?: string[];
-    onError?: (error: string, c: any) => Response | Promise<Response>;
-    onValidated?: (key: ApiKeyMetadata, c: any) => void | Promise<void>;
+    onError?: (error: string, c: Context) => Response | Promise<Response>;
+    onValidated?: (key: ApiKeyMetadata, c: Context) => void | Promise<void>;
 }
 
 export interface CsrfConfig {
@@ -122,7 +123,7 @@ export interface Feature {
     dependencies?: string[]; // Required features
     peerDependencies?: string[]; // Required npm packages
     initialize(kernel: Kernel): Promise<void>;
-    routes?: (app: any) => void;
+    routes?: (app: Hono) => void;
     shutdown?(): Promise<void>;
 }
 
@@ -140,9 +141,9 @@ export interface CorsConfig {
 export interface RateLimitConfig {
     windowMs?: number;
     max?: number;
-    keyGenerator?: (c: any) => string;
-    skip?: (c: any) => boolean;
-    handler?: (c: any) => Response;
+    keyGenerator?: (c: Context) => string;
+    skip?: (c: Context) => boolean;
+    handler?: (c: Context) => Response;
     standardHeaders?: boolean;
     store?: 'memory' | 'cache';
 }
@@ -155,10 +156,10 @@ export interface HealthCheckConfig {
     /** Per-check timeout for /health probes, in ms. Default 2000. */
     checkTimeoutMs?: number;
     checks?: {
-        [key: string]: (context?: any) => Promise<{
+        [key: string]: (c: Context) => Promise<{
             status: 'ok' | 'error';
             message?: string;
-            details?: any;
+            details?: unknown;
         }>;
     };
     readinessChecks?: {
@@ -174,9 +175,9 @@ export interface RequestIdConfig {
 export interface ErrorHandlerConfig {
     includeStack?: boolean;
     customHandlers?: {
-        [key: number]: (error: Error, c: any) => Response;
+        [key: number]: (error: Error, c: Context) => Response;
     };
-    logger?: (error: Error, c: any) => void;
+    logger?: (error: Error, c: Context) => void;
 }
 
 export interface LoggerConfig {
@@ -214,8 +215,8 @@ export interface AuthConfig {
     enableEmailPassword?: boolean;
     enableSelfRegistration?: boolean; // Allow `/sign-up/email` (default true); false = accounts are provisioned elsewhere
 
-    // deno-lint-ignore no-explicit-any
-    socialProviders?: Record<string, any>; // Allow other providers
+    /** better-auth's socialProviders option, as is. */
+    socialProviders?: BetterAuthConfigOptions['socialProviders'];
 
     // OIDC Configuration for Keycloak and other OIDC providers
     oidcConfig?: {
@@ -304,7 +305,10 @@ export interface OpenAPIConfig {
     license?: { name: string; url?: string };
     externalDocs?: { description: string; url: string };
     security?: Array<Record<string, string[]>>;
-    securitySchemes?: Record<string, any>;
+    /** OpenAPI security scheme objects, by name (as in the spec's components). */
+    securitySchemes?: NonNullable<
+        NonNullable<ReturnType<OpenAPIHono['getOpenAPIDocument']>['components']>['securitySchemes']
+    >;
 }
 
 export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
@@ -325,5 +329,5 @@ export interface UploadConfig {
      * the built-in upload routes (e.g. check `c.get("user")`). Pass
      * `() => true` to make them public on purpose.
      */
-    authorize?: (c: any, action: UploadAction) => boolean | Promise<boolean>;
+    authorize?: (c: Context, action: UploadAction) => boolean | Promise<boolean>;
 }

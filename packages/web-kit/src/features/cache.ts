@@ -1,13 +1,18 @@
 import type { Feature, CacheConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
-import Redis from 'ioredis';
+import Redis, { type RedisOptions } from 'ioredis';
 import { consoleLogger, type KernelLogger } from '../logging';
 
-// Standard Cache Interface
+/**
+ * Standard cache interface. Values are JSON-serializable: what get() returns
+ * is whatever was set, so narrow it where it is read.
+ */
 export interface CacheAdapter {
-    get(key: string): Promise<any>;
-    set(key: string, value: any, ttl?: number): Promise<void>;
+    /** The stored value, or null when missing or expired. */
+    get(key: string): Promise<unknown>;
+    /** `ttl` in seconds. */
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
     increment?(key: string): Promise<number>;
@@ -21,7 +26,7 @@ export interface CacheAdapter {
 
 // Simple Memory Adapter
 class MemoryAdapter implements CacheAdapter {
-    private store = new Map<string, { value: any; expires: number | null }>();
+    private store = new Map<string, { value: unknown; expires: number | null }>();
 
     async get(key: string) {
         const item = this.store.get(key);
@@ -33,7 +38,7 @@ class MemoryAdapter implements CacheAdapter {
         return item.value;
     }
 
-    async set(key: string, value: any, ttl?: number) {
+    async set(key: string, value: unknown, ttl?: number) {
         const expires = ttl ? Date.now() + ttl * 1000 : null;
         this.store.set(key, { value, expires });
     }
@@ -62,9 +67,10 @@ class MemoryAdapter implements CacheAdapter {
             this.store.set(key, { value: 1, expires: Date.now() + ttlMs });
             return 1;
         }
-        item.value = Number(item.value) + 1;
+        const next = Number(item.value) + 1;
+        item.value = next;
         item.expires ??= Date.now() + ttlMs;
-        return item.value;
+        return next;
     }
 }
 
@@ -81,7 +87,7 @@ return n
 class RedisAdapter implements CacheAdapter {
     private client: Redis;
 
-    constructor(options: any) {
+    constructor(options: RedisOptions) {
         this.client = new Redis(options);
     }
 
@@ -94,7 +100,7 @@ class RedisAdapter implements CacheAdapter {
         }
     }
 
-    async set(key: string, value: any, ttl?: number) {
+    async set(key: string, value: unknown, ttl?: number) {
         const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
         if (ttl) {
             await this.client.set(key, stringValue, 'EX', ttl);

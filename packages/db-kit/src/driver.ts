@@ -355,3 +355,10 @@ export class DbDriver<TSchema extends Record<string, unknown> = Record<string, n
         }
     }
 }
+
+// `app.context.get('db')` is the DbDriver registered on the app.
+declare module '@iskra-bun/core' {
+    interface AppContextRegistry {
+        db: DbDriver;
+    }
+}

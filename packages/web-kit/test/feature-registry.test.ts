@@ -34,6 +34,9 @@ describe('FeatureRegistry', () => {
         const db = kernel.getFeature('db');
         type _db = Expect<Equal<typeof db, DbFeature<Record<string, unknown>> | undefined>>;
         const _assert: [_cache, _storage, _db] = [true, true, true];
+        // Not registered here: typed, but absent.
+        expect(storage).toBeUndefined();
+        expect(db).toBeUndefined();
 
         // The typed client is usable directly (health, session and rate-limit do this).
         await cache!.client.set('k', 'v');
@@ -62,6 +65,7 @@ describe('FeatureRegistry', () => {
         type _untyped = Expect<Equal<typeof untyped, Feature | undefined>>;
         const _assert: [_other, _untyped] = [true, true];
         expect(other).toBeUndefined();
+        expect(untyped).toBeUndefined();
         expect(_assert).toEqual([true, true]);
     });
 });

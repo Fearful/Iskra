@@ -1,9 +1,27 @@
 import mitt, { type Emitter } from 'mitt';
 import { createLogger, type Logger } from './logger';
 import { loadAppConfig } from './config/loader';
-import type { AppConfig, Driver, Plugin, Context } from './types';
+import type { AppConfig, AppContextRegistry, AppEvents, Driver, Plugin, Context } from './types';
 import { LifecycleError } from './errors';
 import { initOtel, shutdownOtel } from './otel';
+
+/**
+ * `app.context`: a Map whose keys in AppContextRegistry (`'db'`, `'kv'`, …)
+ * are typed; any other key holds `unknown`, or the type given as `T`.
+ */
+export class AppContext extends Map<string, unknown> {
+    override get<K extends keyof AppContextRegistry>(key: K): AppContextRegistry[K] | undefined;
+    override get<T = unknown>(key: string): T | undefined;
+    override get(key: string): unknown {
+        return super.get(key);
+    }
+
+    override set<K extends keyof AppContextRegistry>(key: K, value: AppContextRegistry[K]): this;
+    override set(key: string, value: unknown): this;
+    override set(key: string, value: unknown): this {
+        return super.set(key, value);
+    }
+}
 
 const DEFAULT_SHUTDOWN_SIGNALS: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -11,7 +29,7 @@ const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 export class App {
     public config: AppConfig;
     public logger: Logger;
-    public events: Emitter<any>;
+    public events: Emitter<Record<string, unknown>>;
     private drivers: Driver[] = [];
     /** Drivers whose start() succeeded, in start order; null until start() runs. */
     private startedDrivers: Driver[] | null = null;
@@ -20,7 +38,7 @@ export class App {
     private stopping: Promise<void> | null = null;
     private signalHandler?: (signal: NodeJS.Signals) => void;
     private signals: NodeJS.Signals[] = [];
-    public context: Map<string, any> = new Map();
+    public context = new AppContext();
 
     constructor(config?: AppConfig) {
         this.events = mitt();
@@ -74,9 +92,15 @@ export class App {
         return this;
     }
 
-    on(event: string, handler: (ctx: Context) => Promise<void> | void) {
+    /**
+     * Runs `handler` for every `event`. Events in AppEvents give the handler a
+     * typed payload; for others it is `unknown`, or the type given as `T`.
+     */
+    on<K extends keyof AppEvents>(event: K, handler: (ctx: Context<AppEvents[K]>) => Promise<void> | void): this;
+    on<T = unknown>(event: string, handler: (ctx: Context<T>) => Promise<void> | void): this;
+    on(event: string, handler: (ctx: Context<unknown>) => Promise<void> | void): this {
         this.events.on(event, async (payload) => {
-            const ctx: Context = {
+            const ctx: Context<unknown> = {
                 app: this,
                 logger: this.logger.child({ event }),
                 payload,
@@ -92,7 +116,10 @@ export class App {
         return this;
     }
 
-    emit(event: string, payload: any) {
+    /** Emits `event`; for events in AppEvents the payload must match their type. */
+    emit<K extends keyof AppEvents>(event: K, payload: AppEvents[K]): void;
+    emit(event: string, payload?: unknown): void;
+    emit(event: string, payload?: unknown): void {
         this.events.emit(event, payload);
     }
 

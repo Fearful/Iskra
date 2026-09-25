@@ -13,12 +13,37 @@ export interface Plugin {
     install(app: App): Promise<void> | void;
 }
 
-export interface Context<T = any> {
+/** What an `app.on()` handler receives; `payload` is the emitted value. */
+export interface Context<T = unknown> {
     app: App;
     logger: Logger;
     payload: T;
-    reply(data: any): void;
+    /** Emits `<event>:reply` with `data`. */
+    reply(data: unknown): void;
 }
+
+/**
+ * What each kit shares through `app.context`, by key, so `app.context.get('db')`
+ * is typed. Kits add their keys with declaration merging, and so can an app:
+ *
+ * ```ts
+ * declare module '@iskra-bun/core' {
+ *     interface AppContextRegistry {
+ *         bridge: DesktopBridge;
+ *     }
+ * }
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- filled by declaration merging
+export interface AppContextRegistry {}
+
+/**
+ * The payload of each app event, by name, so `app.on('process:exit', ...)`
+ * and `app.emit(...)` are typed. Kits add their events with declaration
+ * merging, and so can an app (as with AppContextRegistry).
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- filled by declaration merging
+export interface AppEvents {}
 
 export interface OtelConfig {
     /** Defaults to true when otel config is present */
@@ -62,14 +87,15 @@ export interface AppConfig {
     kv?: {
         driver: 'memory' | 'redis';
         /** Redis: a URL string, ioredis options, or ioredis options with `url`. */
-        connection?: any;
+        connection?: string | Record<string, unknown>;
     };
     db?: {
         driver: 'postgres' | 'mysql' | 'sqlite' | 'libsql';
         url: string;
         authToken?: string;
     };
-    [key: string]: any;
+    /** Sections of other kits or of the app; read them with their own type. */
+    [key: string]: unknown;
 }
 
 export interface RestartBackoffConfig {

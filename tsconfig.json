@@ -1,6 +1,12 @@
 {
     "extends": "./tsconfig.base.json",
-    "comment": "Root typecheck covers the published library code (packages src + test) and the SDK contract server. Templates carry their own tsconfigs; packages/*/examples are demo code excluded from the CI typecheck gate.",
-    "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "sdks/contract/**/*.ts"],
+    "comment": "Root typecheck covers the packages (src, tests, examples), the SDK contract server and the scripts. Templates carry their own tsconfigs: scripts/typecheck-templates.ts checks those.",
+    "include": [
+        "packages/*/src/**/*.ts",
+        "packages/*/test/**/*.ts",
+        "packages/*/examples/**/*.ts",
+        "sdks/contract/**/*.ts",
+        "scripts/**/*.ts"
+    ],
     "exclude": ["node_modules", "**/dist", "**/*.d.ts"]
 }

@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, type RouteConfig } from '@hono/zod-openapi';
 import { z } from 'zod';
 import type { Driver, App } from '@iskra-bun/core';
 import type { RouteOptions } from './router';
@@ -19,7 +19,7 @@ export class WebDriver implements Driver {
     private app: App | null = null;
     private server: OpenAPIHono;
     private options: WebServerOptions;
-    private runningServer: any;
+    private runningServer: ReturnType<typeof Bun.serve> | null = null;
 
     constructor(options: WebServerOptions = {}) {
         this.options = options;
@@ -63,7 +63,9 @@ export class WebDriver implements Driver {
             // Map simple RouteOptions to OpenAPI RouteConfig
             // We assume JSON for body
 
-            const routeConfig: any = {
+            // zod-openapi validates Zod v3 and v4 schemas at run time; its
+            // types only name its own Zod, hence the casts to RouteConfig below.
+            const routeConfig: Record<string, unknown> & { request: Record<string, unknown> } = {
                 method: route.method.toLowerCase(),
                 path: route.path,
                 tags: route.doc?.tags,
@@ -105,16 +107,18 @@ export class WebDriver implements Driver {
                 routeConfig.request.params = route.schema.params;
             }
 
-            const openApiRoute = createRoute(routeConfig);
+            const openApiRoute = createRoute(routeConfig as unknown as RouteConfig);
 
             this.server.openapi(openApiRoute, async (c) => {
                 if (!this.app) throw new Error('App not initialized');
 
+                // zod-openapi put the data its validation accepted in c.req.valid().
+                // Bound: valid() reads the request's validated data through `this`.
+                const valid = (c.req.valid as (target: 'json' | 'query') => unknown).bind(c.req);
                 const webCtx = {
                     raw: c,
-                    // Hono/zod-openapi puts validated data in c.req.valid('json') etc similar to validator middleware
-                    body: route.schema?.body ? (c as any).req.valid('json') : undefined,
-                    query: route.schema?.query ? (c as any).req.valid('query') : undefined,
+                    body: route.schema?.body ? valid('json') : undefined,
+                    query: route.schema?.query ? valid('query') : undefined,
                     params: c.req.param(),
                     app: this.app,
                 };
@@ -123,11 +127,11 @@ export class WebDriver implements Driver {
                     const result = await route.handler(webCtx);
                     if (result instanceof Response) return result;
                     return c.json(result);
-                } catch (err: any) {
+                } catch (err) {
                     // Log the detail server-side; never serialize the raw error
                     // message (it may embed connection strings or other secrets)
                     // to the client. Return only a generic body.
-                    this.app.logger.error(err);
+                    this.app.logger.error({ err, route: route.path }, 'Route handler failed');
                     return c.json({ error: 'Internal Server Error' }, 500);
                 }
             });

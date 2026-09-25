@@ -33,14 +33,46 @@ export interface FormField {
     errorMessage: string | null;
 }
 
+/** One answer field in a form's validation schema (AJV + ajv-errors). */
+export interface JsonSchemaProperty {
+    type: string;
+    format?: string;
+    minLength?: number;
+    maxLength?: number;
+    minimum?: number;
+    maximum?: number;
+    enum?: string[];
+    const?: boolean;
+    items?: { type: 'string'; enum: string[] };
+    minItems?: number;
+    uniqueItems?: boolean;
+    errorMessage: Record<string, string>;
+}
+
+/** The JSON Schema generated from a form's fields, used to validate answers. */
+export interface JsonSchema {
+    type: 'object';
+    properties: Record<string, JsonSchemaProperty>;
+    required: string[];
+    /** Only the form's fields are accepted. */
+    additionalProperties: false;
+    /**
+     * Required-field messages by field name. They go on the object: AJV
+     * reports a missing property there, so a property's own
+     * `errorMessage.required` was never used.
+     */
+    errorMessage?: { required: Record<string, string> };
+}
+
 export interface Form {
     id: string;
     spaceId: string;
     title: string;
     description: string | null;
     slug: string;
-    schema: Record<string, unknown> | null;
-    validationSchema: Record<string, unknown> | null;
+    /** The field definitions the form was created or last updated with. */
+    schema: CreateFieldInput[] | null;
+    validationSchema: JsonSchema | null;
     startsAt: Date | null;
     endsAt: Date | null;
     status: FormStatus;

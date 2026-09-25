@@ -271,7 +271,7 @@ export class AuthFeature implements Feature {
                         401: { description: 'Invalid credentials' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -293,7 +293,7 @@ export class AuthFeature implements Feature {
                         400: { description: 'Validation error' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -306,7 +306,7 @@ export class AuthFeature implements Feature {
                         200: { description: 'Signed out' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
@@ -322,7 +322,7 @@ export class AuthFeature implements Feature {
                         },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
         }
 

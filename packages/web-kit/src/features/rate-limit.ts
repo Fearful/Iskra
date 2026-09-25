@@ -4,6 +4,7 @@ import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getClientIp, type TrustProxy } from '../client-ip';
 import { consoleLogger, type KernelLogger } from '../logging';
+import type { CacheAdapter } from './cache';
 
 interface RateLimitStore {
     get(key: string): Promise<number | null>;
@@ -47,10 +48,11 @@ class MemoryStore implements RateLimitStore {
 }
 
 class CacheStoreWrapper implements RateLimitStore {
-    constructor(private cache: any) {}
+    constructor(private cache: CacheAdapter) {}
 
     async get(key: string): Promise<number | null> {
-        return await this.cache.get(key);
+        const value = await this.cache.get(key);
+        return value === null || value === undefined ? null : Number(value);
     }
 
     async set(key: string, value: number, ttl: number): Promise<void> {

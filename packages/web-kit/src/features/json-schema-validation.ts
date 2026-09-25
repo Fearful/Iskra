@@ -1,6 +1,4 @@
-import type { Feature } from '../types';
-import type { Kernel } from '../kernel';
-import type { Context, Next, Hono, Handler } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import Ajv from 'ajv';
 import addErrors from 'ajv-errors';
 import addFormats from 'ajv-formats';
@@ -8,37 +6,6 @@ import type { ErrorObject } from 'ajv';
 import { ErrorCodes, errorResponse } from '../responses';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
-// ─── Module Augmentation ────────────────────────────────────────────────────
-
-declare module 'hono' {
-    interface Hono {
-        getJsonValidated(
-            path: string,
-            schema: JsonValidationSchema,
-            handler: Handler,
-            options?: JsonValidationOptions,
-        ): Hono;
-        postJsonValidated(
-            path: string,
-            schema: JsonValidationSchema,
-            handler: Handler,
-            options?: JsonValidationOptions,
-        ): Hono;
-        putJsonValidated(
-            path: string,
-            schema: JsonValidationSchema,
-            handler: Handler,
-            options?: JsonValidationOptions,
-        ): Hono;
-        deleteJsonValidated(
-            path: string,
-            schema: JsonValidationSchema,
-            handler: Handler,
-            options?: JsonValidationOptions,
-        ): Hono;
-    }
-}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +22,13 @@ export interface JsonValidationOptions {
     status?: number;
     allErrors?: boolean;
     coerceTypes?: boolean;
+}
+
+/** What `c.get("validated")` holds after `validateJson()`. */
+export interface JsonValidated<Body = unknown, Query = unknown, Params = unknown> {
+    params: Params;
+    query: Query;
+    body: Body;
 }
 
 export interface FormattedValidationErrors {
@@ -114,10 +88,23 @@ function formatAjvErrors(errors: ErrorObject[] | null | undefined): FormattedVal
 
 // ─── Validation Middleware ───────────────────────────────────────────────────
 
-export function createJsonSchemaValidationMiddleware(
+/**
+ * Middleware that validates a request's route params, query and/or body
+ * against JSON Schemas (AJV, with ajv-formats and ajv-errors). On failure it
+ * answers `status` (400) with the errors by field; on success the handler reads
+ * the data from `c.get("validated")`. A JSON Schema does not carry a
+ * TypeScript type, so give the validated shapes as type parameters:
+ *
+ * ```ts
+ * app.post("/users", validateJson<{ name: string }>({ body: userSchema }), (c) => {
+ *     const { name } = c.get("validated").body;
+ * });
+ * ```
+ */
+export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
     schema: JsonValidationSchema,
     options: JsonValidationOptions = {},
-) {
+): MiddlewareHandler<{ Variables: { validated: JsonValidated<Body, Query, Params> } }> {
     const { logErrors = true, status = 400, logger = consoleLogger } = options;
     const ajv = createAjvInstance(options);
 
@@ -127,9 +114,9 @@ export function createJsonSchemaValidationMiddleware(
         body: schema.body ? ajv.compile(schema.body) : null,
     };
 
-    return async (c: Context, next: Next) => {
+    return async (c, next) => {
         try {
-            const validated: Record<string, any> = {};
+            const validated: { params?: unknown; query?: unknown; body?: unknown } = {};
 
             if (validators.params) {
                 const data = { ...c.req.param() };
@@ -180,45 +167,14 @@ export function createJsonSchemaValidationMiddleware(
                 validated.body = data;
             }
 
-            (c as any).valid = () => validated;
+            // What the schemas accepted, as the caller typed it.
+            c.set('validated', validated as JsonValidated<Body, Query, Params>);
             await next();
         } catch (err) {
             if (logErrors) logger.error('JSON Schema validation error', err);
             return c.json(errorResponse('Validation middleware failed', ErrorCodes.INTERNAL_ERROR), 500);
         }
     };
-}
-
-// ─── Hono Extension ─────────────────────────────────────────────────────────
-
-function extendHonoWithJsonSchemaValidation(app: Hono) {
-    const methods = ['get', 'post', 'put', 'delete'] as const;
-    for (const method of methods) {
-        (app as any)[`${method}JsonValidated`] = function (
-            path: string,
-            schema: JsonValidationSchema,
-            handler: Handler,
-            options?: JsonValidationOptions,
-        ) {
-            const middleware = createJsonSchemaValidationMiddleware(schema, options);
-            (this as any)[method](path, middleware, handler);
-            return this;
-        };
-    }
-}
-
-// ─── Feature Class ──────────────────────────────────────────────────────────
-
-export class JsonSchemaValidationFeature implements Feature {
-    name = 'json-schema-validation';
-    private log: KernelLogger = consoleLogger;
-
-    async initialize(kernel: Kernel): Promise<void> {
-        this.log = kernel.getLogger();
-        const app = kernel.getApp();
-        extendHonoWithJsonSchemaValidation(app);
-        this.log.debug('JSON Schema validation feature initialized');
-    }
 }
 
 export { formatAjvErrors };

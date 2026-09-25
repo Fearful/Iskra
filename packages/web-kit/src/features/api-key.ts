@@ -8,10 +8,8 @@ import { consoleLogger, type KernelLogger } from '../logging';
 // defaults, while the genuinely optional callbacks stay optional. This replaces
 // the previous `as unknown as Required<ApiKeyConfig>` cast, which masked shape
 // drift by pretending the callbacks were always present.
-type ResolvedApiKeyConfig = Required<
-    Omit<ApiKeyConfig, 'vaultService' | 'customExtractor' | 'onError' | 'onValidated'>
-> &
-    Pick<ApiKeyConfig, 'vaultService' | 'customExtractor' | 'onError' | 'onValidated'>;
+type ResolvedApiKeyConfig = Required<Omit<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated'>> &
+    Pick<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated'>;
 
 // --- ApiKeyStore ---
 
@@ -142,7 +140,6 @@ export class ApiKeyFeature implements Feature {
             headerName: config.headerName || 'X-API-Key',
             queryParamName: config.queryParamName || 'api_key',
             extractStrategies: config.extractStrategies || ['header', 'bearer'],
-            vaultService: config.vaultService,
             customExtractor: config.customExtractor,
             enableCache: config.enableCache ?? true,
             cacheTtl: config.cacheTtl ?? 300000,

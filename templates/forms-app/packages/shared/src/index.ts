@@ -13,6 +13,8 @@ export type {
     Answer,
     SubmitAnswerInput,
     AnswerJob,
+    JsonSchema,
+    JsonSchemaProperty,
 } from './types/form.ts';
 export type { ApiResponse, PaginatedResponse, PaginationParams } from './types/api.ts';
 

@@ -84,7 +84,7 @@ export class HealthCheckFeature implements Feature {
             Object.values(checks).every((r) => r.status === 'ok') &&
             Object.values(customChecks).every((r) => r?.status !== 'error');
 
-        const response: any = {
+        const response: Record<string, unknown> = {
             status: healthy ? 'ok' : 'error',
             timestamp: new Date().toISOString(),
         };
