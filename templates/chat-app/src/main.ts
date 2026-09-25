@@ -40,6 +40,11 @@ const socketDriver = new SocketDriver({
 app.register(kv);
 app.register(socketDriver);
 
+// Una conexion que no se autentica a tiempo se cierra (ver handleConnect).
+app.on('socket:connected', (ctx) =>
+    chat.handleConnect(ctx.payload.connectionId, (id, code, reason) => socketDriver.close(id, code, reason)),
+);
+
 // Presencia al cortarse la conexion (cerrar la pestaña, perder la red).
 app.on('socket:disconnected', (ctx) =>
     chat.handleDisconnect(ctx.payload.connectionId, (topic, payload) =>

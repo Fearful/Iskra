@@ -62,7 +62,8 @@ de autenticar al usuario (o reemplazá `verifyToken` por la verificacion de tu J
 
 Los nombres de usuario se normalizan a minusculas (`a-z`, `0-9`, `_`, `-`, hasta 32):
 `Ana` y `ana` son el mismo usuario. Tras 5 tokens invalidos en una conexion el
-servidor la cierra (codigo `1008`), y un socket ya autenticado no puede cambiar de
+servidor la cierra (codigo `1008`), igual que una conexion que no se autentica en
+10 segundos (`authTimeoutMs`), y un socket ya autenticado no puede cambiar de
 identidad.
 
 ```jsonc

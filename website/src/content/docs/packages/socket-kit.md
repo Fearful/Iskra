@@ -211,6 +211,18 @@ const ws = new WebSocket(`wss://app.example.com/ws?ticket=${ticket}`);
 - **The `Sec-WebSocket-Protocol` header**, which the browser lets you set: `new WebSocket(url, ['bearer', token])`. Bun answers with the first protocol (`bearer`), and `authenticate` reads the token from `req.headers.get('sec-websocket-protocol')` (a subprotocol cannot contain `/`, `=`, `,` or spaces: use a base64url or hex token). Proxies seldom log this header, but the token is still long-lived: a ticket is better.
 - **The session cookie**, which the browser sends by itself: then set `allowedOrigins`, since that cookie is exactly what lets another site connect as the user.
 
+An app that authenticates in the first message instead (an `auth` event carrying a token) must close the connections that don't: one that never sends anything stays open as long as its client answers pings. Give each connection a deadline with `driver.close(connectionId, code?, reason?)`, which returns `false` when the connection is already gone:
+
+```typescript
+app.on('socket:connected', ({ payload: { connectionId } }) => {
+    setTimeout(() => {
+        if (!sessions.has(connectionId)) driver.close(connectionId, 1008, 'Authentication timeout');
+    }, 10_000);
+});
+```
+
+The [`chat-app`](https://github.com/fearful/iskra/tree/main/templates/chat-app) template does this (`handleConnect`).
+
 ## Authorization
 
 The driver accepts optional `canJoin` and `canPublish` hooks that gate room joins and publishes per connection. Both default to allow-all when omitted: any client can join any room (another user's per-connection room included) and publish to any topic, `global` included, until you set them.

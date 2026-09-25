@@ -35,6 +35,8 @@ import {
 export const MAX_MESSAGE_BYTES = 2 * 1024;
 /** Tokens invalidos que se toleran por conexion antes de cerrarla. */
 export const MAX_AUTH_FAILURES = 5;
+/** Tiempo que tiene una conexion para autenticarse (ver handleConnect), en ms. */
+export const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
 const DEFAULT_ROOMS_PAGE = 50;
 const MAX_ROOMS_PAGE = 100;
 
@@ -63,7 +65,12 @@ export interface ChatOptions {
     secret: string;
     /** Salas que se pueden crear en total. */
     maxRooms?: number;
+    /** Ms que tiene una conexion para mandar un `auth` valido. Default 10000. */
+    authTimeoutMs?: number;
 }
+
+/** Cierra una conexion: `SocketDriver#close`. */
+export type CloseConnection = (connectionId: string, code: number, reason: string) => void;
 
 /** Publica en un topic desde el servidor, con el mismo sobre que `ctx.broadcast`. */
 export type Publish = (topic: string, payload: unknown) => void;
@@ -74,15 +81,26 @@ export interface Chat {
     canJoin: CanJoin;
     /** Para `SocketDriver({ canPublish })`: solo a la sala en la que esta el socket. */
     canPublish: CanPublish;
+    /**
+     * Llamalo con el evento `socket:connected`: cierra la conexion (1008) si no
+     * se autentica en `authTimeoutMs`. Un socket que nunca manda `auth` quedaba
+     * abierto mientras su cliente contestara los pings, ocupando una conexion.
+     */
+    handleConnect(connectionId: string, close: CloseConnection): void;
     /** Llamalo con el evento `socket:disconnected`: libera la sesion y avisa a la sala. */
     handleDisconnect(connectionId: string, publish: Publish): Promise<void>;
 }
 
 export function createChat(kv: KVManager, options: ChatOptions): Chat {
-    const { secret, maxRooms = MAX_ROOMS } = options;
+    const { secret, maxRooms = MAX_ROOMS, authTimeoutMs = DEFAULT_AUTH_TIMEOUT_MS } = options;
     // Por connectionId: se borran en handleDisconnect.
     const sessions = new Map<string, Session>();
     const authFailures = new Map<string, number>();
+    const authTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const stopAuthTimer = (connectionId: string) => {
+        clearTimeout(authTimers.get(connectionId));
+        authTimers.delete(connectionId);
+    };
 
     const sessionOf = (connectionId: string) => sessions.get(connectionId);
     const setRoom = (connectionId: string, room: string | null) => {
@@ -131,6 +149,7 @@ export function createChat(kv: KVManager, options: ChatOptions): Chat {
         }
 
         authFailures.delete(connectionId);
+        stopAuthTimer(connectionId);
         sessions.set(connectionId, { ...identity, room: null });
         ctx.logger.info({ user: identity.username }, 'Socket autenticado');
         ctx.reply({ ok: true, userId: identity.userId, username: identity.username });
@@ -254,8 +273,18 @@ export function createChat(kv: KVManager, options: ChatOptions): Chat {
             const session = sessionOf(connection.data.connectionId);
             return !!session?.room && topic === roomTopic(session.room) && connection.isSubscribed(topic);
         },
+        handleConnect(connectionId, close) {
+            const timer = setTimeout(() => {
+                authTimers.delete(connectionId);
+                if (!sessions.has(connectionId)) close(connectionId, 1008, 'Authentication timeout');
+            }, authTimeoutMs);
+            // Un timer pendiente no mantiene vivo el proceso.
+            timer.unref?.();
+            authTimers.set(connectionId, timer);
+        },
         async handleDisconnect(connectionId, publish) {
             authFailures.delete(connectionId);
+            stopAuthTimer(connectionId);
             const session = sessions.get(connectionId);
             sessions.delete(connectionId);
             if (!session?.room) return;

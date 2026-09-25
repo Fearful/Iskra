@@ -211,6 +211,18 @@ const ws = new WebSocket(`wss://app.example.com/ws?ticket=${ticket}`);
 - **El header `Sec-WebSocket-Protocol`**, que el navegador si permite definir: `new WebSocket(url, ['bearer', token])`. Bun responde con el primer protocolo (`bearer`), y `authenticate` lee el token de `req.headers.get('sec-websocket-protocol')` (un subprotocolo no puede contener `/`, `=`, `,` ni espacios: usa un token base64url o hex). Los proxies rara vez registran este header, pero el token sigue siendo de larga vida: un ticket es mejor.
 - **La cookie de sesion**, que el navegador envia solo: entonces define `allowedOrigins`, porque esa cookie es justamente lo que le permite a otro sitio conectarse como el usuario.
 
+Una app que en cambio se autentica en el primer mensaje (un evento `auth` con un token) tiene que cerrar las conexiones que no lo hacen: una que nunca manda nada queda abierta mientras su cliente conteste los pings. Dale a cada conexion un plazo con `driver.close(connectionId, code?, reason?)`, que devuelve `false` si la conexion ya no esta:
+
+```typescript
+app.on('socket:connected', ({ payload: { connectionId } }) => {
+    setTimeout(() => {
+        if (!sessions.has(connectionId)) driver.close(connectionId, 1008, 'Authentication timeout');
+    }, 10_000);
+});
+```
+
+La plantilla [`chat-app`](https://github.com/fearful/iskra/tree/main/templates/chat-app) lo hace (`handleConnect`).
+
 ## Autorizacion
 
 El driver acepta hooks opcionales `canJoin` y `canPublish` que controlan las uniones a salas y las publicaciones por conexion. Ambos permiten todo por defecto cuando se omiten: cualquier cliente puede unirse a cualquier sala (incluida la sala por conexion de otro usuario) y publicar en cualquier topico, `global` incluido, hasta que los definas.

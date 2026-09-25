@@ -224,3 +224,41 @@ describe('chat-app over a real SocketDriver', () => {
         ana.ws.close();
     });
 });
+
+describe('chat-app authentication timeout', () => {
+    it('closes a connection that does not authenticate in time, and keeps one that does', async () => {
+        // A socket that never sent `auth` stayed open as long as its client
+        // answered pings, holding a connection.
+        const port = freePort();
+        const app = new App({
+            name: 'ChatAuthTimeout',
+            logger: { level: 'error' },
+            kv: { driver: 'memory' },
+            shutdownSignals: false,
+        });
+        const kv = new KVManager();
+        const chat = createChat(kv, { secret: SECRET, authTimeoutMs: 150 });
+        const socketDriver = new SocketDriver({ port, router: chat.router });
+        app.register(kv);
+        app.register(socketDriver);
+        // Same wiring as src/main.ts.
+        app.on('socket:connected', (ctx) =>
+            chat.handleConnect(ctx.payload.connectionId, (id, code, reason) => socketDriver.close(id, code, reason)),
+        );
+        app.on('socket:disconnected', (ctx) => chat.handleDisconnect(ctx.payload.connectionId, () => {}));
+        await app.start();
+        try {
+            const silent = await connect(port);
+            const ana = await connect(port);
+            await ana.signIn('ana');
+
+            await new Promise((r) => setTimeout(r, 400));
+            expect(silent.closed()).toEqual({ code: 1008 });
+            expect(ana.closed()).toBeNull();
+            expect(await ana.request('rooms')).toMatchObject({ ok: true });
+            ana.ws.close();
+        } finally {
+            await app.stop();
+        }
+    });
+});
