@@ -114,7 +114,20 @@ export interface ProcessConfig {
     restartOnCrash?: boolean;
     maxRestarts?: number;
     restartCooldown?: number;
+    /** Variables set for the child, over the ones it inherits (see `inheritEnv`). */
     env?: Record<string, string>;
+    /**
+     * Which of the app's environment variables the child inherits. Default
+     * `false`: a minimal set without secrets (PATH, HOME, locale, TZ, temp
+     * dir, NODE_ENV…). A list adds those names to it; `true` passes them all
+     * (DATABASE_URL, AUTH_SECRET, cloud keys…).
+     */
+    inheritEnv?: boolean | string[];
+    /**
+     * `stdio` mode: bytes `send()` lets wait for a child that is not reading
+     * its stdin; past this it refuses messages (returns false). Default 8 MiB.
+     */
+    maxPendingStdinBytes?: number;
     /** Exponential backoff settings for restarts. Defaults to 1000 ms flat (no backoff). */
     restartBackoff?: RestartBackoffConfig;
 }

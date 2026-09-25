@@ -47,6 +47,8 @@ export const AppConfigSchema = z
                         restartCooldown: z.number().nonnegative().optional(),
                         restartBackoff: RestartBackoffSchema.optional(),
                         env: z.record(z.string()).optional(),
+                        inheritEnv: z.union([z.boolean(), z.array(z.string())]).optional(),
+                        maxPendingStdinBytes: z.number().int().positive().optional(),
                     })
                     .passthrough(),
             )
