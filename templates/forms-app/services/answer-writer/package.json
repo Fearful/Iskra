@@ -16,7 +16,7 @@
         "ajv-errors": "^3.0.0",
         "ajv-formats": "^3.0.1",
         "bullmq": "^5.0.0",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "^0.45.3",
         "postgres": "^3.4.5",
         "uuid": "^13.0.0"
     },

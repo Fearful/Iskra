@@ -52,12 +52,12 @@
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:*",
-        "@aws-sdk/client-sesv2": "^3.600.0",
+        "@aws-sdk/client-sesv2": "^3.1138.0",
         "@sendgrid/mail": "^8.1.0",
         "nodemailer": "^10.0.10"
     },
     "devDependencies": {
-        "@types/bun": "^1.3.5",
+        "@types/bun": "^1.4.2",
         "@types/node": "^22.10.2",
         "@types/nodemailer": "^7.0.4"
     }
