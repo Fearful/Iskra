@@ -226,7 +226,26 @@ new Kernel({
 - **CSRF (`CsrfFeature`):** HMAC-SHA256-signed double-submit cookie under the configured `secret`, compared in constant time. An unsigned or foreign token is rejected before any comparison. The `disableCSRFCheck` kill-switch is **ignored in production** (`NODE_ENV === 'production'`), so CSRF protection cannot be silently turned off in a deployed environment.
 - **API keys (`ApiKeyFeature`):** keys are checked against the configured `staticKeys` on every request, so removing, expiring or narrowing a key takes effect at once; nothing is cached (`enableCache` and `cacheTtl` are ignored: a cached entry held the plaintext key and outlived its revocation). API key `id`s are random (UUID) and leak no prefix of the secret. Key comparison is constant-time. An `Authorization: Bearer` value that is not a valid API key is not rejected globally (it may be a JWT or session token from another scheme); routes that need an API key use `requireApiKey()` / `requireScope()`. An invalid key in the `X-API-Key` header still returns 401.
 - **CSRF on specific routes:** `requireCsrf()` validates the token on that route even if its method is in `ignoreMethods` (e.g. a state-changing GET), and fails closed when `CsrfFeature` is not registered. For `multipart/form-data` forms, send the token in the `X-CSRF-Token` header.
-- **Uploads (`UploadFeature`):** `exposeRoutes: true` requires `authorize(c, action)` (`action`: `upload` | `list` | `download` | `delete`); use `authorize: () => true` only if the routes must be public. The body is cut off once it exceeds `maxFileSize` (413) without buffering it whole, the filename is sanitized, and internal errors are not returned to the client. `maxFileSize` plus 64 KiB of multipart overhead must fit in the Kernel's `maxRequestBodySize` (16 MiB by default): Bun rejects larger bodies before any route runs, so `initialize()` fails instead of the limit silently never being reached.
+- **Uploads (`UploadFeature`):** `exposeRoutes: true` requires `authorize(c, action, target?)` (`action`: `upload` | `list` | `download` | `delete`); use `authorize: () => true` only if the routes must be public. The body is cut off once it exceeds `maxFileSize` (413) without buffering it whole, the filename is sanitized, and internal errors are not returned to the client. `maxFileSize` plus 64 KiB of multipart overhead must fit in the Kernel's `maxRequestBodySize` (16 MiB by default): Bun rejects larger bodies before any route runs, so `initialize()` fails instead of the limit silently never being reached.
+    - `target` is what the action touches: `{ key, subfolder, filename }`, plus `size` and `type` for `upload` (the folder's `{ key, subfolder }` for `list`); `subfolder` has no empty or `.`/`..` segments. `upload` is asked twice: first without a target, before the body is read, then with it, before anything is written. A check such as `Boolean(c.get('user'))` lets every signed-in user read and delete every file: scope the target to the user.
+    - An upload never replaces a stored file: the route answers **409** unless `overwrite: true`.
+    - The file is stored with a type from its extension (storage-kit's `contentTypeFor`), never the uploader's (Bun derives `File.type` from the name: `image/svg+xml`, `text/html`). Downloads are streamed, and only raster images are served inline: anything else comes with `Content-Disposition: attachment`, and every download with `Content-Security-Policy: sandbox`. On S3/MinIO the object stores the same disposition.
+    - Without `allowedExtensions`, any extension is accepted except active web content (`.html`, `.htm`, `.shtml`, `.xhtml`, `.xht`, `.mht`, `.mhtml`, `.svg`, `.svgz`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`, `.cjs`), which a browser runs wherever it is served inline; list one in `allowedExtensions` to accept it (it is still stored as `application/octet-stream` and downloaded). With the `local` storage adapter, serve its folder with the headers described in [storage-kit](/packages/storage-kit/#content-type-and-disposition).
+
+    ```typescript
+    new UploadFeature({
+        projectName: 'app',
+        exposeRoutes: true,
+        // Each user reads and writes only under users/<id>/.
+        authorize: (c, _action, target) => {
+            const user = c.get('user');
+            if (!user) return false;
+            if (!target) return true; // upload, before the body is read
+            const own = `users/${user.id}`;
+            return target.subfolder === own || target.subfolder?.startsWith(`${own}/`) === true;
+        },
+    });
+    ```
 - **Auth (`AuthFeature`):** the underlying `secret` must be **>= 32 characters** (validated by `@iskra-bun/auth-kit`); a shorter or empty secret is rejected at initialization. See the Auth section.
 
 ## Auth
