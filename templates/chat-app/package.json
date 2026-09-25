@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "bun run --watch src/main.ts",
         "start": "bun run src/main.ts",
-        "client": "bun run src/client.ts"
+        "client": "bun run src/client.ts",
+        "token": "bun run src/issue-token.ts"
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:*",

@@ -68,7 +68,8 @@ const CASES: Case[] = [
         name: 'chat-app',
         port: 3001,
         probes: [{ path: '/', status: 426 }],
-        env: { CHAT_AUTH_SECRET: 'smoke-test-secret' },
+        // In production the image refuses to start without a secret of 32+ characters.
+        env: { CHAT_AUTH_SECRET: 'smoke-test-secret-at-least-32-characters' },
     },
     {
         kind: 'image',
