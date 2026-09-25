@@ -2,7 +2,7 @@ import { App } from '@iskra-bun/core';
 import { ProcessManager } from '@iskra-bun/process-kit';
 import { WebPlugin } from '@iskra-bun/web-kit';
 import { config } from './app.config.ts';
-import { Hono } from 'hono';
+import { createProcessor } from './processor.ts';
 
 const app = new App({
     name: 'PythonDataProcessor',
@@ -12,93 +12,15 @@ const app = new App({
 const pm = new ProcessManager();
 app.register(pm);
 
-// ─── Request-Response IPC ────────────────────────────────────────────────────
-
-const pendingRequests = new Map<
-    string,
-    {
-        resolve: (value: unknown) => void;
-        reject: (reason: unknown) => void;
-        timeout: ReturnType<typeof setTimeout>;
-    }
->();
-
-function sendToProcess(processName: string, data: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-        const requestId = crypto.randomUUID();
-
-        const timeout = setTimeout(() => {
-            pendingRequests.delete(requestId);
-            reject(new Error(`Process request timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-
-        pendingRequests.set(requestId, { resolve, reject, timeout });
-
-        pm.send(processName, { ...data, requestId });
-    });
-}
-
-/** What processor.py prints: replies carry the requestId they answer. */
-interface ProcessReply {
-    requestId?: string;
-    type?: string;
-    msg?: string;
-    data?: unknown;
-}
-
-// Any JSON line the script prints arrives here: check its shape before use.
-function asReply(message: unknown): ProcessReply {
-    return typeof message === 'object' && message !== null ? (message as ProcessReply) : {};
-}
-
-// Listen for messages from Python and resolve pending requests
-app.on('process:message', (ctx) => {
-    const { name } = ctx.payload;
-    const message = asReply(ctx.payload.message);
-
-    if (message.requestId && pendingRequests.has(message.requestId)) {
-        const pending = pendingRequests.get(message.requestId)!;
-        pendingRequests.delete(message.requestId);
-        clearTimeout(pending.timeout);
-
-        if (message.type === 'error') {
-            pending.reject(new Error(message.msg || 'Process error'));
-        } else {
-            pending.resolve(message.data || message);
-        }
-        return;
-    }
-
-    app.logger.info({ msg: 'Received from process', name, message });
-});
-
-app.on('process:error', (ctx) => {
-    const { name, text } = ctx.payload;
-    app.logger.error({ msg: 'Process error', name, text });
-});
-
-// ─── HTTP Routes ─────────────────────────────────────────────────────────────
-
-const router = new Hono();
-
-router.post('/process', async (c) => {
-    const body = await c.req.json();
-
-    try {
-        const result = await sendToProcess('processor', body);
-        return c.json({ success: true, result });
-    } catch (err) {
-        return c.json({ success: false, error: err instanceof Error ? err.message : String(err) }, 500);
-    }
-});
-
-router.get('/health', (c) => {
-    return c.json({ status: 'ok', pendingRequests: pendingRequests.size });
-});
+// Request-response con el proceso Python y rutas HTTP (ver src/processor.ts).
+const { router } = createProcessor(app, pm, config.processor);
 
 app.register(
     new WebPlugin({
         port: config.web.port,
+        // Cada cuerpo viaja entero a Python y vuelve en la respuesta: process-kit
+        // lee lineas de hasta 1 MiB, asi que el pedido tiene que ser bastante menor.
+        maxRequestBodySize: config.web.maxBodyBytes,
         router: router,
     }),
 );
