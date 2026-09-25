@@ -23,10 +23,14 @@ RUN bun build templates/ecommerce-api/src/main.ts --compile --outfile=/build/app
 # ─── Stage 2: Runtime (UBI9 Minimal) ─────────────────────────────────────────
 # The compiled binary needs only glibc, which ubi-minimal ships: no package
 # installs, so this stage also builds offline or behind a TLS-inspecting proxy.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# A fixed release (Red Hat still rebuilds the 9.8 tag with security fixes):
+# with :latest any rebuild could move to another release. Bump it on purpose.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
 
 WORKDIR /app
-COPY --from=builder --chown=1001:0 /build/app /app/app
+# Root-owned and read-only (0555): copied with --chown=1001:0, the user the
+# app runs as could overwrite its own code, so a compromise could persist.
+COPY --from=builder --chmod=0555 /build/app /app/app
 
 # The SQLite file lives in a directory the runtime user can write: /app itself
 # is root's, so the default relative path (ecommerce.db) could not be created and the
