@@ -161,6 +161,32 @@ interface RestartBackoffConfig {
 }
 ```
 
+## OpenTelemetry
+
+Con una seccion `otel`, y los paquetes opcionales `@opentelemetry/*` instalados, `app.start()` arranca el SDK de OpenTelemetry para Node antes que los drivers, con exportadores OTLP/HTTP y las auto-instrumentaciones de Node (`fs` queda apagada):
+
+```typescript
+import { SECRET_QUERY_PARAMS } from '@iskra-bun/core';
+
+otel: {
+    endpoint: 'https://otel-collector.example.com:4318', // default: http://localhost:4318
+    serviceName: 'orders-api',
+    instrumentations: {
+        '@opentelemetry/instrumentation-http': {
+            ignoreIncomingRequestHook: (req) => req.url === '/health',
+            redactedQueryParams: [...SECRET_QUERY_PARAMS, 'sid'],
+        },
+        '@opentelemetry/instrumentation-dns': { enabled: false },
+    },
+},
+```
+
+Cada entrada de `instrumentations` se le pasa tal cual a esa instrumentacion, asi que sus propias opciones (hooks, `redactedQueryParams`…) funcionan, no solo `enabled`.
+
+Los spans HTTP exportan la URL de cada request (`url.full`, o `http.url` y `http.target` en versiones anteriores), y un query string suele llevar una credencial. Sus parametros con pinta de secreto se exportan con el valor `REDACTED`: los de `SECRET_QUERY_PARAMS` (`token`, `access_token`, `refresh_token`, `api_key`, `key`, `secret`, `password`, `code`, `state`, `ticket`, `signature`, `sig`, `X-Amz-Signature`…), comparados sin mayusculas, `-` ni `_`. `redactedQueryParams` (requests salientes) y `redactedQueryParamsServer` (entrantes) en la instrumentacion HTTP eligen la lista, o `[]` la apaga; un `requestHook` propio se sigue ejecutando, despues de la redaccion. Los tokens en un path, y los headers que elijas capturar, se exportan tal cual.
+
+El log de arranque nombra el endpoint solo por su origen: su path, query o userinfo pueden llevar una API key. Un endpoint `http://` sin cifrar en otro host (que no sea `localhost`, una direccion privada, o un nombre sin punto o terminado en `.local` o `.internal`) ademas registra un warning, porque los spans viajarian sin cifrar: usa `https://`.
+
 ## Errores
 
 Todos los errores extienden `IskraError`:

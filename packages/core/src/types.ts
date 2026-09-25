@@ -48,7 +48,7 @@ export interface AppEvents {}
 export interface OtelConfig {
     /** Defaults to true when otel config is present */
     enabled?: boolean;
-    /** OTLP endpoint URL. Defaults to http://localhost:4318 */
+    /** OTLP endpoint URL. Defaults to http://localhost:4318; use https:// for a collector on another host. */
     endpoint?: string;
     /** Overrides app name for the service.name resource attribute */
     serviceName?: string;
@@ -60,8 +60,14 @@ export interface OtelConfig {
     metricIntervalMs?: number;
     /** Additional resource attributes */
     resourceAttributes?: Record<string, string>;
-    /** Auto-instrumentation overrides (passed to getNodeAutoInstrumentations) */
-    instrumentations?: Record<string, { enabled?: boolean }>;
+    /**
+     * Options of each auto-instrumentation, by package name, passed to
+     * getNodeAutoInstrumentations(): `{ enabled: false }`, or its own options
+     * (`'@opentelemetry/instrumentation-http': { ignoreIncomingRequestHook,
+     * redactedQueryParams }`). The HTTP one redacts SECRET_QUERY_PARAMS in
+     * exported URLs unless `redactedQueryParams` says otherwise.
+     */
+    instrumentations?: Record<string, { enabled?: boolean; [option: string]: unknown }>;
 }
 
 export interface AppConfig {
@@ -114,7 +120,20 @@ export interface ProcessConfig {
     restartOnCrash?: boolean;
     maxRestarts?: number;
     restartCooldown?: number;
+    /** Variables set for the child, over the ones it inherits (see `inheritEnv`). */
     env?: Record<string, string>;
+    /**
+     * Which of the app's environment variables the child inherits. Default
+     * `false`: a minimal set without secrets (PATH, HOME, locale, TZ, temp
+     * dir, NODE_ENV…). A list adds those names to it; `true` passes them all
+     * (DATABASE_URL, AUTH_SECRET, cloud keys…).
+     */
+    inheritEnv?: boolean | string[];
+    /**
+     * `stdio` mode: bytes `send()` lets wait for a child that is not reading
+     * its stdin; past this it refuses messages (returns false). Default 8 MiB.
+     */
+    maxPendingStdinBytes?: number;
     /** Exponential backoff settings for restarts. Defaults to 1000 ms flat (no backoff). */
     restartBackoff?: RestartBackoffConfig;
 }

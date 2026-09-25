@@ -15,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Routes auth requests to Iskra. The user's Iskra session cookie is kept in
@@ -27,6 +29,7 @@ public class AuthController {
 
     private static final String SESSION_COOKIE = "iskra_session";
     private static final boolean COOKIE_SECURE = !"0".equals(System.getenv("SESSION_COOKIE_SECURE"));
+    private static final Logger LOG = Logger.getLogger(AuthController.class.getName());
 
     // One client for the whole app (a singleton bean): it never stores
     // cookies, so requests of different users cannot leak into each other.
@@ -99,13 +102,18 @@ public class AuthController {
 
     @GetMapping("/health")
     public ResponseEntity<?> health() {
+        // Public route: only up or down. The full payload (every check, with
+        // its messages and details) stays in the log.
         try {
             Map<String, Object> health = iskra.health().check();
-            HttpStatus status = "ok".equals(health.get("status")) ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
-            return ResponseEntity.status(status).body(health);
+            if ("ok".equals(health.get("status"))) {
+                return ResponseEntity.ok(status("ok"));
+            }
+            LOG.warning(() -> "Iskra is unhealthy: " + health);
         } catch (IskraException e) {
-            return error(HttpStatus.SERVICE_UNAVAILABLE, "Iskra no disponible", e);
+            LOG.log(Level.WARNING, "Iskra health check failed", e);
         }
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status("error"));
     }
 
     // ── Request DTOs ────────────────────────────────────────────────────
@@ -175,15 +183,27 @@ public class AuthController {
         return body;
     }
 
+    private static Map<String, Object> status(String value) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", value);
+        return body;
+    }
+
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String msg, IskraException e) {
         Map<String, Object> body = new HashMap<>();
         body.put("error", msg);
-        body.put("detail", e.getMessage());
-        if (e.getErrorCode() != null) {
-            body.put("code", e.getErrorCode());
-        }
-        if (e.getDetails() != null) {
-            body.put("details", e.getDetails());
+        if (status.is4xxClientError()) {
+            // About the caller's own request (wrong credentials, invalid fields).
+            if (e.getErrorCode() != null) {
+                body.put("code", e.getErrorCode());
+            }
+            if (e.getDetails() != null) {
+                body.put("details", e.getDetails());
+            }
+        } else {
+            // Iskra's own message or a connection error (host, port): log only,
+            // anonymous callers only learn that the service failed.
+            LOG.log(Level.WARNING, "Iskra request failed: " + msg, e);
         }
         return ResponseEntity.status(status).body(body);
     }

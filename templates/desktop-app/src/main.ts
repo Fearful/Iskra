@@ -19,15 +19,14 @@ app.context.set('bridge', bridge);
  */
 function registerHandlers() {
     app.on('menu:abrir-archivo', async (ctx) => {
-        const ruta = await bridge.openFileDialog();
-        if (!ruta) {
+        // El dialogo y la lectura corren en Rust (comando `abrir_archivo`).
+        const archivo = await bridge.pickFile();
+        if (!archivo) {
             ctx.logger.info('El usuario canceló la selección de archivo');
             return;
         }
-        ctx.logger.info({ ruta }, 'Archivo seleccionado');
-        // Leer el contenido via un comando Rust (definido en src-tauri).
-        const contenido = await bridge.invoke<string>('leer_archivo', { ruta });
-        app.emit('archivo:cargado', { ruta, contenido });
+        ctx.logger.info({ ruta: archivo.ruta }, 'Archivo seleccionado');
+        app.emit('archivo:cargado', archivo);
     });
 
     app.on('menu:acerca-de', async (ctx) => {

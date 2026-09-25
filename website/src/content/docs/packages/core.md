@@ -161,6 +161,32 @@ interface RestartBackoffConfig {
 }
 ```
 
+## OpenTelemetry
+
+With an `otel` section, and the optional `@opentelemetry/*` packages installed, `app.start()` starts the OpenTelemetry Node SDK before the drivers, with OTLP/HTTP exporters and the Node auto-instrumentations (`fs` is off):
+
+```typescript
+import { SECRET_QUERY_PARAMS } from '@iskra-bun/core';
+
+otel: {
+    endpoint: 'https://otel-collector.example.com:4318', // default: http://localhost:4318
+    serviceName: 'orders-api',
+    instrumentations: {
+        '@opentelemetry/instrumentation-http': {
+            ignoreIncomingRequestHook: (req) => req.url === '/health',
+            redactedQueryParams: [...SECRET_QUERY_PARAMS, 'sid'],
+        },
+        '@opentelemetry/instrumentation-dns': { enabled: false },
+    },
+},
+```
+
+Each entry of `instrumentations` is passed to that instrumentation as it is, so its own options (hooks, `redactedQueryParams`…) work, not only `enabled`.
+
+HTTP spans export the URL of each request (`url.full`, or `http.url` and `http.target` in older releases), and a query string often carries a credential. Its secret-looking parameters are exported with the value `REDACTED`: those in `SECRET_QUERY_PARAMS` (`token`, `access_token`, `refresh_token`, `api_key`, `key`, `secret`, `password`, `code`, `state`, `ticket`, `signature`, `sig`, `X-Amz-Signature`…), compared without case, `-` or `_`. Set `redactedQueryParams` (outgoing requests) and `redactedQueryParamsServer` (incoming ones) on the HTTP instrumentation to choose the list, or `[]` to turn it off; a `requestHook` of your own still runs, after the redaction. Tokens in a path, and the headers you choose to capture, are exported as they are.
+
+The startup log names the endpoint by its origin only: its path, query or userinfo can hold an API key. A plain `http://` endpoint on another host (not `localhost`, a private address, or a name without a dot or ending in `.local` or `.internal`) also logs a warning, since spans would travel unencrypted: use `https://`.
+
 ## Errors
 
 Every error extends `IskraError`:

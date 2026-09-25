@@ -34,8 +34,14 @@ export class ErrorHandlerFeature implements Feature {
     }
 
     private handleError(err: Error | HTTPException, c: Context): Response {
+        const clientErrorStatus =
+            (err instanceof HttpError || err instanceof HTTPException) && err.status < 500 ? err.status : undefined;
         if (this.config.logger) {
             this.config.logger(err as Error, c);
+        } else if (clientErrorStatus) {
+            // Any client can cause as many 4xx as it likes: logged at error
+            // level, they flooded the error log.
+            this.log.debug(`Request failed with ${clientErrorStatus}`, err);
         } else {
             this.log.error('Unhandled error', err);
         }

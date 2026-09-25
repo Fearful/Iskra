@@ -118,6 +118,50 @@ describe('AuthFeature — per-IP auth-route rate limiting', () => {
         expect(last).toBe(429);
     });
 
+    it('counts an IPv6 client by its /64, so rotating addresses in it does not help', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new FakeDbFeature() as any);
+        kernel.registerFeature(
+            new AuthFeature(
+                { secret: VALID_SECRET, basePath: '/api/sso', rateLimit: { max: 3 } } as any,
+                fakeCreateAuth,
+            ),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+
+        const from = (address: string) => ({ requestIP: () => ({ address, family: 'IPv6', port: 40000 }) });
+        const statuses: number[] = [];
+        for (let i = 1; i <= 5; i++) {
+            const res = await app.request('/api/sso/sign-in/email', { method: 'POST' }, from(`2001:db8:5:6::${i}`));
+            statuses.push(res.status);
+        }
+        expect(statuses).toEqual([200, 200, 200, 429, 429]);
+        await kernel.shutdown();
+    });
+
+    it("reads the kernel's clientIpHeader behind a trusted proxy", async () => {
+        const kernel = new Kernel({ trustProxy: 1, clientIpHeader: 'x-real-ip', logger: false });
+        kernel.registerFeature(new FakeDbFeature() as any);
+        kernel.registerFeature(
+            new AuthFeature(
+                { secret: VALID_SECRET, basePath: '/api/sso', rateLimit: { max: 2 } } as any,
+                fakeCreateAuth,
+            ),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+
+        const proxy = { requestIP: () => ({ address: '10.0.0.2', family: 'IPv4', port: 40000 }) };
+        const statuses: number[] = [];
+        for (let i = 0; i < 3; i++) {
+            const headers = { 'x-real-ip': '198.51.100.20', 'x-forwarded-for': `6.6.6.${i}` };
+            statuses.push((await app.request('/api/sso/sign-in/email', { method: 'POST', headers }, proxy)).status);
+        }
+        expect(statuses).toEqual([200, 200, 429]);
+        await kernel.shutdown();
+    });
+
     it('honors a configured limit, and rateLimit: false disables it', async () => {
         const build = async (rateLimit: any) => {
             const kernel = new Kernel();

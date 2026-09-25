@@ -30,22 +30,37 @@ jobs:
 
     steps:
       - name: Checkout (full history + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
+      # The key comes in through the environment, not spliced into the script,
+      # and the host key is trusted only if its fingerprint is the one Codeberg
+      # publishes (https://docs.codeberg.org/security/ssh-fingerprint/): a bare
+      # ssh-keyscan trusted whatever answered on the network.
       - name: Configure SSH deploy key
+        env:
+          CODEBERG_DEPLOY_KEY: ${{ secrets.CODEBERG_DEPLOY_KEY }}
+          CODEBERG_ED25519_FINGERPRINT: SHA256:mIlxA9k46MmM6qdJOdMnAQpzGxF4WIVVL+fj+wZbw0g
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "${{ secrets.CODEBERG_DEPLOY_KEY }}" > ~/.ssh/codeberg_key
+          printf '%s\n' "$CODEBERG_DEPLOY_KEY" > ~/.ssh/codeberg_key
           chmod 600 ~/.ssh/codeberg_key
-          ssh-keyscan -t rsa,ecdsa,ed25519 codeberg.org >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -t ed25519 codeberg.org 2>/dev/null > codeberg_host_key
+          fingerprint=$(ssh-keygen -lf codeberg_host_key | awk '{print $2}')
+          if [ "$fingerprint" != "$CODEBERG_ED25519_FINGERPRINT" ]; then
+            echo "::error::codeberg.org host key $fingerprint is not the published one"
+            exit 1
+          fi
+          cat codeberg_host_key >> ~/.ssh/known_hosts
+          rm codeberg_host_key
 
       - name: Push mirror
         env:
-          GIT_SSH_COMMAND: "ssh -i ~/.ssh/codeberg_key -o IdentitiesOnly=yes"
+          GIT_SSH_COMMAND: "ssh -i ~/.ssh/codeberg_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
         run: |
           set -euo pipefail
           git remote add codeberg git@codeberg.org:fearful/iskra.git

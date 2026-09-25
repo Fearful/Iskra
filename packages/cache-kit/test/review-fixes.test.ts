@@ -42,13 +42,14 @@ describe('tag index', () => {
 });
 
 describe('prototype-pollution guard', () => {
-    it('rejects an escaped __proto__ key', async () => {
+    it('reads an escaped __proto__ key as a miss', async () => {
         const adapter = new MemoryAdapter();
         const cache = new Cache(adapter);
         await adapter.set('evil', '{"a":{"\\u005f_proto__":{"polluted":true}}}');
-        await expect(cache.get('evil')).rejects.toThrow(/unsafe key "__proto__"/);
+        expect(await cache.get('evil')).toBeUndefined();
+        expect(await adapter.has('evil')).toBe(false);
         await adapter.set('evil2', '{"constructor":{"prototype":{"x":1}}}');
-        await expect(cache.get('evil2')).rejects.toThrow(/unsafe key/);
+        expect(await cache.get('evil2')).toBeUndefined();
     });
 });
 

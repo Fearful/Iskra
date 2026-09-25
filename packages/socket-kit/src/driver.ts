@@ -81,7 +81,8 @@ export class SocketDriver implements Driver {
     private readonly rateLimit: number;
     private readonly rateWindowMs: number;
     private rateStates: Map<string, RateState> = new Map();
-    private sockets: Set<ServerWebSocket<SocketData>> = new Set();
+    /** Open connections, by connectionId. */
+    private sockets: Map<string, ServerWebSocket<SocketData>> = new Map();
 
     constructor(options: SocketDriverOptions = {}) {
         this.port = options.port || 3001;
@@ -146,7 +147,7 @@ export class SocketDriver implements Driver {
             websocket: {
                 maxPayloadLength: this.maxPayloadLength,
                 open: (ws) => {
-                    this.sockets.add(ws);
+                    this.sockets.set(ws.data.connectionId, ws);
                     this.app?.logger.debug('Socket connected');
                     ws.subscribe('global');
                     this.app?.emit('socket:connected', {
@@ -157,7 +158,7 @@ export class SocketDriver implements Driver {
                     await this.handleMessage(ws, message);
                 },
                 close: (ws) => {
-                    this.sockets.delete(ws);
+                    this.sockets.delete(ws.data.connectionId);
                     ws.unsubscribe('global');
                     this.rateStates.delete(ws.data.connectionId);
                     this.app?.logger.debug('Socket disconnected');
@@ -167,6 +168,20 @@ export class SocketDriver implements Driver {
                 },
             },
         });
+    }
+
+    /**
+     * Closes the connection `connectionId` (as in `socket:connected` and a
+     * handler's `ctx.socket.data`); false when it is not open. For an app that
+     * authenticates in a message rather than at the handshake: a connection
+     * that never does stays open as long as its client answers pings, so
+     * close the ones that have not authenticated in time.
+     */
+    public close(connectionId: string, code = 1000, reason = ''): boolean {
+        const ws = this.sockets.get(connectionId);
+        if (!ws) return false;
+        ws.close(code, reason);
+        return true;
     }
 
     /** Publish to all sockets subscribed to the global topic. */
@@ -189,7 +204,7 @@ export class SocketDriver implements Driver {
     async stop() {
         const server = this.runningServer;
         this.runningServer = null;
-        for (const ws of this.sockets) ws.close(1001, 'Server shutting down');
+        for (const ws of this.sockets.values()) ws.close(1001, 'Server shutting down');
         this.sockets.clear();
         if (server) {
             // stop(true) closes the listener at once, but with WebSocket

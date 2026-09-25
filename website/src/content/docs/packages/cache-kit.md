@@ -26,7 +26,7 @@ new Cache(adapter?, options?)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `adapter` | `KVAdapter` | Any kv-kit adapter (MemoryAdapter, RedisAdapter, KVManager). Optional — defaults to MemoryAdapter. |
+| `adapter` | `KVAdapter` | A kv-kit `KVManager` (memory or Redis driver), or any `KVAdapter`. Optional — defaults to an in-memory adapter. |
 | `options.namespace` | `string` | Global prefix prepended to every key in this instance. |
 | `options.defaultTtl` | `number` | Default TTL in seconds when `set()` is called without an explicit one. |
 
@@ -47,17 +47,29 @@ const exists = await cache.has('user:1');
 // Remove
 await cache.delete('user:1');
 
-// Flush the entire backing store (root cache only — see warning below)
+// Delete every entry of this cache (its namespace, and the ones under it)
 await cache.clear();
 ```
 
-> **Warning — `clear()` is a whole-store reset, not namespace-scoped.** It recycles
-> the adapter (`disconnect()`/`connect()`), wiping **every** key in the backing
-> store shared by this cache and any other `Cache` built on the same adapter — across
-> all namespaces. To prevent a namespaced sub-cache from silently flushing its
-> siblings, `clear()` **throws** when a namespace prefix is set; it is only valid on
-> a root `Cache`. To clear a single namespace, delete keys individually with
-> `delete()` or invalidate a group with `invalidateTag()`.
+`clear()` runs the adapter's `clear()` with the cache's namespace: a namespaced
+cache deletes its own entries and tag indexes only, a root cache every key of the
+adapter. It never recycles the connection (it used to `disconnect()`/`connect()`
+the shared adapter: on Redis that deleted nothing, and a failed reconnect left the
+adapter dead). On a `KVManager` it deletes the manager's namespace with `SCAN` +
+`DEL`; a root cache on a Redis `KVManager` without a namespace would empty the
+whole database, so it throws unless the manager has `flushDb: true`. An adapter
+without `clear()` makes it throw.
+
+A value with a `__proto__`, `constructor` or `prototype` key (at any depth) is
+never returned: `set()` stores nothing for it (and deletes the key's old value),
+and `get()` treats one written by someone else as a miss and deletes it, so
+`remember()` calls the fallback again. It used to be stored, then every read
+threw until its TTL ran out.
+
+Keys and namespaces may not contain `__cache_tag__:` or `__cache_tags__:` at their
+start or after a `:`: that is where tag indexes live, and a key such as
+`__cache_tag__:perms` let a caller rewrite the index, so `invalidateTag('perms')`
+deleted whatever it listed. Such keys throw.
 
 ## Cache-Aside: remember() / wrap()
 
@@ -101,21 +113,22 @@ await cache.invalidateTag('featured');
 // banner deleted
 ```
 
-Each tag keeps an index of its keys in the backing store. Updates to it are serialized within a process, but instances sharing a Redis store can still race on it, so a key tagged at the same moment on another instance may survive an `invalidateTag()`. The index has no TTL: it is only removed by `invalidateTag()`, so a tag that is never invalidated keeps growing with every key tagged with it.
+Each tag keeps an index of its keys in the backing store, which lives as long as
+the longest-lived entry in it:
 
-## Using with RedisAdapter (production)
+- With a `KVManager` (either driver) or the default adapter, it is kv-kit's
+  expiring set (`sadd`/`sdrain`; a sorted set on Redis): tagging a key is one atomic
+  step whatever the size of the index, expired keys are dropped from it, and
+  instances sharing Redis cannot race on it.
+- With an adapter without those methods, it is a JSON list rewritten under a
+  per-process lock (so instances sharing a store can still race on it): expired
+  keys are dropped on each write, and past 10,000 entries the oldest ones are
+  deleted along with their data.
 
-```typescript
-import { RedisAdapter } from '@iskra-bun/kv-kit';
-import { Cache } from '@iskra-bun/cache-kit';
+Indexes written before this version (a JSON list per tag) are still read and
+deleted by `invalidateTag()`.
 
-const adapter = new RedisAdapter({ url: process.env.REDIS_URL });
-adapter.connect();
-
-const cache = new Cache(adapter, { namespace: 'myapp' });
-```
-
-## Using with KVManager
+## Using with KVManager (production)
 
 ```typescript
 import { App } from '@iskra-bun/core';
@@ -127,9 +140,10 @@ const app = new App({
     kv: { driver: 'redis', connection: { url: process.env.REDIS_URL } },
 });
 
-const kv = new KVManager();
+// A namespace for the cache's keys: clear() then deletes cache:* only.
+const kv = new KVManager({ namespace: 'cache' });
 app.register(kv);
 await app.start();
 
-const cache = new Cache(kv, { namespace: 'myapp', defaultTtl: 300 });
+const cache = new Cache(kv, { defaultTtl: 300 });
 ```

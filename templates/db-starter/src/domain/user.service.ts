@@ -1,7 +1,7 @@
 import type { DbDriver } from '@iskra-bun/db-kit';
 import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { users } from '../db/schema';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 type Schema = { users: typeof users };
 
@@ -35,7 +35,15 @@ export class UserService {
         return this.sqlite.select().from(users);
     }
 
+    /** What anyone may see of the users: no emails. */
+    async listPublic() {
+        return this.sqlite.select({ id: users.id, name: users.name }).from(users);
+    }
+
+    /** The new user, or null when the email is already registered. */
     async create(name: string, email: string) {
+        const taken = await this.sqlite.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+        if (taken.length > 0) return null;
         await this.sqlite.insert(users).values({ name, email });
         return { name, email };
     }

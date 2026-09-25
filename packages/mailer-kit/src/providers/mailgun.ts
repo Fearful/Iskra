@@ -1,5 +1,13 @@
 import type { EmailAdapter, EmailMessage, EmailConfig, TemplateData } from '../types';
-import { ALLOWED_HEADERS, checkHeaders, formatAddress } from '../headers';
+import {
+    ALLOWED_HEADERS,
+    checkHeaders,
+    checkRecipients,
+    checkReplyTo,
+    formatAddress,
+    formatRecipient,
+    stripCrlf,
+} from '../headers';
 
 /** Mailgun's own headers, on top of the ones every provider allows. */
 const MAILGUN_HEADERS = [...ALLOWED_HEADERS, 'x-mailgun-variables', 'x-mailgun-tag'];
@@ -28,15 +36,22 @@ export class MailgunEmailAdapter implements EmailAdapter {
             form.append('from', formatAddress(from));
         }
 
-        const to = Array.isArray(message.to) ? message.to.join(',') : message.to;
-        form.append('to', to);
-        form.append('subject', message.subject);
+        // Mailgun parses each field as an address list and builds the headers
+        // itself: every value is one checked mailbox, and nothing carries CR/LF.
+        const list = (field: EmailMessage['to'] | undefined, label?: string) =>
+            checkRecipients(field, label).map(formatRecipient).join(',');
+        const cc = list(message.cc, 'cc recipient');
+        const bcc = list(message.bcc, 'bcc recipient');
+        const replyTo = checkReplyTo(message.replyTo);
+
+        form.append('to', list(message.to));
+        form.append('subject', stripCrlf(message.subject));
 
         if (message.text) form.append('text', message.text);
         if (message.html) form.append('html', message.html);
-        if (message.cc) form.append('cc', Array.isArray(message.cc) ? message.cc.join(',') : message.cc);
-        if (message.bcc) form.append('bcc', Array.isArray(message.bcc) ? message.bcc.join(',') : message.bcc);
-        if (message.replyTo) form.append('h:Reply-To', message.replyTo);
+        if (cc) form.append('cc', cc);
+        if (bcc) form.append('bcc', bcc);
+        if (replyTo) form.append('h:Reply-To', formatRecipient(replyTo));
 
         for (const [key, value] of Object.entries(checkHeaders(message.headers, MAILGUN_HEADERS) ?? {})) {
             form.append(`h:${key}`, value);

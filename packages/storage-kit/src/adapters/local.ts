@@ -1,4 +1,11 @@
-import { BaseStorageAdapter, type PutOptions, type StorageConfig, type StorageFile } from '../base';
+import {
+    BaseStorageAdapter,
+    FileExistsError,
+    type PutOptions,
+    type StorageConfig,
+    type StorageFile,
+    type UrlOptions,
+} from '../base';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
@@ -36,7 +43,13 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
         const fullPath = this.resolveWithinBase(filePath);
 
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
-        await fs.writeFile(fullPath, data);
+        try {
+            // `wx`: an exclusive create, so a concurrent put of the same path cannot slip in between.
+            await fs.writeFile(fullPath, data, { flag: options?.overwrite === false ? 'wx' : 'w' });
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new FileExistsError(sanitizedPath);
+            throw error;
+        }
 
         const stat = await fs.stat(fullPath);
 
@@ -152,7 +165,12 @@ export class LocalStorageAdapter extends BaseStorageAdapter {
         return files;
     }
 
-    async url(filePath: string, _expiresIn?: number): Promise<string> {
+    /**
+     * A path under `/storage/`, which the app serves itself: with the headers
+     * of `contentTypeFor()` and `dispositionFor()` (plus `nosniff`), not the
+     * type a static server infers from the extension (options are ignored).
+     */
+    async url(filePath: string, _expiresIn?: number, _options?: UrlOptions): Promise<string> {
         const sanitizedPath = this.sanitizePath(filePath);
         return `/storage/${sanitizedPath}`;
     }

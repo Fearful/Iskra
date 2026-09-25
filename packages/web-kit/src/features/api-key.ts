@@ -98,10 +98,12 @@ export class ApiKeyStore {
 
         for (const requiredScope of requiredScopes) {
             const hasScope = key.scopes.some((scope) => {
-                if (scope.endsWith('*')) {
-                    const prefix = scope.slice(0, -1);
-                    return requiredScope.startsWith(prefix);
-                }
+                // A wildcard is a whole segment: `*` alone, or a trailing `:*`
+                // (`users:*` grants `users:read` and `users:x:y`). Any other
+                // `*` is literal: as a raw prefix, `user*` granted `users:read`
+                // and `user-admin:delete`.
+                if (scope === '*') return true;
+                if (scope.endsWith(':*')) return requiredScope.startsWith(scope.slice(0, -1));
                 return scope === requiredScope;
             });
 

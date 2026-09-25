@@ -59,6 +59,154 @@ function importOptional<T>(specifier: string): Promise<T> {
     return import(specifier) as Promise<T>;
 }
 
+const DEFAULT_ENDPOINT = 'http://localhost:4318';
+const HTTP_INSTRUMENTATION = '@opentelemetry/instrumentation-http';
+
+/**
+ * Query parameters whose values are exported as REDACTED in span URLs (see
+ * redactUrl). Names are compared without case, `-` or `_`.
+ */
+export const SECRET_QUERY_PARAMS: readonly string[] = [
+    'token',
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'auth_token',
+    'session_token',
+    'api_key',
+    'key',
+    'secret',
+    'client_secret',
+    'password',
+    'passwd',
+    'code',
+    'state',
+    'ticket',
+    'otp',
+    'jwt',
+    'signature',
+    'sig',
+    'X-Amz-Signature',
+    'X-Amz-Credential',
+    'X-Amz-Security-Token',
+    'AWSAccessKeyId',
+    'X-Goog-Signature',
+    'X-Goog-Credential',
+];
+
+const normalizeParam = (name: string): string => name.toLowerCase().replace(/[-_]/g, '');
+
+function decodeParam(name: string): string {
+    try {
+        return decodeURIComponent(name.replace(/\+/g, ' '));
+    } catch {
+        return name;
+    }
+}
+
+/**
+ * `url` (absolute, or a path) with the value of each query parameter named in
+ * `params` replaced by REDACTED, the rest kept as it was. Telemetry exported
+ * URLs as they were requested: `?api_key=`, `?access_token=`, a presigned
+ * URL's signature.
+ */
+export function redactUrl(url: string, params: readonly string[] = SECRET_QUERY_PARAMS): string {
+    const start = url.indexOf('?');
+    if (start === -1 || params.length === 0) return url;
+    const names = new Set(params.map(normalizeParam));
+    const hash = url.indexOf('#', start);
+    const end = hash === -1 ? url.length : hash;
+    let redacted = false;
+    const query = url
+        .slice(start + 1, end)
+        .split('&')
+        .map((pair) => {
+            const eq = pair.indexOf('=');
+            if (eq === -1 || !names.has(normalizeParam(decodeParam(pair.slice(0, eq))))) return pair;
+            redacted = true;
+            return `${pair.slice(0, eq)}=REDACTED`;
+        })
+        .join('&');
+    return redacted ? url.slice(0, start + 1) + query + url.slice(end) : url;
+}
+
+/** The URL attributes of an HTTP span, in the stable and the older semantic conventions. */
+const URL_ATTRIBUTES = ['url.full', 'url.query', 'http.url', 'http.target'];
+
+/** Rewrites the URL attributes of a recording SDK span (it has `attributes`). */
+function redactSpanUrls(span: unknown, params: readonly string[]): void {
+    const { attributes, setAttribute } = (span ?? {}) as {
+        attributes?: Record<string, unknown>;
+        setAttribute?: (key: string, value: string) => unknown;
+    };
+    if (!attributes || typeof setAttribute !== 'function') return;
+    for (const key of URL_ATTRIBUTES) {
+        const value = attributes[key];
+        if (typeof value !== 'string') continue;
+        // url.query is the query string alone, without its "?".
+        const redacted = key === 'url.query' ? redactUrl(`?${value}`, params).slice(1) : redactUrl(value, params);
+        if (redacted !== value) setAttribute.call(span, key, redacted);
+    }
+}
+
+/**
+ * The options initOtel() passes to getNodeAutoInstrumentations(): the app's
+ * `instrumentations` over Iskra's defaults. The HTTP instrumentation redacts
+ * SECRET_QUERY_PARAMS unless `redactedQueryParams` / `redactedQueryParamsServer`
+ * are set (instrumentation-http 0.204 / 0.222 and later apply them itself;
+ * for older releases a requestHook rewrites the span's URL attributes, before
+ * the app's own requestHook runs).
+ */
+export function autoInstrumentationOptions(config: OtelConfig): Record<string, unknown> {
+    const http: Record<string, unknown> = { ...config.instrumentations?.[HTTP_INSTRUMENTATION] };
+    const list = (value: unknown) => (Array.isArray(value) ? (value as string[]) : undefined);
+    const client = list(http.redactedQueryParams) ?? SECRET_QUERY_PARAMS;
+    const server = list(http.redactedQueryParamsServer) ?? SECRET_QUERY_PARAMS;
+    const appHook = http.requestHook;
+    return {
+        '@opentelemetry/instrumentation-fs': { enabled: false },
+        ...config.instrumentations,
+        [HTTP_INSTRUMENTATION]: {
+            ...http,
+            redactedQueryParams: client,
+            redactedQueryParamsServer: server,
+            requestHook: (span: unknown, request: unknown) => {
+                // A ClientRequest (outgoing) has setHeader(); an IncomingMessage does not.
+                const outgoing = typeof (request as { setHeader?: unknown } | null)?.setHeader === 'function';
+                redactSpanUrls(span, outgoing ? client : server);
+                if (typeof appHook === 'function') appHook(span, request);
+            },
+        },
+    };
+}
+
+/** Hosts spans may reach in clear text: this machine, a private network, or a name that only resolves inside one. */
+function isPrivateHost(hostname: string): boolean {
+    const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (host.includes(':')) return host === '::1' || /^f[cd]/.test(host);
+    return (
+        !host.includes('.') ||
+        /\.(localhost|local|internal)$/.test(host) ||
+        /^(127|10)\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    );
+}
+
+/**
+ * The OTLP endpoint as it is safe to log, its origin (the path, query or
+ * userinfo can carry an API key), and whether spans travel to it in clear
+ * text beyond this machine and its private network.
+ */
+export function describeOtelEndpoint(config: OtelConfig): { origin: string; plaintext: boolean } {
+    try {
+        const url = new URL(config.endpoint || DEFAULT_ENDPOINT);
+        return { origin: url.origin, plaintext: url.protocol === 'http:' && !isPrivateHost(url.hostname) };
+    } catch {
+        return { origin: '(invalid URL)', plaintext: false };
+    }
+}
+
 /**
  * Builds a Resource with whichever API the installed `@opentelemetry/resources`
  * provides: 2.x only exports `resourceFromAttributes()` (`Resource` is a type
@@ -103,7 +251,7 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
         ]);
 
         const serviceName = config.serviceName || appName;
-        const endpoint = config.endpoint || 'http://localhost:4318';
+        const endpoint = config.endpoint || DEFAULT_ENDPOINT;
 
         const resource = createResource(resources, {
             [semconv.ATTR_SERVICE_NAME ?? 'service.name']: serviceName,
@@ -112,10 +260,7 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
             ...config.resourceAttributes,
         });
 
-        const instrumentationOverrides: Record<string, unknown> = {
-            '@opentelemetry/instrumentation-fs': { enabled: false },
-            ...config.instrumentations,
-        };
+        const instrumentationOverrides = autoInstrumentationOptions(config);
 
         const sdk = new NodeSDK({
             resource,

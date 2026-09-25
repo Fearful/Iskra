@@ -4,7 +4,8 @@
 # producing `website/dist`. This image only serves that output with Caddy.
 # If you run `fly deploy` manually, build first:
 #   cd website && bun install && bun run api && bun run build
-FROM caddy:2-alpine
+# Pinned (Dependabot bumps it): `2-alpine` changed under every rebuild.
+FROM caddy:2.11.4-alpine
 
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY dist /srv

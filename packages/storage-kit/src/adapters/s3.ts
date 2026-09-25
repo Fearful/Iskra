@@ -1,5 +1,6 @@
-import { BaseStorageAdapter } from '../base';
-import type { StorageConfig, StorageFile, PutOptions } from '../base';
+import { BaseStorageAdapter, FileExistsError } from '../base';
+import type { StorageConfig, StorageFile, PutOptions, UrlOptions } from '../base';
+import { dispositionFor } from '../content-type';
 import type { S3Client } from '@aws-sdk/client-s3';
 
 type S3Sdk = typeof import('@aws-sdk/client-s3');
@@ -24,6 +25,25 @@ function isMissing(err: unknown, name: string): boolean {
     return e?.name === name || e?.$metadata?.httpStatusCode === 404;
 }
 
+/** A refused `If-None-Match: *` put: 412 when the key exists, 409 while another conditional put of it runs. */
+function isConflict(err: unknown): boolean {
+    const status = (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
+    return status === 412 || status === 409;
+}
+
+/**
+ * The endpoint's protocol as the SDK reads it: `http:/minio`, `http:minio` and
+ * `http:\\minio` are plaintext too, which a check of the text for `http://`
+ * let through.
+ */
+function endpointProtocol(endpoint: string): string {
+    try {
+        return new URL(endpoint).protocol;
+    } catch {
+        throw new Error('Invalid S3 endpoint: expected an http:// or https:// URL');
+    }
+}
+
 export class S3StorageAdapter extends BaseStorageAdapter {
     private client: S3Client;
     private bucket: string;
@@ -33,8 +53,14 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         super();
         const conn = config.connection || {};
 
-        if (conn.endpoint && /^http:\/\//i.test(conn.endpoint.trim()) && conn.useSSL !== false) {
-            throw new Error('Refusing plaintext S3 endpoint; set useSSL:false to override');
+        if (conn.endpoint) {
+            const protocol = endpointProtocol(conn.endpoint);
+            if (protocol === 'http:' && conn.useSSL !== false) {
+                throw new Error('Refusing plaintext S3 endpoint; set useSSL:false to override');
+            }
+            if (protocol !== 'http:' && protocol !== 'https:') {
+                throw new Error('Invalid S3 endpoint: expected an http:// or https:// URL');
+            }
         }
 
         this.bucket = conn.bucket || 'iskra-storage';
@@ -79,21 +105,31 @@ export class S3StorageAdapter extends BaseStorageAdapter {
             body = data;
         }
 
-        await this.client.send(
-            new this.sdk.PutObjectCommand({
-                Bucket: this.bucket,
-                Key: key,
-                Body: body,
-                ContentType: options?.contentType || this.getMimeType(key),
-                Metadata: options?.metadata,
-            }),
-        );
+        const contentType = options?.contentType || this.getMimeType(key);
+        try {
+            await this.client.send(
+                new this.sdk.PutObjectCommand({
+                    Bucket: this.bucket,
+                    Key: key,
+                    Body: body,
+                    ContentType: contentType,
+                    // Stored with the object, so any GET of it (public, CDN,
+                    // presigned) downloads what a browser would run as a page.
+                    ContentDisposition: options?.contentDisposition ?? dispositionFor(contentType),
+                    Metadata: options?.metadata,
+                    IfNoneMatch: options?.overwrite === false ? '*' : undefined,
+                }),
+            );
+        } catch (err) {
+            if (options?.overwrite === false && isConflict(err)) throw new FileExistsError(key);
+            throw err;
+        }
 
         return {
             name: key.split('/').pop() || key,
             path: key,
             size: body.length,
-            mimeType: options?.contentType || this.getMimeType(key),
+            mimeType: contentType,
             lastModified: new Date(),
         };
     }
@@ -202,11 +238,19 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         return files;
     }
 
-    async url(path: string, expiresIn: number = 3600): Promise<string> {
+    async url(path: string, expiresIn: number = 3600, options: UrlOptions = {}): Promise<string> {
         this.ensureConnected();
         const key = this.sanitizePath(path);
 
-        const command = new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key });
+        // Signed into the URL, whatever the object was stored with: an upload
+        // stored as text/html or image/svg+xml would otherwise render inline.
+        const contentType = options.contentType ?? this.getMimeType(key);
+        const command = new this.sdk.GetObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+            ResponseContentType: contentType,
+            ResponseContentDisposition: options.contentDisposition ?? dispositionFor(contentType),
+        });
         // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded on first use, like the SDK
         const { getSignedUrl } = require('@aws-sdk/s3-request-presigner') as Presigner;
         return await getSignedUrl(this.client, command, { expiresIn });

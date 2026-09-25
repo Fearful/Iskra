@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { afterEach, describe, it, expect } from 'bun:test';
 import { createBetterAuth, type AuthKitDrizzleDb } from '../src/better-auth-config';
 
 // Security regression tests (RED stage of TDD) covering audit findings on
@@ -50,6 +50,49 @@ describe('createBetterAuth secret validation', () => {
     it('accepts a secret longer than 32 characters', () => {
         const auth = createBetterAuth({ db: fakeDb, adapterType: 'postgres', secret: VALID_SECRET });
         expect(typeof auth.handler).toBe('function');
+    });
+});
+
+// HIGH (defense in depth) — a sample secret copied from docs or .env.example
+// into production is public, and it signs the session cookie cache, which is
+// trusted without a database lookup: anyone could forge a session.
+describe('createBetterAuth placeholder secrets', () => {
+    const savedEnv = process.env.NODE_ENV;
+    afterEach(() => {
+        process.env.NODE_ENV = savedEnv;
+    });
+    const build = (secret: string) => () => createBetterAuth({ db: fakeDb, adapterType: 'postgres', secret });
+    const placeholders = [
+        'dev-secret-change-me-min-32-characters-long',
+        'dev-only-auth-secret-change-me-32chars',
+        'change-me-in-production-min-32-chars',
+        'CHANGEME_CHANGEME_CHANGEME_CHANGEME',
+        'your-secret-key-with-at-least-32-characters',
+        'placeholder-placeholder-placeholder',
+    ];
+
+    it('refuses them in production', () => {
+        process.env.NODE_ENV = 'production';
+        for (const secret of placeholders) expect(build(secret)).toThrow(/looks like a placeholder/);
+    });
+
+    it('names the marker, not the secret, in the error', () => {
+        process.env.NODE_ENV = 'production';
+        let message = '';
+        try {
+            build(placeholders[0])();
+        } catch (err) {
+            message = (err as Error).message;
+        }
+        expect(message).toContain('contains "change-me"');
+        expect(message).not.toContain(placeholders[0]);
+    });
+
+    it('accepts a random secret in production, and the samples outside it', () => {
+        process.env.NODE_ENV = 'production';
+        expect(build('k7Hq2Vx9Lm4Tz8Rb1Nw6Pc3Yd5Fg0Js2Ua')).not.toThrow();
+        process.env.NODE_ENV = 'development';
+        for (const secret of placeholders) expect(build(secret)).not.toThrow();
     });
 });
 

@@ -7,7 +7,8 @@ import { join, relative } from 'node:path';
 // installs with a different Bun than the one the suite ran on.
 const ROOT = join(import.meta.dir, '..');
 const BUN_VERSION = readFileSync(join(ROOT, '.bun-version'), 'utf8').trim();
-const SKIP = new Set(['node_modules', '.git', 'dist', 'target']);
+// .claude: local agent worktrees (gitignored), with copies of the repository.
+const SKIP = new Set(['node_modules', '.git', 'dist', 'target', '.claude']);
 
 function walk(dir: string, match: (name: string) => boolean): string[] {
     return readdirSync(dir).flatMap((name) => {
@@ -29,6 +30,31 @@ describe('toolchain pins', () => {
         );
         expect(images.length).toBeGreaterThan(10);
         expect(images.filter((i) => i.tag !== BUN_VERSION)).toEqual([]);
+    });
+
+    it('every other base image is a fixed release, and the app user cannot overwrite its code', () => {
+        const dockerfiles = walk(ROOT, (name) => name === 'Dockerfile' || name.startsWith('Dockerfile.'));
+        // `:latest`, a bare variant (`nginx:alpine`) or no tag: any rebuild
+        // could move to another release.
+        const floating = dockerfiles.flatMap((file) => {
+            const text = readFileSync(file, 'utf8');
+            const stages = new Set([...text.matchAll(/^FROM\s+\S+\s+AS\s+(\S+)/gim)].map((m) => m[1].toLowerCase()));
+            return [...text.matchAll(/^FROM\s+(\S+)/gim)]
+                .map((m) => m[1])
+                .filter((image) => !stages.has(image.toLowerCase()) && image !== 'scratch' && !/:\d/.test(image))
+                .map((image) => `${relative(ROOT, file)}: ${image}`);
+        });
+        expect(floating).toEqual([]);
+
+        // Copied with --chown to the user the app runs as, a compromise could
+        // replace the binary or scripts and persist across restarts.
+        const ownedByApp = dockerfiles.flatMap((file) =>
+            readFileSync(file, 'utf8')
+                .split('\n')
+                .filter((line) => /^COPY\b.*--chown=1001/.test(line))
+                .map((line) => `${relative(ROOT, file)}: ${line.trim()}`),
+        );
+        expect(ownedByApp).toEqual([]);
     });
 
     it('workflows read .bun-version instead of pinning their own Bun', () => {

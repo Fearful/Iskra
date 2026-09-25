@@ -16,9 +16,12 @@ drops @esbuild-kit.
 id = "GHSA-g7r4-m6w7-qqqr"
 ignoreUntil = 2027-03-31
 reason = """
-esbuild < 0.28.1 dev server allows path traversal on Windows. esbuild 0.27.x
-comes from tsup (build-time only, latest tsup 8.5.1 still requires ^0.27.0),
-which bundles the packages and never starts esbuild's dev server; it is not
-installed for consumers of the published packages. Remove once tsup accepts
-esbuild >= 0.28.1.
+esbuild < 0.28.1 dev server allows path traversal on Windows. The affected
+copies: 0.27.x from tsup (build-time only, latest tsup 8.5.1 still requires
+^0.27.0), 0.25.x from vite and drizzle-kit, and 0.18.x from drizzle-kit. None
+of them starts esbuild's dev server (`serve()`): tsup and drizzle-kit only
+bundle, and vite runs as a library build in form-manager's image (its dev
+server is never started, and the image runs on Linux). They are not installed
+for consumers of the published packages. Remove once tsup, vite and
+drizzle-kit accept esbuild >= 0.28.1.
 """

@@ -7,10 +7,14 @@ import { z } from 'zod';
  * decide como mostrar / persistir estas notas. El store es inmutable: cada
  * operacion devuelve un nuevo array en vez de mutar el anterior.
  */
+/** Topes de una nota: la crean eventos externos (deep links, menus). */
+export const NOTE_TITLE_MAX = 200;
+export const NOTE_BODY_MAX = 10_000;
+
 export const NoteSchema = z.object({
     id: z.string(),
-    title: z.string().min(1, 'El titulo no puede estar vacio'),
-    body: z.string().default(''),
+    title: z.string().min(1, 'El titulo no puede estar vacio').max(NOTE_TITLE_MAX),
+    body: z.string().max(NOTE_BODY_MAX).default(''),
     createdAt: z.string(),
 });
 

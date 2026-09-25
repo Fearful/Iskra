@@ -12,6 +12,7 @@
  */
 /* eslint-disable no-console -- a CLI script: its report goes to stdout/stderr. */
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 
 interface Probe {
     path: string;
@@ -37,11 +38,30 @@ interface ComposeCase {
     file: string;
     /** Probed through the published nginx port. */
     probes: Probe[];
-    /** `service:port/path` probed from inside the nginx container (not published). */
-    internal: string[];
+    /**
+     * Unpublished services (`service:port/path`), each probed from inside a
+     * container on one of its networks: the stack is segmented, so nginx
+     * reaches only the services it proxies.
+     */
+    internal: { from: ProbeContainer; target: string }[];
+    /**
+     * Variables the compose file requires (`${VAR:?}`, its secrets): each run
+     * gets random ones. Hex, since some go into connection URLs.
+     */
+    secrets: string[];
 }
 
 type Case = ImageCase | ComposeCase;
+
+/** Compose services with an HTTP client: nginx:alpine's busybox wget, form-manager's Bun. */
+type ProbeContainer = 'nginx' | 'form-manager';
+
+/** A command, run in `from`, that exits 0 when `url` answers with a 2xx. */
+function fetchCommand(from: ProbeContainer, url: string): string[] {
+    if (from === 'nginx') return ['wget', '-q', '-O', '/dev/null', url];
+    const fetchCall = `fetch(${JSON.stringify(url)}, { signal: AbortSignal.timeout(5000) })`;
+    return ['bun', '-e', `process.exit((await ${fetchCall}).ok ? 0 : 1)`];
+}
 
 const CASES: Case[] = [
     { kind: 'image', name: 'simple-server', port: 3000, probes: [{ path: '/', status: 200 }] },
@@ -68,7 +88,8 @@ const CASES: Case[] = [
         name: 'chat-app',
         port: 3001,
         probes: [{ path: '/', status: 426 }],
-        env: { CHAT_AUTH_SECRET: 'smoke-test-secret' },
+        // In production the image refuses to start without a secret of 32+ characters.
+        env: { CHAT_AUTH_SECRET: 'smoke-test-secret-at-least-32-characters' },
     },
     {
         kind: 'image',
@@ -86,7 +107,20 @@ const CASES: Case[] = [
             { path: '/formularios/health', status: 200 },
             { path: '/admin/', status: 200 },
         ],
-        internal: ['admin-api:4000/health', 'form-manager:4001/health', 'cron:4002/health'],
+        internal: [
+            { from: 'nginx', target: 'admin-api:4000/health' },
+            { from: 'form-manager', target: 'form-manager:4001/health' },
+            { from: 'form-manager', target: 'cron:4002/health' },
+        ],
+        secrets: [
+            'DB_PASSWORD',
+            'REDIS_PASSWORD',
+            'AUTH_SECRET',
+            'INTERNAL_API_TOKEN',
+            'CSRF_SECRET',
+            'IP_HASH_SECRET',
+            'RECAPTCHA_SECRET',
+        ],
     },
 ];
 
@@ -97,10 +131,14 @@ const START_TIMEOUT_MS = 60_000;
 /** How long a started container must keep running after its probes pass. */
 const SETTLE_MS = 3_000;
 
-function docker(args: string[], opts: { quiet?: boolean; allowFail?: boolean } = {}): { ok: boolean; out: string } {
+function docker(
+    args: string[],
+    opts: { quiet?: boolean; allowFail?: boolean; env?: NodeJS.ProcessEnv } = {},
+): { ok: boolean; out: string } {
     const res = spawnSync('docker', args, {
         encoding: 'utf8',
         stdio: opts.quiet ? 'pipe' : ['ignore', 'inherit', 'inherit'],
+        env: opts.env,
     });
     const ok = res.status === 0;
     if (!ok && !opts.allowFail) throw new Error(`docker ${args.join(' ')} failed (${res.status})\n${res.stderr ?? ''}`);
@@ -192,34 +230,39 @@ async function runImage(c: ImageCase, build: boolean): Promise<string | null> {
 
 async function runCompose(c: ComposeCase, build: boolean): Promise<string | null> {
     const compose = ['compose', '-f', c.file, '-p', COMPOSE_PROJECT];
+    // Every compose command interpolates the file, so each one gets them (a
+    // `down` without them fails as well).
+    const env = { ...process.env, ...Object.fromEntries(c.secrets.map((v) => [v, randomBytes(32).toString('hex')])) };
     let failure: string | null = null;
-    docker([...compose, 'up', '-d', ...(build ? ['--build'] : ['--no-build'])], { allowFail: true });
+    docker([...compose, 'up', '-d', ...(build ? ['--build'] : ['--no-build'])], { allowFail: true, env });
     try {
-        failure = await probeCompose(c, compose);
+        failure = await probeCompose(c, compose, env);
         return failure;
     } finally {
-        if (failure) docker([...compose, 'logs', '--tail', '30'], { allowFail: true });
-        docker([...compose, 'down', '-v', '--remove-orphans'], { quiet: true, allowFail: true });
+        if (failure) docker([...compose, 'logs', '--tail', '30'], { allowFail: true, env });
+        docker([...compose, 'down', '-v', '--remove-orphans'], { quiet: true, allowFail: true, env });
     }
 }
 
-async function probeCompose(c: ComposeCase, compose: string[]): Promise<string | null> {
+async function probeCompose(c: ComposeCase, compose: string[], env: NodeJS.ProcessEnv): Promise<string | null> {
     try {
         const exited = () =>
-            docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true }).out;
+            docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true, env })
+                .out;
         const failure = await waitForProbes('http://127.0.0.1:80', c.probes, () => exited() === '');
         if (failure) return `${failure}${exited() ? `; exited: ${exited().replace(/\n/g, ', ')}` : ''}`;
         // Services start at different speeds: retried until the same deadline.
-        const answers = (target: string) =>
-            docker([...compose, 'exec', '-T', 'nginx', 'wget', '-q', '-O', '/dev/null', `http://${target}`], {
+        const answers = ({ from, target }: ComposeCase['internal'][number]) =>
+            docker([...compose, 'exec', '-T', from, ...fetchCommand(from, `http://${target}`)], {
                 quiet: true,
                 allowFail: true,
+                env,
             }).ok;
         const deadline = Date.now() + START_TIMEOUT_MS;
         let pending = c.internal;
         while ((pending = pending.filter((t) => !answers(t))).length > 0) {
             if (exited()) return `services exited: ${exited().replace(/\n/g, ', ')}`;
-            if (Date.now() > deadline) return `no 200 from ${pending.map((t) => `http://${t}`).join(', ')}`;
+            if (Date.now() > deadline) return `no 200 from ${pending.map((t) => `http://${t.target}`).join(', ')}`;
             await sleep(1_000);
         }
         await sleep(SETTLE_MS);

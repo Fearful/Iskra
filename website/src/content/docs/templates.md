@@ -22,11 +22,11 @@ Minimal app with a web server and a user CRUD. A good first project.
 `cd templates/starter-app && bun start`
 
 ### ecommerce-api
-E-commerce backend with a product catalog, order management, DB persistence, and cache.
+E-commerce backend with a product catalog, order management, DB persistence, and cache. Product writes and orders need per-user API keys (`API_KEYS`, admin or customer role); the catalog is public.
 `cd templates/ecommerce-api && bun start`
 
 ### cms-starter
-CMS with a REST API over SQLite: draft/publish flow, content versioning, slug validation (Zod) via Drizzle ORM.
+CMS with a REST API over SQLite: draft/publish flow, content versioning, slug validation (Zod) via Drizzle ORM. Changes, drafts and history need an editor API key (`API_KEYS`); the public only reads published content.
 `cd templates/cms-starter && bun start`
 
 ### db-starter
@@ -35,16 +35,16 @@ User CRUD over SQLite (Drizzle ORM) with optional Oracle Database support. Great
 
 ### forms-app
 Forms platform with a microservices architecture: pre-rendered static forms, a lightweight public service (CSRF + reCAPTCHA v3), and Redis-batched inserts to PostgreSQL.
-`cd templates/forms-app && bun run dev` _(Docker Compose)_
+`cd templates/forms-app && bun run dev` _(Docker Compose; it needs a `.env` with the secrets first, see the template's README)_
 
 ## Real-time
 
 ### chat-app
-Real-time chat over WebSocket with rooms, user presence, paginated history backed by a KV store, and auth at the handshake.
-`cd templates/chat-app && bun start` · client: `bun run client`
+Real-time chat over WebSocket with rooms, user presence, paginated history backed by a KV store, and auth at the handshake with server-signed, expiring tokens.
+`cd templates/chat-app && bun start` · client: `CHAT_TOKEN=$(bun run --silent token ana) bun run client`
 
 ### realtime-feed
-Social feed combining an HTTP API with a real-time WebSocket stream.
+Social feed combining an HTTP API with a real-time WebSocket stream. Posting needs an author API key (`API_KEYS`) and is rate-limited per author.
 `cd templates/realtime-feed && bun start`
 
 ## Background work

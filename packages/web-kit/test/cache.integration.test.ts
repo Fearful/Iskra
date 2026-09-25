@@ -52,7 +52,7 @@ describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () 
     });
 
     afterAll(async () => {
-        for (const k of ['str', 'obj', 'ttl', 'ex', 'counter']) {
+        for (const k of ['str', 'obj', 'ttl', 'ex', 'counter', 'xx']) {
             await cache.client.delete(prefix + k);
         }
         await kernel.shutdown();
@@ -88,6 +88,24 @@ describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () 
         await cache.client.delete(prefix + 'counter');
         expect(await cache.client.increment!(prefix + 'counter')).toBe(1);
         expect(await cache.client.increment!(prefix + 'counter')).toBe(2);
+    });
+
+    it('setIfExists writes only a key that exists, keeping a TTL', async () => {
+        // The session store's save: a deleted session must not come back.
+        const key = prefix + 'xx';
+        await cache.client.delete(key);
+        expect(await cache.client.setIfExists!(key, { v: 1 }, 60)).toBe(false);
+        expect(await cache.client.get(key)).toBeNull();
+
+        await cache.client.set(key, { v: 1 }, 60);
+        expect(await cache.client.setIfExists!(key, { v: 2 }, 60)).toBe(true);
+        expect(await cache.client.get(key)).toEqual({ v: 2 });
+        const redis = new Redis(REDIS_URL);
+        try {
+            expect(await redis.ttl(key)).toBeGreaterThan(0);
+        } finally {
+            redis.disconnect();
+        }
     });
 
     it('incrementWithTtl always leaves the counter with an expiry', async () => {

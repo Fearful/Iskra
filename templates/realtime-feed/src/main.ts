@@ -4,6 +4,13 @@ import { SocketDriver } from '@iskra-bun/socket-kit';
 import { config } from './app.config.ts';
 import httpRouter, { eventBus } from './interfaces/http/router.ts';
 import { socketRouter } from './interfaces/socket/router.ts';
+import { createAuthFeatures, parseApiKeys } from './auth.ts';
+
+// Autores que pueden publicar (ver src/auth.ts). Una entrada invalida corta el arranque.
+const apiKeys = parseApiKeys(process.env.API_KEYS);
+if (apiKeys.length === 0) {
+    console.warn('[realtime-feed] API_KEYS está vacío: el feed se lee, pero publicar responde 401.');
+}
 
 const app = new App({ name: 'RealtimeFeed' });
 
@@ -20,6 +27,8 @@ app.register(
     new WebPlugin({
         port: config.web.port,
         router: httpRouter,
+        // API keys de autores y limite de posts por autor, en ese orden.
+        features: createAuthFeatures(apiKeys),
     }),
 );
 

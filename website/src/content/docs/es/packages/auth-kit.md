@@ -30,6 +30,14 @@ createBetterAuth({ db, adapterType: 'postgres', secret: '' });        // lanza e
 createBetterAuth({ db, adapterType: 'postgres', secret: 'corto' });   // lanza error
 ```
 
+En producción (`NODE_ENV=production`) también lanza un error si el secret sigue siendo un valor de ejemplo: uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder`, comparado sin mayúsculas, `-`, `_`, `.` ni espacios (así que `changeme` y `CHANGE_ME` también cuentan). Un secret así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base de datos: cualquiera que lo conozca puede falsificar una sesión de cualquier usuario. El error nombra la palabra encontrada, nunca el secret:
+
+```typescript
+// NODE_ENV=production
+createBetterAuth({ db, adapterType: 'postgres', secret: 'dev-secret-change-me-min-32-characters-long' });
+// lanza: auth secret looks like a placeholder (it contains "change-me"); ...
+```
+
 Provee siempre el secret desde una variable de entorno; nunca lo escribas en el código:
 
 ```typescript
@@ -134,6 +142,7 @@ En MySQL, `verification.value` es `text`: guarda el estado de OAuth, de más de 
 ## Variables de Entorno
 
 ```bash
-# Debe tener al menos 32 caracteres; usa un valor aleatorio y secreto
-AUTH_SECRET=reemplaza-esto-por-32-caracteres-o-mas
+# Al menos 32 caracteres aleatorios, por ejemplo la salida de: openssl rand -base64 32
+# (en producción se rechaza un valor de ejemplo como "change-me…")
+AUTH_SECRET=
 ```

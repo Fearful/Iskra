@@ -83,7 +83,7 @@ const mailer = await createEmailAdapter({
 
 #### Custom headers (allowlist)
 
-Headers passed in `headers` are not forwarded blindly: only an allowlist of names is permitted, and any other name is rejected with an error (header-injection protection). On top of that, anything after a CR or LF in the value is dropped to prevent injection. The same allowlist applies to SMTP and SendGrid; the two `X-Mailgun-*` headers only to Mailgun.
+Headers passed in `headers` are not forwarded blindly: only an allowlist of names is permitted, and any other name is rejected with an error (header-injection protection). On top of that, anything after a CR or LF in the value is dropped to prevent injection; Mailgun's `subject` is cut at a CR or LF the same way. The same allowlist applies to SMTP and SendGrid; the two `X-Mailgun-*` headers only to Mailgun.
 
 Allowed headers:
 
@@ -132,11 +132,11 @@ The SES adapter does not support `attachments` or `headers` yet: a message with 
 ```typescript
 // Send a message
 await mailer.send({
-    to: 'usuario@example.com',        // or an array of addresses
+    to: 'usuario@example.com',        // or an array of recipients
     subject: 'Asunto',
     text: 'Cuerpo en texto plano',
     html: '<p>Cuerpo en HTML</p>',
-    cc: 'copia@example.com',
+    cc: { name: 'Ana', address: 'ana@example.com' },   // a display name
     bcc: ['oculta@example.com'],
     replyTo: 'responder@example.com',
 });
@@ -144,7 +144,29 @@ await mailer.send({
 
 All adapters return `{ messageId, success }`.
 
-The `from` display name is quoted (or encoded, when it is not ASCII) by every adapter, so it cannot add another address, and an email address with spaces, brackets, commas or quotes is rejected. A string attachment `content` is text; pass a `Uint8Array` for binary files.
+### Recipients
+
+Every `to`, `cc`, `bcc` and `replyTo` entry is **one bare address**, or a
+`{ name, address }` object to give it a display name. A string that names a
+display name, a list or a group is rejected before anything is sent, by every
+adapter (the mock too): providers parse such a value as an address list, so
+`"bob@example.com <attacker@evil.test>, x@example.com"` mailed
+`attacker@evil.test`, and `"undisclosed: a@evil.test; b@x.com"` or
+`"a@evil.test:b@x.com"` mailed people an allowlist that checked the text never
+saw. An address may not contain whitespace, control characters or
+`<>()[]\,;:"`, and must have exactly one `@`; a name may not contain control
+characters (CR/LF). `replyTo` takes one recipient.
+
+```typescript
+await mailer.send({ to: ['a@example.com', 'b@example.com'], subject: 'x', text: 't' }); // ok
+await mailer.send({ to: { name: 'Bob Smith', address: 'bob@example.com' }, subject: 'x', text: 't' }); // ok
+await mailer.send({ to: 'Bob Smith <bob@example.com>', subject: 'x', text: 't' }); // Error: Invalid email address
+await mailer.send({ to: 'a@example.com, b@example.com', subject: 'x', text: 't' }); // Error: pass an array
+```
+
+`checkRecipients(value)` applies the same rules, if you want to validate input yourself.
+
+The `from` display name (and a recipient's) is quoted (or encoded, when it is not ASCII) by every adapter, so it cannot add another address. A string attachment `content` is text; pass a `Uint8Array` for binary files.
 
 ### Templates (not supported yet)
 

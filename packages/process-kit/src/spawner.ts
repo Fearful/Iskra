@@ -11,12 +11,63 @@ interface RunningProcess {
     startedAt: number;
     /** Current computed backoff delay in ms (grows with each crash) */
     currentBackoffMs: number;
+    /** Bytes send() queued for stdin that have not reached the pipe yet. */
+    pendingStdinBytes?: number;
+    /** send() refused a message since pendingStdinBytes was last 0. */
+    stdinFull?: boolean;
 }
 
 /** Longest stdout/stderr line kept in memory before it is emitted truncated. */
 const MAX_LINE_LENGTH = 1024 * 1024;
 /** How often terminate() re-checks whether the process group is gone. */
 const GROUP_POLL_MS = 25;
+/** Default ProcessConfig.maxPendingStdinBytes. */
+const MAX_PENDING_STDIN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * What a child inherits from the app's environment unless `inheritEnv` says
+ * otherwise: what programs need to run, and no secrets. NODE_ENV too, or a
+ * Node/Bun child would silently run in development mode.
+ */
+const BASE_ENV = [
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'TERM',
+    'LANG',
+    'LANGUAGE',
+    'TZ',
+    'TMPDIR',
+    'TMP',
+    'TEMP',
+    'NODE_ENV',
+    // Windows: many programs (Python's sockets, say) fail to start without these.
+    'SYSTEMROOT',
+    'WINDIR',
+    'COMSPEC',
+    'PATHEXT',
+    'USERPROFILE',
+];
+
+/**
+ * The environment a child starts with. It used to be all of process.env, so
+ * every child got every secret the app has (DATABASE_URL, AUTH_SECRET, cloud
+ * keys, whatever c12 loaded from .env), third-party code included.
+ */
+function childEnv(config: ProcessConfig): Record<string, string | undefined> {
+    const inherit = config.inheritEnv ?? false;
+    if (inherit === true) return { ...process.env, ...config.env };
+    // Names are case-insensitive on Windows (Path, SystemRoot).
+    const key = (name: string) => (process.platform === 'win32' ? name.toUpperCase() : name);
+    const names = new Set([...BASE_ENV, ...(inherit === false ? [] : inherit)].map(key));
+    const env: Record<string, string> = {};
+    for (const [name, value] of Object.entries(process.env)) {
+        if (value !== undefined && (names.has(key(name)) || name.startsWith('LC_'))) env[name] = value;
+    }
+    return { ...env, ...config.env };
+}
 
 /**
  * Whether any live (non-zombie) process is left in process group `pgid`. On
@@ -438,7 +489,7 @@ export class ProcessManager implements Driver {
 
         try {
             const proc = Bun.spawn([config.command, ...(config.args || [])], {
-                env: { ...process.env, ...config.env },
+                env: childEnv(config),
                 stdout: config.mode === 'stdio' ? 'pipe' : 'inherit',
                 stderr: config.mode === 'stdio' ? 'pipe' : 'inherit',
                 stdin: config.mode === 'stdio' ? 'pipe' : 'ignore',
@@ -518,17 +569,23 @@ export class ProcessManager implements Driver {
         if (this.liveGroups.size === 0) process.off('exit', this.killGroupsOnExit);
     }
 
-    // Send data to process stdin
-    async send(name: string, data: unknown) {
+    /**
+     * Writes `data` to a `stdio` process's stdin as one line: an object is
+     * JSON-encoded, a string is written as is. Resolves to false, with a
+     * warning, when the message is not sent: no such process, not in stdio
+     * mode, a string with a line break, or a child that has not read what it
+     * was sent (see ProcessConfig.maxPendingStdinBytes).
+     */
+    async send(name: string, data: unknown): Promise<boolean> {
         const procInfo = this.processes.get(name);
         if (!procInfo) {
             this.app?.logger.warn(`Cannot send message to non-existent process: ${name}`);
-            return;
+            return false;
         }
 
         if (procInfo.config.mode !== 'stdio' || !procInfo.process.stdin) {
             this.app?.logger.warn(`Cannot send message to process ${name} (mode is not stdio or stdin is closed)`);
-            return;
+            return false;
         }
 
         // Bun's Subprocess.stdin is a FileSink when stdin is piped.
@@ -540,24 +597,51 @@ export class ProcessManager implements Driver {
             this.app?.logger.warn(
                 `Not sending a string with a line break to process ${name}: send an object to have it JSON-encoded`,
             );
-            return;
+            return false;
         }
 
         try {
             // If data is object, stringify it and add newline
-            const message = typeof data === 'string' ? data : JSON.stringify(data);
+            const message = (typeof data === 'string' ? data : JSON.stringify(data)) + '\n';
+            // What the pipe does not take waits in this process's memory: 256
+            // MiB sent to a child that never reads its stdin grew RSS by 263
+            // MiB. One message is still accepted when nothing is waiting.
+            const size = Buffer.byteLength(message);
+            const pending = procInfo.pendingStdinBytes ?? 0;
+            const max = procInfo.config.maxPendingStdinBytes ?? MAX_PENDING_STDIN_BYTES;
+            if (pending > 0 && pending + size > max) {
+                // One warning until the child catches up, not one per message.
+                if (!procInfo.stdinFull) {
+                    this.app?.logger.warn(
+                        `Not sending to process ${name}: ${pending} bytes sent to it are still waiting to be read (maxPendingStdinBytes: ${max})`,
+                    );
+                }
+                procInfo.stdinFull = true;
+                return false;
+            }
             // On a pipe, write()/flush() can return promises that reject with
             // EPIPE once the child is gone: unhandled, they crashed the app.
             const onError = (err: unknown) => this.app?.logger.error({ err }, `Failed to write to process ${name}`);
-            const written: unknown = stdin.write(message + '\n');
+            const written: unknown = stdin.write(message);
             if (written instanceof Promise) written.catch(onError);
             // flush is optional on the FileSink surface — call it only if present.
-            if (typeof stdin.flush === 'function') {
-                const flushed: unknown = stdin.flush();
-                if (flushed instanceof Promise) flushed.catch(onError);
+            const flushed: unknown = typeof stdin.flush === 'function' ? stdin.flush() : undefined;
+            if (flushed instanceof Promise) flushed.catch(onError);
+            // A promise means Bun kept bytes the pipe did not take; it settles
+            // once they are written (or the child is gone).
+            const drained = [written, flushed].find((r): r is Promise<unknown> => r instanceof Promise);
+            if (drained) {
+                procInfo.pendingStdinBytes = pending + size;
+                const release = () => {
+                    procInfo.pendingStdinBytes = (procInfo.pendingStdinBytes ?? size) - size;
+                    if (procInfo.pendingStdinBytes <= 0) procInfo.stdinFull = false;
+                };
+                drained.then(release, release);
             }
+            return true;
         } catch (err) {
             this.app?.logger.error({ err }, `Failed to write to process ${name}`);
+            return false;
         }
     }
 

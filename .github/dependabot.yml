@@ -5,12 +5,28 @@
 # security updates are opened as soon as an advisory is published.
 version: 2
 updates:
+  # Actions are pinned by commit SHA (a moved tag cannot change what runs);
+  # Dependabot updates the SHA and the version comment next to it.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     groups:
       actions:
+        patterns: ["*"]
+
+  # Base images are pinned to a version (not `latest`); these PRs move them.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /website
+      - /templates/*
+      - /templates/forms-app/services/*
+      - /packages/create-iskra/templates/*
+    schedule:
+      interval: weekly
+    groups:
+      docker-images:
         patterns: ["*"]
 
   - package-ecosystem: bun

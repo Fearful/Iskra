@@ -89,8 +89,9 @@ Registrar el servicio en el contenedor de DI del Core para reutilizarlo:
 
 ```typescript
 class DesktopBridge {
-    async guardarArchivo(ruta: string, contenido: string) {
-        return invoke('guardar_archivo', { ruta, contenido });
+    // El comando Rust pregunta donde guardar con el dialogo nativo.
+    async guardarArchivo(contenido: string) {
+        return invoke('guardar_archivo', { contenido });
     }
 }
 
@@ -98,8 +99,10 @@ app.context.set('desktopBridge', new DesktopBridge());
 
 // En cualquier handler
 const bridge = app.context.get('desktopBridge');
-await bridge.guardarArchivo('notas.txt', 'Hola Iskra');
+await bridge.guardarArchivo('Hola Iskra');
 ```
+
+No le pases a un comando una ruta que venga del webview: un script que llegue a la pagina (un string inyectado, una dependencia comprometida) podria leer o escribir cualquier archivo del usuario, como `~/.ssh/id_ed25519`. Que el comando Rust elija el archivo con el dialogo nativo (`tauri-plugin-dialog`) y lo lea o escriba ahi, como hace `abrir_archivo` en la plantilla [`desktop-app`](https://github.com/fearful/iskra/tree/main/templates/desktop-app). Declara cada comando en `build.rs` (`tauri_build::Attributes::new().app_manifest(AppManifest::new().commands(&[...]))`) y concedelo en una capability (`allow-<comando>`): si no, cualquier webview puede invocarlo.
 
 Escuchar eventos emitidos desde Rust y reenviarlos al bus de Iskra:
 
@@ -166,8 +169,9 @@ const app = new App({ name: 'Iskra Desktop' });
 app.register(new DesktopDriver());
 
 app.on('archivo:abrir', async (ctx) => {
-    const contenido = await invoke<string>('leer_archivo', { ruta: ctx.payload.ruta });
-    ctx.logger.info({ bytes: contenido.length }, 'Archivo cargado');
+    // abrir_archivo abre el dialogo nativo y lee en Rust el archivo elegido.
+    const archivo = await invoke<{ ruta: string; contenido: string } | null>('abrir_archivo');
+    if (archivo) ctx.logger.info({ bytes: archivo.contenido.length }, 'Archivo cargado');
 });
 
 async function main() {
@@ -176,7 +180,7 @@ async function main() {
     const ventana = getCurrentWindow();
     await ventana.setTitle('Iskra Desktop');
 
-    app.emit('archivo:abrir', { ruta: 'config.json' });
+    app.emit('archivo:abrir', {});
 }
 
 main().catch((err) => app.logger.error({ err }, 'Fallo al arrancar'));

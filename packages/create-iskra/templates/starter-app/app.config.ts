@@ -5,9 +5,11 @@ import type { AppConfig } from '@iskra-bun/core';
 
 const config: AppConfig = {
     name: 'StarterApp',
-    debug: true,
+    // Debug output logs request and process details that do not belong in a
+    // deployed app's logs: turn it on (`level: 'debug'`) only while debugging.
+    debug: false,
     logger: {
-        level: 'debug'
+        level: 'info'
     },
     processes: {
         'python-echo': {

@@ -11,6 +11,8 @@
  * Requiere un archivo drizzle.config.ts en el directorio actual.
  */
 
+import { drizzleKitCommand } from './migrations';
+
 const [command, ...rest] = process.argv.slice(2);
 
 const validCommands = ['generate', 'migrate', 'push', 'drop'];
@@ -31,7 +33,14 @@ Comandos:
     process.exit(command ? 1 : 0);
 }
 
-const args = ['bunx', 'drizzle-kit', command, ...rest];
+// The project's own drizzle-kit, never one bunx downloads (see drizzleKitCommand).
+let args: string[];
+try {
+    args = drizzleKitCommand([command, ...rest]);
+} catch (error) {
+    console.error((error as Error).message);
+    process.exit(1);
+}
 
 console.log(`> ${args.join(' ')}`);
 

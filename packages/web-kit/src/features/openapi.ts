@@ -1,9 +1,33 @@
 import type { Feature, OpenAPIConfig } from '../types';
 import type { Kernel } from '../kernel';
-import type { Context, Handler, Hono } from 'hono';
+import type { Context, Handler, Hono, Next } from 'hono';
 import { OpenAPIHono, createRoute, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorCodes, errorResponse } from '../responses';
 import { consoleLogger, type KernelLogger } from '../logging';
+
+/**
+ * The API reference /docs loads: one release, with the SRI hash of that exact
+ * file (the same bytes as in its npm tarball). `@latest` ran whatever Scalar
+ * published last on the app's origin, with access to its cookies and storage.
+ */
+const SCALAR_SCRIPT = {
+    src: 'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.68.0/dist/browser/standalone.js',
+    integrity: 'sha384-PhSzhE9ihf7z/cKeRSKAeP+oJMMzotyFv0EjvNYgL798a2ODBQVuJLTP4Klle6IB',
+};
+
+const DEFAULT_SERVERS = [{ url: 'http://localhost:8000', description: 'Dev Server' }];
+
+const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+/** The origin of an absolute http(s) URL, or null. */
+function httpOrigin(url: string): string | null {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : null;
+    } catch {
+        return null;
+    }
+}
 
 export class OpenAPIFeature implements Feature {
     name = 'openapi';
@@ -80,7 +104,19 @@ export class OpenAPIFeature implements Feature {
             this.mountedOn = app;
         }
 
-        app.get('/openapi.json', (c: Context) => {
+        if (this.config.docs === false) return;
+
+        // These routes come before any middleware the app adds after
+        // initialize(), so an auth middleware there did not cover them.
+        const authorize = this.config.authorize;
+        const guard = async (c: Context, next: Next) => {
+            const decision = authorize ? await authorize(c) : true;
+            if (decision instanceof Response) return decision;
+            if (!decision) return c.json({ error: 'Forbidden' }, 403);
+            await next();
+        };
+
+        app.get('/openapi.json', guard, (c: Context) => {
             if (!this.app) return c.json({ error: 'OpenAPI not initialized' }, 500);
 
             const spec = this.app.getOpenAPIDocument({
@@ -92,7 +128,7 @@ export class OpenAPIFeature implements Feature {
                     contact: this.config.contact,
                     license: this.config.license,
                 },
-                servers: this.config.servers || [{ url: 'http://localhost:8000', description: 'Dev Server' }],
+                servers: this.config.servers || DEFAULT_SERVERS,
                 tags: this.config.tags || [],
                 externalDocs: this.config.externalDocs,
                 security: this.config.security,
@@ -106,22 +142,50 @@ export class OpenAPIFeature implements Feature {
             return c.json(spec);
         });
 
-        app.get('/docs', (c) => c.html(this.generateScalarHTML()));
+        const script = this.config.scalar ?? SCALAR_SCRIPT;
+        if (script === false) return;
+        app.get('/docs', guard, (c) => {
+            c.header('Content-Security-Policy', this.docsPolicy(script.src));
+            return c.html(this.generateScalarHTML(script));
+        });
     }
 
-    private generateScalarHTML(): string {
+    /**
+     * The docs page's CSP: the pinned script, the inline styles Scalar
+     * injects, and requests to this origin and the spec's servers ("Try it")
+     * only, so the page loads and sends nothing anywhere else.
+     */
+    private docsPolicy(scriptSrc: string): string {
+        const servers = (this.config.servers || DEFAULT_SERVERS).map((server) => httpOrigin(server.url));
+        const connect = ["'self'", ...new Set(servers.filter((origin): origin is string => origin !== null))];
+        return [
+            "default-src 'none'",
+            `script-src ${httpOrigin(scriptSrc) ?? "'self'"}`,
+            "style-src 'unsafe-inline'",
+            "img-src 'self' data: https:",
+            "font-src 'self' data:",
+            `connect-src ${connect.join(' ')}`,
+            "base-uri 'none'",
+            "form-action 'none'",
+            "frame-ancestors 'self'",
+        ].join('; ');
+    }
+
+    private generateScalarHTML(script: { src: string; integrity: string }): string {
+        // Without withDefaultFonts: false Scalar loads fonts from fonts.scalar.com,
+        // and its AI agent (on by default on localhost) sends the spec to api.scalar.com.
         return `
 <!DOCTYPE html>
 <html>
 <head>
-    <title>${this.config.title} - API Documentation</title>
+    <title>${escapeHtml(this.config.title)} - API Documentation</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>body { margin: 0; padding: 0; }</style>
 </head>
 <body>
-    <script id="api-reference" data-url="/openapi.json" data-configuration='{"theme":"purple","layout":"modern","showSidebar":true}'></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest"></script>
+    <script id="api-reference" data-url="/openapi.json" data-configuration='{"theme":"purple","layout":"modern","showSidebar":true,"withDefaultFonts":false,"agent":{"disabled":true}}'></script>
+    <script src="${escapeHtml(script.src)}" integrity="${escapeHtml(script.integrity)}" crossorigin="anonymous"></script>
 </body>
 </html>`.trim();
     }

@@ -1,11 +1,41 @@
-import type { Feature, UploadAction, UploadConfig } from '../../types';
+import type { Feature, UploadAction, UploadConfig, UploadTarget } from '../../types';
 import type { Kernel } from '../../kernel';
 import type { Hono, Context, Next } from 'hono';
-import { UploadHelper, safeBasename } from './helper';
+import { FileExistsError, contentTypeFor, dispositionFor } from '@iskra-bun/storage-kit';
+import { UploadHelper, normalizeFolder, safeBasename } from './helper';
 import { consoleLogger, type KernelLogger } from '../../logging';
 
 // Room for multipart boundaries and part headers on top of the file itself.
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+/**
+ * Refused unless `allowedExtensions` lists them: a browser runs these as a page
+ * wherever they are served inline (e.g. by a static server for the local
+ * adapter's folder), and a same-origin `.js` passes a `script-src 'self'` policy.
+ */
+const ACTIVE_CONTENT_EXTENSIONS = new Set([
+    '.html',
+    '.htm',
+    '.shtml',
+    '.xhtml',
+    '.xht',
+    '.mht',
+    '.mhtml',
+    '.svg',
+    '.svgz',
+    '.xml',
+    '.xsl',
+    '.xslt',
+    '.js',
+    '.mjs',
+    '.cjs',
+]);
+
+/** `.png` for `photo.PNG`; '' without an extension. */
+function extensionOf(filename: string): string {
+    const dot = filename.lastIndexOf('.');
+    return dot === -1 ? '' : filename.slice(dot).toLowerCase();
+}
 
 /**
  * Parses a multipart body, aborting as soon as more than `limit` bytes arrive
@@ -66,7 +96,8 @@ export class UploadFeature implements Feature {
         this.config = {
             projectName: config.projectName,
             maxFileSize: config.maxFileSize || 10 * 1024 * 1024,
-            allowedExtensions: config.allowedExtensions || [],
+            allowedExtensions: (config.allowedExtensions || []).map((e) => e.toLowerCase()),
+            overwrite: config.overwrite ?? false,
             exposeRoutes: config.exposeRoutes || false,
             routePrefix: config.routePrefix || '/upload',
             authorize: config.authorize,
@@ -107,15 +138,31 @@ export class UploadFeature implements Feature {
         this.log.debug(`Upload feature initialized: ${this.config.projectName}`);
     }
 
+    private extensionAllowed(filename: string): boolean {
+        const allowed = this.config.allowedExtensions;
+        if (allowed.length > 0) return allowed.some((e) => filename.toLowerCase().endsWith(e));
+        return !ACTIVE_CONTENT_EXTENSIONS.has(extensionOf(filename));
+    }
+
+    /** The file a download/delete URL names (`<prefix>/<subfolder...>/<filename>`). */
+    private fileTarget(c: Context): UploadTarget & { filename: string } {
+        const filePath = c.req.path.replace(`${this.config.routePrefix}/`, '');
+        const segments = filePath.split('/');
+        const filename = segments.pop() || '';
+        const subfolder = normalizeFolder(segments.join('/'));
+        return { key: this.helper!.keyFor(filename, subfolder), filename, subfolder };
+    }
+
     routes(app: Hono) {
         if (!this.config.exposeRoutes) return;
 
         const prefix = this.config.routePrefix;
         const authorize = this.config.authorize!;
-        const guard = (action: UploadAction) => async (c: Context, next: Next) => {
-            if (!(await authorize(c, action))) return c.json({ error: 'Forbidden' }, 403);
-            await next();
-        };
+        const guard =
+            (action: UploadAction, target?: (c: Context) => UploadTarget) => async (c: Context, next: Next) => {
+                if (!(await authorize(c, action, target?.(c)))) return c.json({ error: 'Forbidden' }, 403);
+                await next();
+            };
         // Internal errors are logged, never echoed: storage errors can carry
         // paths, bucket names or credentials hints.
         const fail = (c: Context, action: UploadAction, e: unknown) => {
@@ -123,7 +170,8 @@ export class UploadFeature implements Feature {
             return c.json({ error: `${action[0].toUpperCase()}${action.slice(1)} failed` }, 500);
         };
 
-        // POST — upload a file
+        // POST — upload a file. `authorize` runs before the body is read, then
+        // again with the resolved target before anything is written.
         app.post(`${prefix}`, guard('upload'), async (c) => {
             const upload = c.get('upload');
             const limit = this.config.maxFileSize + MULTIPART_OVERHEAD_BYTES;
@@ -139,74 +187,71 @@ export class UploadFeature implements Feature {
             if (!formData) return c.json({ error: 'File too large' }, 413);
 
             try {
-                const subfolder = c.req.query('subfolder');
                 const file = formData.get('file');
                 if (!file || !(file instanceof File)) return c.json({ error: 'No file' }, 400);
 
                 if (file.size > this.config.maxFileSize) return c.json({ error: 'File too large' }, 413);
-                if (this.config.allowedExtensions.length > 0) {
-                    if (!this.config.allowedExtensions.some((e) => file.name.toLowerCase().endsWith(e))) {
-                        return c.json({ error: 'Invalid extension' }, 400);
-                    }
-                }
+                const filename = safeBasename(file.name);
+                if (!this.extensionAllowed(filename)) return c.json({ error: 'Invalid extension' }, 400);
+
+                // The type comes from the extension, never from file.type (which
+                // Bun derives from the name: image/svg+xml, text/html...).
+                const subfolder = normalizeFolder(c.req.query('subfolder'));
+                const type = contentTypeFor(filename);
+                const target: UploadTarget = {
+                    key: upload.keyFor(filename, subfolder),
+                    filename,
+                    subfolder,
+                    size: file.size,
+                    type,
+                };
+                if (!(await authorize(c, 'upload', target))) return c.json({ error: 'Forbidden' }, 403);
 
                 const data = new Uint8Array(await file.arrayBuffer());
-                const result = await upload.upload(safeBasename(file.name), data, subfolder, {
-                    contentType: file.type,
+                const result = await upload.upload(filename, data, subfolder, {
+                    contentType: type,
+                    overwrite: this.config.overwrite,
                 });
                 return c.json({ success: true, ...result });
             } catch (e) {
+                if (e instanceof FileExistsError) return c.json({ error: 'File already exists' }, 409);
                 return fail(c, 'upload', e);
             }
         });
 
         // GET — list files
-        app.get(`${prefix}`, guard('list'), async (c) => {
+        const listTarget = (c: Context): UploadTarget => {
+            const subfolder = normalizeFolder(c.req.query('subfolder'));
+            return { key: this.helper!.keyFor(undefined, subfolder), subfolder };
+        };
+        app.get(`${prefix}`, guard('list', listTarget), async (c) => {
             const upload = c.get('upload');
             try {
-                const subfolder = c.req.query('subfolder');
-                const files = await upload.list(subfolder);
+                const files = await upload.list(listTarget(c).subfolder);
                 return c.json({ success: true, files });
             } catch (e) {
                 return fail(c, 'list', e);
             }
         });
 
-        // GET — download a file
-        app.get(`${prefix}/*`, guard('download'), async (c) => {
+        // GET — download a file, streamed from storage.
+        app.get(`${prefix}/*`, guard('download', this.fileTarget.bind(this)), async (c) => {
             const upload = c.get('upload');
             try {
-                const filePath = c.req.path.replace(`${prefix}/`, '');
-                const segments = filePath.split('/');
-                const filename = segments.pop() || '';
-                const subfolder = segments.length > 0 ? segments.join('/') : undefined;
-
-                const data = await upload.get(filename, subfolder);
-                if (!data) {
+                const { filename, subfolder } = this.fileTarget(c);
+                const stream = await upload.getStream(filename, subfolder);
+                if (!stream) {
                     return c.json({ error: 'File not found' }, 404);
                 }
 
-                const ext = filename.split('.').pop()?.toLowerCase() || '';
-                const mimeTypes: Record<string, string> = {
-                    jpg: 'image/jpeg',
-                    jpeg: 'image/jpeg',
-                    png: 'image/png',
-                    gif: 'image/gif',
-                    pdf: 'application/pdf',
-                    txt: 'text/plain',
-                    json: 'application/json',
-                    zip: 'application/zip',
-                };
-                const contentType = mimeTypes[ext] || 'application/octet-stream';
-
-                const body = new Uint8Array(data.length);
-                body.set(data);
-
-                return new Response(body, {
+                // Only raster images are shown inline; anything else (HTML,
+                // SVG, PDF...) is a download, and sandboxed if rendered anyway.
+                const contentType = contentTypeFor(filename);
+                return new Response(stream, {
                     headers: {
                         'Content-Type': contentType,
-                        'Content-Disposition': `inline; filename="${safeBasename(filename)}"`,
-                        'Content-Length': String(data.length),
+                        'Content-Disposition': `${dispositionFor(contentType)}; filename="${safeBasename(filename)}"`,
+                        'Content-Security-Policy': 'sandbox',
                     },
                 });
             } catch (e) {
@@ -215,14 +260,10 @@ export class UploadFeature implements Feature {
         });
 
         // DELETE — delete a file
-        app.delete(`${prefix}/*`, guard('delete'), async (c) => {
+        app.delete(`${prefix}/*`, guard('delete', this.fileTarget.bind(this)), async (c) => {
             const upload = c.get('upload');
             try {
-                const filePath = c.req.path.replace(`${prefix}/`, '');
-                const segments = filePath.split('/');
-                const filename = segments.pop() || '';
-                const subfolder = segments.length > 0 ? segments.join('/') : undefined;
-
+                const { filename, subfolder } = this.fileTarget(c);
                 await upload.delete(filename, subfolder);
                 return new Response(null, { status: 204 });
             } catch (e) {

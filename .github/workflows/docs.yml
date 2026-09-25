@@ -2,6 +2,10 @@ name: Docs
 
 # Build the documentation site and deploy it to Fly.io on every push to `main`
 # that touches the docs, the site, or package sources (TypeDoc reads them).
+#
+# Two jobs, so the site's dependencies (Astro, TypeDoc, lychee and everything
+# they install) never run next to the deploy token: any step of a job can read
+# the job's secrets, e.g. by putting a fake `flyctl` first on the PATH.
 on:
   push:
     branches: [main]
@@ -20,22 +24,24 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  build:
     # A manual run from another branch would deploy it over the public docs.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
       # Astro 7 needs Node >= 22.12 (its CLI runs on node, even via bun run).
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -55,7 +61,7 @@ jobs:
       # against the dist root. Offline = internal links only (external links are
       # checked elsewhere and would make deploys flaky).
       - name: Link check (lychee)
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
             --offline
@@ -63,6 +69,31 @@ jobs:
             --root-dir ${{ github.workspace }}/website/dist
             'website/dist/**/*.html'
           fail: true
+
+      - name: Upload the built site
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: website-dist
+          path: website/dist
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # Only the Dockerfile and Caddyfile are needed next to the built site.
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: website
+
+      - name: Download the built site
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: website-dist
+          path: website/dist
 
       - name: Setup flyctl
         # Pinned: @master ran whatever that branch held, with the deploy token.

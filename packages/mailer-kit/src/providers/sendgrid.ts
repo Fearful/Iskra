@@ -1,6 +1,9 @@
-import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from '../types';
+import type { EmailAdapter, EmailAddress, EmailConfig, EmailMessage, TemplateData } from '../types';
 import { MailService } from '@sendgrid/mail';
-import { checkEmail, checkHeaders, cleanName } from '../headers';
+import { checkEmail, checkHeaders, checkRecipients, checkReplyTo, cleanName } from '../headers';
+
+/** SendGrid's form of a checked recipient (it parses a string as `Name <address>`). */
+const toSendGrid = ({ name, address }: EmailAddress) => (name ? { email: address, name } : address);
 
 /** The mail object MailService.send() takes (typed by @sendgrid/helpers, not a direct dependency). */
 type SendGridMail = Extract<Parameters<MailService['send']>[0], { from: unknown }>;
@@ -21,16 +24,19 @@ export class SendGridEmailAdapter implements EmailAdapter {
     async send(message: EmailMessage) {
         const from = message.from || this.config.from;
         if (!from) throw new Error('From address required');
+        const cc = checkRecipients(message.cc, 'cc recipient').map(toSendGrid);
+        const bcc = checkRecipients(message.bcc, 'bcc recipient').map(toSendGrid);
+        const replyTo = checkReplyTo(message.replyTo);
 
         const msg = {
-            to: message.to,
+            to: checkRecipients(message.to).map(toSendGrid),
             from: from.name ? { email: checkEmail(from.email), name: cleanName(from.name) } : checkEmail(from.email),
             subject: message.subject,
             text: message.text,
             html: message.html,
-            cc: message.cc,
-            bcc: message.bcc,
-            replyTo: message.replyTo,
+            cc: cc.length > 0 ? cc : undefined,
+            bcc: bcc.length > 0 ? bcc : undefined,
+            replyTo: replyTo && toSendGrid(replyTo),
             attachments: message.attachments?.map((a) => ({
                 filename: a.filename,
                 // SendGrid takes base64; a string is text, as with the other

@@ -32,10 +32,14 @@ RUN bun build templates/${TEMPLATE_NAME}/${ENTRY_POINT} --compile --outfile=/bui
 # ─── Stage 2: Runtime (UBI9 Minimal) ─────────────────────────────────────────
 # The compiled binary needs only glibc, which ubi-minimal ships: no package
 # installs, so this stage also builds offline or behind a TLS-inspecting proxy.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# A minor release, not `latest`: security rebuilds of 9.8 still arrive, a new
+# minor comes through a Dependabot PR.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
 
 WORKDIR /app
-COPY --from=builder --chown=1001:0 /build/app /app/app
+# Owned by root: the runtime user can run the binary but not replace it, so
+# code execution in the app cannot persist by overwriting it.
+COPY --from=builder /build/app /app/app
 
 ENV NODE_ENV=production
 

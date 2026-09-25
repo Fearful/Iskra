@@ -1,8 +1,10 @@
 from __future__ import annotations
 import asyncio
+import contextvars
 import http.cookiejar
+import threading
 import weakref
-from typing import Any, Collection, Dict, Mapping, Optional
+from typing import Any, Callable, Collection, Dict, Mapping, Optional, TypeVar
 from urllib.parse import urlsplit
 
 import httpx
@@ -116,15 +118,31 @@ class HttpClientWrapper:
         ok_statuses: Collection[int] = (),
     ) -> httpx.Response:
         """Sends a request and returns the raw response, raising the matching
-        IskraException for a 4xx/5xx status not listed in `ok_statuses`."""
+        IskraException for a 4xx/5xx status not listed in `ok_statuses`.
+
+        The whole request (connecting, sending, the headers and the body) must
+        finish within `config.timeout` seconds, and the body may not exceed
+        `config.max_response_bytes`."""
         _check_path(path)
-        try:
-            resp = self._transport.sync.request(
-                method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
-            )
-        except httpx.HTTPError as e:
-            raise _transport_error(e) from e
-        return self._check(resp, ok_statuses)
+        limit = self._config.max_response_bytes
+
+        def send(cancelled: threading.Event) -> httpx.Response:
+            try:
+                with self._transport.sync.stream(
+                    method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+                ) as resp:
+                    _check_declared_size(resp, limit)
+                    body = bytearray()
+                    for chunk in resp.iter_bytes():
+                        if cancelled.is_set():
+                            break  # the caller already got its timeout
+                        body += chunk
+                        _check_size(len(body), limit)
+                    return _buffered(resp, bytes(body))
+            except httpx.HTTPError as e:
+                raise _transport_error(e) from e
+
+        return self._check(_within(self._config.timeout, send), ok_statuses)
 
     def get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
         return self._handle(self.request("GET", path, params=params))
@@ -153,13 +171,29 @@ class HttpClientWrapper:
         files: Any = None,
         ok_statuses: Collection[int] = (),
     ) -> httpx.Response:
+        """The async `request()`, with the same deadline and size limit."""
         _check_path(path)
+        limit = self._config.max_response_bytes
+
+        async def send() -> httpx.Response:
+            try:
+                async with self._transport.async_client.stream(
+                    method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+                ) as resp:
+                    _check_declared_size(resp, limit)
+                    body = bytearray()
+                    async for chunk in resp.aiter_bytes():
+                        body += chunk
+                        _check_size(len(body), limit)
+                    return _buffered(resp, bytes(body))
+            except httpx.HTTPError as e:
+                raise _transport_error(e) from e
+
+        timeout = self._config.timeout
         try:
-            resp = await self._transport.async_client.request(
-                method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
-            )
-        except httpx.HTTPError as e:
-            raise _transport_error(e) from e
+            resp = await asyncio.wait_for(send(), timeout)
+        except asyncio.TimeoutError:
+            raise _timed_out(timeout) from None
         return self._check(resp, ok_statuses)
 
     async def async_get(self, path: str, params: Optional[Mapping[str, Any]] = None) -> IskraResponse:
@@ -218,6 +252,77 @@ def _transport_error(error: httpx.HTTPError) -> IskraException:
     callers that handle IskraException do not crash with an httpx error."""
     kind = "timed out" if isinstance(error, httpx.TimeoutException) else "failed"
     return IskraException(f"HTTP request {kind}: {error}", status_code=0)
+
+
+def _timed_out(timeout: Optional[float]) -> IskraException:
+    return IskraException(f"HTTP request timed out after {timeout:g}s", status_code=0)
+
+
+def _too_large(limit: int) -> IskraException:
+    return IskraException(f"HTTP response larger than max_response_bytes ({limit} bytes)", status_code=0)
+
+
+def _check_declared_size(resp: httpx.Response, limit: int) -> None:
+    """Refuses a body announced as too large before reading any of it."""
+    length = resp.headers.get("content-length", "")
+    if length.isdigit() and int(length) > limit:
+        raise _too_large(limit)
+
+
+def _check_size(size: int, limit: int) -> None:
+    # Counted after decoding, so a small compressed body cannot inflate past it.
+    if size > limit:
+        raise _too_large(limit)
+
+
+def _buffered(resp: httpx.Response, body: bytes) -> httpx.Response:
+    """A response holding the body read from `resp`. The body is already
+    decoded, so its Content-Encoding (and the encoded length) are dropped."""
+    headers = [
+        (name, value)
+        for name, value in resp.headers.multi_items()
+        if name.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+    ]
+    return httpx.Response(resp.status_code, headers=headers, content=body, request=resp.request)
+
+
+_T = TypeVar("_T")
+
+
+def _within(timeout: Optional[float], work: Callable[[threading.Event], _T]) -> _T:
+    """Runs `work` and gives up after `timeout` seconds.
+
+    httpx's timeouts apply to each network operation, so a server sending a
+    byte every few seconds (of the headers or of the body) kept a call open
+    indefinitely: `timeout=2.0` took 9 s against one. The request runs on a
+    helper thread that the caller stops waiting for at the deadline; `work`
+    gets an event that is set then, and httpx's own timeouts bound how long
+    the thread can outlive the call.
+    """
+    if timeout is None:
+        return work(threading.Event())
+    outcome: Dict[str, Any] = {}
+    finished = threading.Event()
+    cancelled = threading.Event()
+
+    def run() -> None:
+        try:
+            outcome["value"] = work(cancelled)
+        except BaseException as e:  # re-raised in the caller's thread
+            outcome["error"] = e
+        finally:
+            finished.set()
+
+    # In a copy of the caller's context, so context variables (tracing, for
+    # instance) still reach the request.
+    context = contextvars.copy_context()
+    threading.Thread(target=context.run, args=(run,), name="iskra-request", daemon=True).start()
+    if not finished.wait(timeout):
+        cancelled.set()
+        raise _timed_out(timeout)
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 def _clean(params: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:

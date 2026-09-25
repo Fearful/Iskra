@@ -150,6 +150,19 @@ router.on('subscribe:me', async (ctx) => {
 socketDriver.broadcastTo(connectionId, 'inbox:new', { unread: 3 });
 ```
 
+## Defaults
+
+Out of the box the driver is open: it is meant to be locked down with these options before it faces users.
+
+| What | Default | Option to restrict it |
+| --- | --- | --- |
+| Who can connect | any origin, no authentication (a warning is logged at start) | `allowedOrigins`, `authenticate` |
+| Which rooms a client can join | any | `canJoin` |
+| Which topics a client can publish to | any, `global` (every socket) included | `canPublish` |
+| Which unhandled events reach the app bus | all, as `socket:<event>` | `allowedEvents` |
+
+Frame size (`maxPayloadLength`) and message rate (`rateLimit`) are bounded by default; see [DoS Protection](#dos-protection).
+
 ## Handshake: origin and authentication
 
 Without configuration the driver accepts connections from any origin without authentication (and logs a warning at start). A browser sends the user's cookies with the WebSocket handshake, so any site could open a connection on their behalf (cross-site WebSocket hijacking).
@@ -161,13 +174,58 @@ const driver = new SocketDriver({
     // Handshakes with any other Origin header get 403; no Origin (non-browser clients) is accepted.
     allowedOrigins: ['https://app.example.com'],
     // The return value becomes ctx.socket.data.auth; null/undefined/false (or a throw) => 401.
-    authenticate: async (req) => verifyToken(new URL(req.url).searchParams.get('token')),
+    authenticate: (req) => redeemTicket(new URL(req.url).searchParams.get('ticket')),
 });
 ```
 
+### Passing the credential
+
+A browser cannot set headers on a WebSocket, so the credential travels in the URL, in a subprotocol or in a cookie. The URL of the handshake ends up in the access logs of every proxy and load balancer on the way, and in the browser's history: do not put a long-lived token there (a session token, a JWT, an API key). In order of preference:
+
+- **A short-lived, single-use ticket.** An authenticated HTTP route issues a random ticket valid for a few seconds, the client connects with it, and `authenticate` redeems it once, so a URL that was logged is worthless:
+
+```typescript
+// One instance; with several, keep tickets in a shared store with an expiry
+// and read-and-delete them atomically (Redis SET … EX and GETDEL).
+const tickets = new Map<string, { userId: string; expires: number }>();
+
+// HTTP side, behind your auth: a ticket valid for 30 s.
+app.post('/api/ws-ticket', requireAuth(kernel), (c) => {
+    const ticket = crypto.randomUUID();
+    tickets.set(ticket, { userId: c.get('user').id, expires: Date.now() + 30_000 });
+    return c.json({ ticket });
+});
+
+// Socket side: each ticket works once.
+function redeemTicket(ticket: string | null) {
+    const entry = ticket ? tickets.get(ticket) : undefined;
+    if (ticket) tickets.delete(ticket);
+    return entry && entry.expires > Date.now() ? { userId: entry.userId } : null;
+}
+
+// Browser
+const { ticket } = await (await fetch('/api/ws-ticket', { method: 'POST' })).json();
+const ws = new WebSocket(`wss://app.example.com/ws?ticket=${ticket}`);
+```
+
+- **The `Sec-WebSocket-Protocol` header**, which the browser lets you set: `new WebSocket(url, ['bearer', token])`. Bun answers with the first protocol (`bearer`), and `authenticate` reads the token from `req.headers.get('sec-websocket-protocol')` (a subprotocol cannot contain `/`, `=`, `,` or spaces: use a base64url or hex token). Proxies seldom log this header, but the token is still long-lived: a ticket is better.
+- **The session cookie**, which the browser sends by itself: then set `allowedOrigins`, since that cookie is exactly what lets another site connect as the user.
+
+An app that authenticates in the first message instead (an `auth` event carrying a token) must close the connections that don't: one that never sends anything stays open as long as its client answers pings. Give each connection a deadline with `driver.close(connectionId, code?, reason?)`, which returns `false` when the connection is already gone:
+
+```typescript
+app.on('socket:connected', ({ payload: { connectionId } }) => {
+    setTimeout(() => {
+        if (!sessions.has(connectionId)) driver.close(connectionId, 1008, 'Authentication timeout');
+    }, 10_000);
+});
+```
+
+The [`chat-app`](https://github.com/fearful/iskra/tree/main/templates/chat-app) template does this (`handleConnect`).
+
 ## Authorization
 
-The driver accepts optional `canJoin` and `canPublish` hooks that gate room joins and publishes per connection. Both default to allow-all when omitted.
+The driver accepts optional `canJoin` and `canPublish` hooks that gate room joins and publishes per connection. Both default to allow-all when omitted: any client can join any room (another user's per-connection room included) and publish to any topic, `global` included, until you set them.
 
 ```typescript
 import { SocketDriver } from '@iskra-bun/socket-kit';

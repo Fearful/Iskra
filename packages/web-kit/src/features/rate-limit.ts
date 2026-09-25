@@ -2,62 +2,26 @@ import type { Feature, RateLimitConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { getClientIp, type TrustProxy } from '../client-ip';
+import { clientIpKey, getClientIp, type ClientIpHeader, type TrustProxy } from '../client-ip';
+import { DEFAULT_MAX_KEYS, HitCounter } from '../hit-counter';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { CacheAdapter } from './cache';
 
 interface RateLimitStore {
-    get(key: string): Promise<number | null>;
-    set(key: string, value: number, ttl: number): Promise<void>;
+    /** Counts a hit for `key` and returns the count in its current window of `ttl` ms. */
     increment(key: string, ttl: number): Promise<number>;
 }
 
 class MemoryStore implements RateLimitStore {
-    private store = new Map<string, { count: number; expiresAt: number }>();
-
-    async get(key: string): Promise<number | null> {
-        const entry = this.store.get(key);
-        if (!entry) return null;
-        if (Date.now() > entry.expiresAt) {
-            this.store.delete(key);
-            return null;
-        }
-        return entry.count;
-    }
-
-    async set(key: string, value: number, ttl: number): Promise<void> {
-        this.store.set(key, { count: value, expiresAt: Date.now() + ttl });
-    }
+    constructor(private counter: HitCounter) {}
 
     async increment(key: string, ttl: number): Promise<number> {
-        const entry = this.store.get(key);
-        if (!entry || Date.now() > entry.expiresAt) {
-            this.store.set(key, { count: 1, expiresAt: Date.now() + ttl });
-            return 1;
-        }
-        entry.count++;
-        return entry.count;
-    }
-
-    cleanup(): void {
-        const now = Date.now();
-        for (const [key, entry] of this.store.entries()) {
-            if (now > entry.expiresAt) this.store.delete(key);
-        }
+        return this.counter.hit(key, ttl);
     }
 }
 
 class CacheStoreWrapper implements RateLimitStore {
     constructor(private cache: CacheAdapter) {}
-
-    async get(key: string): Promise<number | null> {
-        const value = await this.cache.get(key);
-        return value === null || value === undefined ? null : Number(value);
-    }
-
-    async set(key: string, value: number, ttl: number): Promise<void> {
-        await this.cache.set(key, value, ttl / 1000); // Cache feature expects seconds typically if using Redis, but check implementation
-    }
 
     async increment(key: string, ttl: number): Promise<number> {
         // Atomic increment that also guarantees an expiry (Redis: one Lua call).
@@ -89,8 +53,9 @@ export class RateLimitFeature implements Feature {
         handler?: RateLimitConfig['handler'];
     };
     private store?: RateLimitStore;
-    private cleanupInterval?: ReturnType<typeof setInterval>;
+    private counter?: HitCounter;
     private trustProxy?: TrustProxy;
+    private clientIpHeader?: ClientIpHeader;
     private warnedUnknownClient = false;
 
     /** Store key prefix; a named limiter gets its own, so two never share counters. */
@@ -107,15 +72,23 @@ export class RateLimitFeature implements Feature {
             max: config.max || 100,
             standardHeaders: config.standardHeaders ?? true,
             store: config.store || 'memory',
+            maxKeys: config.maxKeys || DEFAULT_MAX_KEYS,
             keyGenerator: config.keyGenerator,
             skip: config.skip,
             handler: config.handler,
         };
     }
 
+    /** The memory store, bounded to `maxKeys` clients. */
+    private memoryStore(): RateLimitStore {
+        this.counter ??= new HitCounter(this.config.maxKeys);
+        return new MemoryStore(this.counter);
+    }
+
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         this.trustProxy = kernel.getConfig().trustProxy;
+        this.clientIpHeader = kernel.getConfig().clientIpHeader;
 
         if (this.config.store === 'cache') {
             const cacheFeature = kernel.getFeature('cache');
@@ -123,16 +96,12 @@ export class RateLimitFeature implements Feature {
                 this.store = new CacheStoreWrapper(cacheFeature.client);
             } else {
                 this.log.warn('Cache feature not available for rate-limit, falling back to memory store');
-                const mem = new MemoryStore();
-                this.store = mem;
-                this.cleanupInterval = setInterval(() => mem.cleanup(), 300000);
+                this.store = this.memoryStore();
             }
         }
 
         if (this.config.store === 'memory') {
-            const mem = new MemoryStore();
-            this.store = mem;
-            this.cleanupInterval = setInterval(() => mem.cleanup(), 300000);
+            this.store = this.memoryStore();
         }
 
         const app = kernel.getApp();
@@ -154,10 +123,7 @@ export class RateLimitFeature implements Feature {
             if (cache) {
                 store = new CacheStoreWrapper(cache);
             } else {
-                if (!this.store) {
-                    this.store = new MemoryStore(); // Fallback
-                    this.cleanupInterval = setInterval(() => (this.store as MemoryStore).cleanup(), 300000);
-                }
+                this.store ??= this.memoryStore(); // Fallback
                 store = this.store;
             }
         }
@@ -186,8 +152,8 @@ export class RateLimitFeature implements Feature {
     }
 
     private defaultKeyGenerator(c: Context): string {
-        const ip = getClientIp(c, this.trustProxy);
-        if (ip) return ip;
+        const ip = getClientIp(c, this.trustProxy, this.clientIpHeader);
+        if (ip) return clientIpKey(ip);
         if (!this.warnedUnknownClient) {
             this.warnedUnknownClient = true;
             this.log.warn(
@@ -199,6 +165,6 @@ export class RateLimitFeature implements Feature {
     }
 
     async shutdown() {
-        if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+        this.counter?.dispose();
     }
 }

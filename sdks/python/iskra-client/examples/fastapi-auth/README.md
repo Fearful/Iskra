@@ -59,9 +59,15 @@ export SESSION_COOKIE_SECURE=0                 # Solo en desarrollo sobre http:/
 ```
 
 Todas las peticiones de auth llegan a Iskra desde la IP de esta app, asi que el
-limite por IP del `AuthFeature` (20 cada 15 min) las frenaria a todas juntas:
-configura `rateLimit: { max, windowMs }` en el servicio, o `rateLimit: false` y
-limita en esta app.
+limite por IP del `AuthFeature` (20 intentos cada 15 min) las frena a todas juntas:
+subilo con `rateLimit: { max, windowMs }` en el servicio. Este ejemplo **no limita**
+intentos por usuario: antes de exponerlo agregale un limite por IP del cliente o por
+email (por ejemplo con `slowapi`), y no desactives el del servicio (`rateLimit: false`) sin eso, porque los
+intentos de adivinar passwords quedarian sin freno.
+
+Los errores de Iskra (su mensaje, o el host y puerto de una conexion que falla) y el
+detalle de `/auth/health` quedan en el log: los clientes reciben solo un error generico
+y `{"status": "ok" | "error"}`.
 
 ## Ejecutar
 

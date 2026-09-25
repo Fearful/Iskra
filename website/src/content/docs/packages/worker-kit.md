@@ -53,7 +53,7 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 | `consume` | `boolean` | `true` | `false` = producer only: no Worker is created and `enqueue` accepts jobs without a local handler (another process runs them) |
 | `concurrency` | `number` | `1` | Jobs processed in parallel; `0` = producer-only, like `consume: false` |
 | `queueName` | `string` | `'iskra-jobs'` | Name of the queue in Redis |
-| `defaultJobOptions` | `JobOptions` | `undefined` | Default options for all jobs |
+| `defaultJobOptions` | `JobOptions` | bounded retention (see [Retention](#retention)) | Default options for all jobs |
 | `deadLetter` | `boolean` | `false` | Enable dead-letter routing (see [Dead-Letter Handling](#dead-letter-handling)) |
 
 ### JobOptions
@@ -64,9 +64,15 @@ await worker.enqueue('image.resize', { url: '/uploads/foto.jpg', width: 800 });
 | `delay` | `number` | Delay in ms before processing |
 | `priority` | `number` | Priority (lower = higher priority) |
 | `backoff` | `{ type, delay }` | Backoff between retries (`fixed` or `exponential`) |
-| `removeOnComplete` | `boolean \| number` | Remove job on completion (or keep the last N) |
-| `removeOnFail` | `boolean \| number` | Remove job on failure (or keep the last N) |
+| `removeOnComplete` | `boolean \| number \| { age?, count? }` | Completed jobs kept in Redis: `true` removes them, a number keeps the last N, `{ age, count }` by age (seconds) and count, `false` keeps them all. Default `{ count: 1000 }` |
+| `removeOnFail` | `boolean \| number \| { age?, count? }` | Failed jobs (no retries left) kept in Redis, likewise. Default `{ age: 604800, count: 5000 }` (7 days) |
 | `repeat` | `RepeatSpec` | Schedule the job as repeating (cron or interval) |
+
+### Retention
+
+BullMQ keeps every completed and failed job in Redis, with its `data`, unless told otherwise. The manager keeps the last 1000 completed jobs, and the failed ones of the last 7 days (up to 5000); set `removeOnComplete` / `removeOnFail` in `defaultJobOptions`, or on a job, to change that (`false` keeps them all).
+
+> **Breaking (0.x):** finished jobs used to be kept forever. A job that finished and was removed since cannot be read back: its `result()` rejects (`Missing key for job`), so await it soon after `enqueue()`, or keep more jobs.
 
 ## Enqueue with Options
 
@@ -256,11 +262,15 @@ const worker = new WorkerManager({
 });
 
 // Listen on the App event bus
-app.events.on('worker:dead-letter', (payload) => {
-    console.error('Dead-letter job:', payload);
-    // payload.jobId, payload.name, payload.data, payload.failedReason, payload.attemptsMade
+app.on('worker:dead-letter', (ctx) => {
+    const { jobId, name, attemptsMade } = ctx.payload;
+    // Ids, not ctx.payload.data: that is the job's input (emails, tokens…),
+    // and console.error would print it past the logger's redaction.
+    ctx.logger.error({ jobId, name, attemptsMade }, 'Job dead-lettered');
 });
 ```
+
+Log identifiers, and keep `data` (and `failedReason`, which can quote it) to re-enqueue or inspect the job.
 
 `DeadLetterPayload` shape:
 

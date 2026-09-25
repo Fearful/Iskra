@@ -1,6 +1,30 @@
 import { type App } from '@iskra-bun/core';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { MigrationError } from './errors';
 import { SENSITIVE_URL_PARAM } from './secrets';
+
+/**
+ * The drizzle-kit command to run `args` with, from the project's own install:
+ * `node_modules/.bin` in `cwd` or a parent (workspaces hoist it). drizzle-kit
+ * is a devDependency, and `bunx drizzle-kit` downloaded its latest release
+ * from npm where it was missing (a production install) and ran it with
+ * DATABASE_URL in its environment. `--no-install` keeps bunx from doing so.
+ */
+export function drizzleKitCommand(args: string[], cwd: string = process.cwd()): string[] {
+    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+        const bin = path.join(dir, 'node_modules', '.bin', 'drizzle-kit');
+        if (['', '.exe', '.cmd'].some((ext) => existsSync(bin + ext))) {
+            return ['bunx', '--no-install', 'drizzle-kit', ...args];
+        }
+        if (path.dirname(dir) === dir) break;
+    }
+    throw new MigrationError(
+        'drizzle-kit is not installed in this project (it is never downloaded at run time): ' +
+            'add it with `bun add -d drizzle-kit`',
+        { context: { cwd } },
+    );
+}
 
 /**
  * Redacta credenciales `//user:pass@host` y parámetros secretos (`authToken`,
@@ -36,7 +60,8 @@ export interface MigrationConfig {
 
 /**
  * Helper para ejecutar migraciones de Drizzle Kit.
- * Usa `bunx drizzle-kit` como subproceso para generar y aplicar migraciones.
+ * Usa el drizzle-kit instalado en el proyecto (`bunx --no-install drizzle-kit`)
+ * como subproceso para generar y aplicar migraciones; nunca lo descarga.
  */
 export class MigrationHelper {
     private config: MigrationConfig;
@@ -53,7 +78,7 @@ export class MigrationHelper {
      * desde la config (antes se ignoraban silenciosamente).
      */
     async generate(name?: string): Promise<void> {
-        const args = ['drizzle-kit', 'generate'];
+        const args = ['generate'];
         if (this.config.schemaPath) args.push('--schema', this.config.schemaPath);
         if (this.config.migrationsDir) args.push('--out', this.config.migrationsDir);
         if (name) args.push('--name', name);
@@ -67,7 +92,7 @@ export class MigrationHelper {
      * comando, por eso únicamente reenviamos configPath cuando está presente.
      */
     async migrate(): Promise<void> {
-        const args = ['drizzle-kit', 'migrate'];
+        const args = ['migrate'];
         if (this.config.configPath) args.push('--config', this.config.configPath);
         await this.exec(args, 'migrate');
     }
@@ -77,7 +102,7 @@ export class MigrationHelper {
      * Útil para desarrollo rápido. `push` acepta --schema pero no --out.
      */
     async push(): Promise<void> {
-        const args = ['drizzle-kit', 'push'];
+        const args = ['push'];
         if (this.config.schemaPath) args.push('--schema', this.config.schemaPath);
         if (this.config.configPath) args.push('--config', this.config.configPath);
         await this.exec(args, 'push');
@@ -89,7 +114,7 @@ export class MigrationHelper {
      * `drop` acepta --out (dónde viven las migraciones) pero no --schema.
      */
     async drop(): Promise<void> {
-        const args = ['drizzle-kit', 'drop'];
+        const args = ['drop'];
         if (this.config.migrationsDir) args.push('--out', this.config.migrationsDir);
         if (this.config.configPath) args.push('--config', this.config.configPath);
         await this.exec(args, 'drop');
@@ -100,12 +125,15 @@ export class MigrationHelper {
             ...(process.env as Record<string, string>),
             DATABASE_URL: this.config.dbUrl,
         };
+        const cwd = process.cwd();
+        // Before anything runs with DATABASE_URL: never a downloaded drizzle-kit.
+        const command = drizzleKitCommand(args, cwd);
 
         this.app?.logger.info(`Running migration: ${operation}`);
 
         try {
-            const proc = Bun.spawn(['bunx', ...args], {
-                cwd: process.cwd(),
+            const proc = Bun.spawn(command, {
+                cwd,
                 env,
                 stdout: 'pipe',
                 stderr: 'pipe',

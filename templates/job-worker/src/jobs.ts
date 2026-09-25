@@ -49,12 +49,15 @@ function withRetryAndDlq(app: App, dlq: WorkerManager, name: string, handler: Jo
 /**
  * Registra los handlers de ejemplo en el worker principal.
  * Reemplaza estos por tu logica real.
+ *
+ * Los logs llevan el id del job, no `job.data`: los payloads suelen traer datos
+ * personales o secretos (emails, tokens de reseteo) que no deben quedar en los logs.
  */
 export function registerJobs(app: App, worker: WorkerManager, dlq: WorkerManager): void {
     worker.register(
         'email.send',
         withRetryAndDlq(app, dlq, 'email.send', async (job) => {
-            app.logger.info({ data: job.data }, 'Sending email');
+            app.logger.info({ jobId: job.id }, 'Sending email');
             await new Promise((resolve) => setTimeout(resolve, 300));
         }),
     );
@@ -62,7 +65,7 @@ export function registerJobs(app: App, worker: WorkerManager, dlq: WorkerManager
     worker.register(
         'image.process',
         withRetryAndDlq(app, dlq, 'image.process', async (job) => {
-            app.logger.info({ data: job.data }, 'Processing image');
+            app.logger.info({ jobId: job.id }, 'Processing image');
             await new Promise((resolve) => setTimeout(resolve, 600));
         }),
     );
@@ -71,7 +74,7 @@ export function registerJobs(app: App, worker: WorkerManager, dlq: WorkerManager
     worker.register(
         'flaky.task',
         withRetryAndDlq(app, dlq, 'flaky.task', async (job) => {
-            app.logger.info({ data: job.data }, 'Running flaky task');
+            app.logger.info({ jobId: job.id }, 'Running flaky task');
             throw new Error('flaky.task siempre falla (demo de DLQ)');
         }),
     );

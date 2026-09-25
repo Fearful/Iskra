@@ -76,7 +76,7 @@ Aplica los headers de seguridad por defecto del Kernel (`X-Frame-Options: SAMEOR
 
 El `Kernel` es el micro-kernel que orquesta las features web:
 
-- Resuelve dependencias entre features (sort topologico)
+- Resuelve dependencias entre features (sort topologico); las `optionalDependencies` de una feature se inicializan antes que ella solo si estan registradas (asi `CsrfFeature` corre despues de `SessionFeature`, sin importar en que orden las registres)
 - Detecta dependencias circulares
 - Inicializa todas las features (que registran su middleware) antes de registrar las rutas de cualquiera, asi el middleware de cada feature (CSRF, rate limit, auth, CORS…) se aplica a todas las rutas, sin importar el orden en que se registraron las features
 - Rechaza lo que se saltearia ese middleware: rutas agregadas a `getApp()` antes de `initialize()` (agregalas despues de `await kernel.initialize()`, o pasalas como `router` de WebPlugin), rutas que una feature agrega en `initialize()` en vez de `routes()`, y una segunda feature con un nombre ya registrado (antes reemplazaba a la primera en silencio; `RateLimitFeature` acepta un `name` para un segundo limitador)
@@ -92,6 +92,8 @@ Defaults del servidor, configurables en `new Kernel({ ... })`:
 | `idleTimeout` | 10 s (Bun) | Segundos que una conexion puede quedar inactiva |
 | `shutdownGraceMs` | 5000 | Cuanto espera `shutdown()` a los requests en curso antes de cerrar las conexiones |
 | `logger` | la consola | Donde loguean el Kernel y sus features (ver abajo); `false` para nada |
+| `trustProxy` | `false` | Cantidad de reverse proxies delante de la app (`true` = 1); solo entonces se lee `clientIpHeader` (ver [Rate limiting e IP del cliente](#rate-limiting-e-ip-del-cliente)) |
+| `clientIpHeader` | `"x-forwarded-for"` | El header donde esos proxies ponen la direccion del cliente: `"x-forwarded-for"` o `"x-real-ip"` |
 
 El Kernel y sus features reportan el arranque, los fallbacks y los errores que manejan a traves de un logger: un objeto con `debug`, `info`, `warn` y `error(message, details?)`. `WebPlugin` le pasa el logger del App salvo que definas `logger`, asi estos mensajes comparten el formato y el nivel de la app (la linea de arranque de cada feature es `debug`). Una feature propia lo obtiene con `kernel.getLogger()` en `initialize()`. `fromStructuredLogger(pinoLogger)` adapta un logger estilo pino.
 
@@ -164,20 +166,65 @@ health.addReadinessCheck('db', async () => {
 });
 ```
 
-Si algun check registrado retorna `false`, lanza una excepcion o tarda mas que `checkTimeoutMs` (por defecto 2000), `/health/ready` responde con **503** e incluye los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
+Si algun check registrado retorna `false`, lanza una excepcion o tarda mas que `checkTimeoutMs` (por defecto 2000), `/health/ready` responde con **503** (`{ status: "not ready" }`) y registra como warning los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
 
-### Detalles del endpoint /health
+### Detalles de los endpoints
 
-Por defecto `includeDetails` es **`false`** (cambio respecto a versiones previas). El endpoint `/health` sin autenticar ya no expone la lista interna de features ni strings de error crudos: los errores se registran en el servidor y la respuesta es generica (`{ status: "ok", timestamp }`).
+Por defecto `includeDetails` es **`false`**, para los tres endpoints:
+
+- `/health` responde `{ status, timestamp }`: sin lista de features, resultados por check ni strings de error crudos (los errores se registran en el servidor).
+- `/health/ready` responde `{ status }`: los nombres de los checks (`checks`, `failed`) quedan afuera, porque pueden describir la infraestructura (`postgres-primary-10.0.3.12`). El codigo de estado es lo que usa un orquestador.
+- `/health/live` responde `{ status, timestamp }`, sin `uptime`.
+
+> **Breaking (0.x):** `/health/ready` y `/health/live` devolvian los nombres de los checks y el uptime sin importar `includeDetails`.
 
 Los checks (ping real a la base de `DbFeature`, cache y `checks` propios) corren siempre, cada uno con un timeout (`checkTimeoutMs`, 2 s por defecto). Si alguno falla, `/health` responde **503** con `{ status: "error" }`, para que el balanceador u orquestador pueda actuar.
 
-Para incluir el detalle de features y checks, activa `includeDetails: true`. Como esto revela informacion interna, **gatea el endpoint detras de autenticacion**:
+Para incluir las features, los resultados y nombres de los checks y el uptime, activa `includeDetails: true`. Como esto revela informacion interna, **gatea los endpoints detras de autenticacion**:
 
 ```typescript
 const health = new HealthCheckFeature({ includeDetails: true });
 // Exponer solo en una ruta protegida — no en el /health publico
 ```
+
+## Documentacion OpenAPI
+
+`OpenAPIFeature` sirve el spec de las rutas agregadas con `addRoute()` en `/openapi.json`, y una pagina de referencia de la API ([Scalar](https://github.com/scalar/scalar)) en `/docs`:
+
+```typescript
+new OpenAPIFeature({
+    title: 'Orders API',
+    version: '1.0.0',
+    servers: [{ url: 'https://api.example.com' }],
+    // Ambas rutas: false responde 403, una Response se envia tal cual.
+    authorize: (c) => c.get('user')?.role === 'admin',
+    // docs: false,   // no sirve ninguna (en produccion, por ejemplo)
+    // scalar: false, // sirve /openapi.json sin la pagina
+});
+```
+
+- La pagina carga una version fija de `@scalar/api-reference` desde jsDelivr, con su hash de Subresource Integrity y `crossorigin="anonymous"`: el navegador rechaza el script si el CDN sirve otra cosa (cargaba `@latest`, asi que lo ultimo que publicara Scalar corria en el origen de la app). Para actualizarlo, o servirlo desde tu propio origen, usa `scalar: { src, integrity }`, donde `integrity` es el hash `sha384-…` de ese archivo exacto.
+- La pagina envia su propio `Content-Security-Policy`: scripts solo del origen de ese script, requests solo al origen de la app y a los `servers` del spec ("Try it"), nada mas se carga. Las fuentes web de Scalar y su agente de IA, que envia el spec a los servidores de Scalar, estan apagados. El titulo se escapa como HTML.
+- `/openapi.json` y `/docs` se registran en `routes()`, asi que un middleware agregado a la app despues de `initialize()` (un `basicAuth()`, por ejemplo) no corre para ellas: usa `authorize`, que corre para ambas. Devuelve una Response para responder con ella, como un pedido de Basic auth:
+
+```typescript
+authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
+```
+
+## Tracing
+
+`OtelTracingFeature` crea un span por request con [`@hono/otel`](https://github.com/honojs/middleware/tree/main/packages/otel), a traves de la configuracion de OpenTelemetry de la app (el tracer provider global, o el `tracer` o `tracerProvider` que le pases):
+
+```typescript
+new OtelTracingFeature({
+    serviceName: 'orders-api',
+    ignoreIncomingTraceContext: true, // un servicio expuesto a internet
+});
+```
+
+- `url.full` se exporta con el valor de los parametros de query con pinta de secreto reemplazado por `REDACTED` (`SECRET_QUERY_PARAMS` de `@iskra-bun/core`: `token`, `access_token`, `api_key`, `code`, `state`…), y lo mismo el token del link `/reset-password/<token>` de better-auth: los links de verificacion de email y de reseteo de contrasena, y las API keys en el query string, llegaban al collector. `redactedQueryParams` define la lista (`[]` conserva todos los valores). Otros tokens en paths se exportan tal cual.
+- Por defecto un request continua la traza que nombra su header `traceparent`. `ignoreIncomingTraceContext: true` empieza una traza nueva por request y descarta el `baggage` entrante: en un endpoint publico un cliente podria forzar que sus requests se muestreen y colgarlas de una traza que elija. Deja el default detras de un gateway que define el contexto de traza el mismo.
+- Los headers listados en `captureRequestHeaders` se exportan tal cual: no incluyas `authorization` ni `cookie`.
 
 ## Errores HTTP
 
@@ -198,7 +245,22 @@ throw new HttpError(429, 'Demasiados requests', {
 });
 ```
 
-El `ErrorHandlerFeature` captura estos errores automaticamente y los devuelve como JSON.
+El `ErrorHandlerFeature` captura estos errores automaticamente y los devuelve como JSON. Loguea los errores del cliente (4xx) con nivel `debug` y los del servidor (5xx) con `error`: cualquier cliente puede provocar tantos 4xx como quiera, y antes llenaban el log de errores.
+
+## Rate limiting e IP del cliente
+
+`RateLimitFeature` y el limitador de las rutas de auth cuentan requests por IP del cliente. Es la direccion del socket, salvo que le indiques al Kernel los proxies que hay delante de la app:
+
+```typescript
+new Kernel({
+    trustProxy: 1,                     // un proxy: nginx, un load balancer
+    clientIpHeader: 'x-forwarded-for', // el default; 'x-real-ip' si el proxy completa ese
+});
+```
+
+- Solo se lee `clientIpHeader` (**breaking**). Antes `X-Real-IP` se usaba cuando faltaba `X-Forwarded-For`, y eso lo decide el cliente: detras de un proxy que solo completa `X-Real-IP` y deja pasar `X-Forwarded-For`, un `X-Forwarded-For` inventado era un bucket nuevo en cada request. Si tu proxy completa `X-Real-IP` (nginx: `proxy_set_header X-Real-IP $remote_addr`), configura `clientIpHeader: 'x-real-ip'`; con `X-Forwarded-For`, cada proxy tiene que agregarse al final (nginx: `$proxy_add_x_forwarded_for`).
+- Los clientes IPv6 se cuentan por su prefijo /64, porque un host suele tener un /64 entero para ir rotando, y `::ffff:192.0.2.1` cuenta como `192.0.2.1`. `clientIpKey(ip)` devuelve esa clave para un limitador propio.
+- El store en memoria sigue como maximo `maxKeys` clientes (100 000 por defecto; por encima descarta los mas viejos) y barre los vencidos cada minuto; el limitador de auth acepta `rateLimit: { maxKeys }` y el adapter en memoria de `CacheFeature` `maxEntries`, con el mismo default. Sus timers no mantienen vivo el proceso. Ese adapter guarda y devuelve copias (`structuredClone`), como vuelven los valores de Redis: cambiar un valor leido de la cache ya no cambia el guardado.
 
 ## Configuracion de Seguridad
 
@@ -221,13 +283,38 @@ new Kernel({
 });
 ```
 
+Solo `false` desactiva un header por defecto (`xFrameOptions: false`). Una opcion `undefined`, `null` o vacia mantiene el default: antes `xFrameOptions: process.env.X_FRAME_OPTIONS` con la variable sin definir quitaba el header.
+
 **Notas de hardening de seguridad:**
 
-- **CSRF (`CsrfFeature`):** double-submit cookie firmada con HMAC-SHA256 bajo el `secret` configurado y comparada en tiempo constante. Un token sin firma o ajeno se rechaza antes de cualquier comparacion. El kill-switch `disableCSRFCheck` se **ignora en produccion** (`NODE_ENV === 'production'`), por lo que la proteccion CSRF no puede desactivarse silenciosamente en un entorno desplegado.
+- **CSRF (`CsrfFeature`):** double-submit cookie firmada con HMAC-SHA256 bajo el `secret` configurado y comparada en tiempo constante, mas un chequeo de `Origin`; ver la seccion [CSRF](#csrf). El kill-switch `disableCSRFCheck` de `AuthFeature` se **ignora en produccion** (`NODE_ENV === 'production'`), por lo que la proteccion CSRF de better-auth no puede desactivarse silenciosamente en un entorno desplegado.
 - **API keys (`ApiKeyFeature`):** las keys se comparan con las `staticKeys` configuradas en cada request, asi que quitar, vencer o recortar una key tiene efecto inmediato; no se cachea nada (`enableCache` y `cacheTtl` se ignoran: la entrada cacheada guardaba la key en claro y seguia valiendo despues de revocarla). Los `id` de las API keys son aleatorios (UUID) y no filtran ningun prefijo del secreto. La comparacion de keys es en tiempo constante. Un `Authorization: Bearer` que no es una API key valida no se rechaza globalmente (puede ser un JWT o token de sesion de otro esquema); las rutas que exigen API key usan `requireApiKey()` / `requireScope()`. Una key invalida en el header `X-API-Key` si devuelve 401.
+- **Scopes de las API keys:** un comodin es un segmento entero, `*` solo o un `:*` final (`users:*` habilita `users:read` y `users:x:y`, no `usersX`); cualquier otro `*` es literal. **Breaking:** un `*` final era un prefijo de texto, asi que `user*` habilitaba `users:read` y `user-admin:delete`.
+- **CORS (`CorsFeature`):** `credentials: true` necesita que `origin` nombre los origenes permitidos (una lista o una funcion); con `origin` sin definir o `'*'`, `initialize()` tira un error (**breaking**). Antes mandaba `Access-Control-Allow-Origin: *`, que los navegadores rechazan con credenciales, y la salida habitual era reflejar cualquier origen.
+- **Permisos (`PermissionsFeature`):** los permisos y roles de cada usuario se cachean (con `CacheFeature`) durante `cacheTTL` segundos, 60 por defecto (antes una hora): un rol que revocas sigue valiendo ese tiempo. Llama a `await kernel.getFeature('permissions')?.invalidate(userId)` despues de cambiar los roles o permisos de un usuario para descartar la copia cacheada; baja `cacheTTL`, o usa `cachePermissions: false`, para cambiar consultas a la base por una ventana mas corta.
 - **CSRF en rutas puntuales:** `requireCsrf()` valida el token en la ruta aunque su metodo este en `ignoreMethods` (p. ej. un GET que modifica estado) y falla cerrado si `CsrfFeature` no esta registrada. En formularios `multipart/form-data` envia el token en el header `X-CSRF-Token`.
-- **Uploads (`UploadFeature`):** con `exposeRoutes: true` es obligatorio `authorize(c, action)` (`action`: `upload` | `list` | `download` | `delete`); usa `authorize: () => true` solo si las rutas deben ser publicas. El body se corta al superar `maxFileSize` (413) sin cargarlo entero en memoria, el nombre del archivo se sanea y los errores internos no se devuelven al cliente. `maxFileSize` mas 64 KiB de overhead multipart tiene que entrar en el `maxRequestBodySize` del Kernel (16 MiB por defecto): Bun rechaza bodies mas grandes antes de llegar a la ruta, asi que `initialize()` falla en vez de que el limite nunca se alcance sin aviso.
-- **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar. Ver la seccion de Auth.
+- **Uploads (`UploadFeature`):** con `exposeRoutes: true` es obligatorio `authorize(c, action, target?)` (`action`: `upload` | `list` | `download` | `delete`); usa `authorize: () => true` solo si las rutas deben ser publicas. El body se corta al superar `maxFileSize` (413) sin cargarlo entero en memoria, el nombre del archivo se sanea y los errores internos no se devuelven al cliente. `maxFileSize` mas 64 KiB de overhead multipart tiene que entrar en el `maxRequestBodySize` del Kernel (16 MiB por defecto): Bun rechaza bodies mas grandes antes de llegar a la ruta, asi que `initialize()` falla en vez de que el limite nunca se alcance sin aviso.
+    - `target` es lo que toca la accion: `{ key, subfolder, filename }`, mas `size` y `type` en `upload` (el `{ key, subfolder }` de la carpeta en `list`); `subfolder` no tiene segmentos vacios ni `.`/`..`. `upload` se pregunta dos veces: primero sin target, antes de leer el body, y luego con el, antes de escribir nada. Una comprobacion como `Boolean(c.get('user'))` deja a cualquier usuario con sesion leer y borrar todos los archivos: limita el target al usuario.
+    - Una subida nunca reemplaza un archivo guardado: la ruta responde **409** salvo con `overwrite: true`.
+    - El archivo se guarda con un tipo tomado de su extension (`contentTypeFor` de storage-kit), nunca con el de quien lo sube (Bun deduce `File.type` del nombre: `image/svg+xml`, `text/html`). Las descargas se transmiten en streaming y solo las imagenes rasterizadas se sirven inline: todo lo demas lleva `Content-Disposition: attachment`, y toda descarga `Content-Security-Policy: sandbox`. En S3/MinIO el objeto guarda la misma disposicion.
+    - Sin `allowedExtensions` se acepta cualquier extension salvo el contenido web activo (`.html`, `.htm`, `.shtml`, `.xhtml`, `.xht`, `.mht`, `.mhtml`, `.svg`, `.svgz`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`, `.cjs`), que un navegador ejecuta donde se sirva inline; incluye una en `allowedExtensions` para aceptarla (se sigue guardando como `application/octet-stream` y se descarga). Con el adaptador de almacenamiento `local`, sirve su carpeta con los encabezados que describe [storage-kit](/es/packages/storage-kit/#tipo-de-contenido-y-disposicion).
+
+    ```typescript
+    new UploadFeature({
+        projectName: 'app',
+        exposeRoutes: true,
+        // Cada usuario lee y escribe solo bajo users/<id>/.
+        authorize: (c, _action, target) => {
+            const user = c.get('user');
+            if (!user) return false;
+            if (!target) return true; // upload, antes de leer el body
+            const own = `users/${user.id}`;
+            return target.subfolder === own || target.subfolder?.startsWith(`${own}/`) === true;
+        },
+    });
+    ```
+- **Email (`EmailFeature`):** el adaptador que entrega rechaza un mensaje (la promesa que devuelve se rechaza) cuyo `subject` o `headers` lleven un CR/LF, o cuyas entradas de `to`/`cc`/`bcc`/`replyTo` no sean cada una una sola direccion o un objeto `{ name, address }`: ver [destinatarios en mailer-kit](/es/packages/mailer-kit/#destinatarios). Los destinatarios de tipo objeto tambien se revisan (pasaban como `"[object Object]"`).
+- **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar, igual que un valor de ejemplo en produccion. Ver la seccion de Auth.
 
 ## Auth
 
@@ -243,11 +330,11 @@ new AuthFeature({
 });
 ```
 
-- El `secret` firma las sesiones y **debe tener al menos 32 caracteres**; uno mas corto o vacio lanza un error al inicializar.
+- El `secret` firma las sesiones y **debe tener al menos 32 caracteres**; uno mas corto o vacio lanza un error al inicializar. En produccion tambien lo lanza un valor de ejemplo (que contiene `change-me`, `dev-secret`…): ver [auth-kit](/packages/auth-kit/).
 - En modo `oidc` (o si se pasa `oidcConfig`) el login email/password queda deshabilitado; activalo explicitamente con `enableEmailPassword: true`. `enableSelfRegistration: false` rechaza `/sign-up/email` (las cuentas se crean por otro medio).
-- `baseURL` es el origen publico de la app (por defecto toma `BETTER_AUTH_URL`). Better Auth decide con el el flag `Secure` de las cookies, asi que es **obligatorio en produccion**: sin el se usaba `http://localhost:3000` y las cookies salian sin `Secure`.
-- Los intentos de auth (requests `POST` a `{basePath}/*` salvo sign-out: sign-in, sign-up, reset de password…) tienen rate limiting por IP por defecto (20 / 15 min) para frenar credential stuffing; las lecturas de sesion y los callbacks de OAuth no cuentan. En produccion Better Auth aplica ademas sus propios limites por ruta, mas estrictos. El primero se ajusta con `rateLimit: { max, windowMs }`, o `rateLimit: false` apaga los dos si un backend llama a estas rutas en nombre de muchos usuarios desde una sola IP (por ejemplo, con los SDKs) y limita por su cuenta.
-- La IP del cliente (para estos limitadores, el `ipAddress` de las sesiones y `RateLimitFeature`) es la del socket. Si la app corre detras de un proxy (nginx, load balancer), configura `new Kernel({ trustProxy: 1 })` con la cantidad de proxies para usar `X-Forwarded-For`; sin eso el header se ignora, porque cualquier cliente puede falsificarlo.
+- `baseURL` es el origen publico de la app (por defecto toma `BETTER_AUTH_URL`). Better Auth decide con el el flag `Secure` de las cookies, asi que es **obligatorio en produccion**: sin el se usaba `http://localhost:3000` y las cookies salian sin `Secure`. Por lo mismo, en produccion tiene que ser `https://` (**breaking**); solo `localhost`, `127.0.0.1` y `[::1]` pueden usar http plano (un proxy o docker compose en la misma maquina). Antes se aceptaba un origen `http://`, y las cookies de sesion salian sin `Secure`.
+- Los intentos de auth (requests `POST` a `{basePath}/*` salvo sign-out: sign-in, sign-up, reset de password…) tienen rate limiting por IP por defecto (20 / 15 min, los clientes IPv6 por /64) para frenar credential stuffing; las lecturas de sesion y los callbacks de OAuth no cuentan. En produccion Better Auth aplica ademas sus propios limites por ruta, mas estrictos. El primero se ajusta con `rateLimit: { max, windowMs, maxKeys }`, o `rateLimit: false` apaga los dos si un backend llama a estas rutas en nombre de muchos usuarios desde una sola IP (por ejemplo, con los SDKs) y limita por su cuenta.
+- La IP del cliente (para estos limitadores, el `ipAddress` de las sesiones y `RateLimitFeature`) es la del socket. Si la app corre detras de un proxy (nginx, load balancer), configura `new Kernel({ trustProxy: 1 })` con la cantidad de proxies para usar la direccion reenviada (`X-Forwarded-For`, o `X-Real-IP` con `clientIpHeader: 'x-real-ip'`: ver [Rate limiting e IP del cliente](#rate-limiting-e-ip-del-cliente)); sin eso esos headers se ignoran, porque cualquier cliente puede falsificarlos.
 - Las sesiones se validan contra un cache firmado en cookie sin consultar la base, asi que una sesion revocada con sign-out sigue funcionando hasta que ese cache vence: `cookieCacheMaxAge` (segundos, 300 por defecto) define cuanto.
 - Usa `requireAuth(kernel)` como middleware para proteger rutas que requieren sesion.
 
@@ -264,9 +351,28 @@ new SessionFeature({
 
 - `c.get('session')` es un objeto `SessionData`: sus campos son `unknown` hasta que los declaras (`declare module '@iskra-bun/web-kit' { interface SessionData { userId?: string } }`), y desde ahi quedan tipados en cada request.
 - Para cerrar sesion, vacia la sesion (`delete c.get('session').userId`) o llama a `await c.get('destroySession')()`: en ambos casos se borra del store y se elimina la cookie.
-- Despues del login llama a `await c.get('regenerateSession')()` para emitir un ID nuevo e invalidar el anterior (evita session fixation).
-- Una sesion que destruye una request (logout, `regenerateSession`) no la vuelve a crear otra request que la habia cargado y termina despues. Cada request trabaja sobre su propia copia de los datos de sesion, tambien con el store en memoria, asi que los datos deben poder copiarse con `structuredClone` (para los otros stores ya tenian que ser JSON).
+- Despues del login llama a `await c.get('regenerateSession')()` para emitir un ID nuevo e invalidar el anterior (evita session fixation). Con `CsrfFeature` tambien emite un token CSRF nuevo.
+- Una sesion que destruye una request (logout, `regenerateSession`) no la vuelve a crear otra request que la habia cargado y termina despues. Al guardar una sesion almacenada, se escribe solo si todavia existe, chequeado y escrito en un solo paso: en memoria de una vez, en Redis con `SET ... XX`, en una base con un `UPDATE` de su fila. Antes chequeaba (`get`) y despues escribia (`set`), y en Redis o una base un logout que caia entre los dos se deshacia. Un `CacheAdapter` propio lo obtiene con `setIfExists()`; sin el, el chequeo sigue siendo una lectura aparte. Cada request trabaja sobre su propia copia de los datos de sesion, tambien con el store en memoria, asi que los datos deben poder copiarse con `structuredClone` (para los otros stores ya tenian que ser JSON).
+- `c.get('sessionPersisted')` indica si `sessionId` corresponde a una sesion almacenada: es false para una nueva, que se guarda al final de la request solo si el handler le pone datos.
 - La cookie es `HttpOnly`, `SameSite=Lax` y `Secure` en produccion (`new Kernel({ environment: 'production' })` o `NODE_ENV=production`); `cookieOptions.secure` lo sobreescribe.
+
+## CSRF
+
+```typescript
+import { CsrfFeature } from '@iskra-bun/web-kit';
+
+new CsrfFeature({
+    secret: process.env.CSRF_SECRET!,              // requerido, >= 32 caracteres
+    trustedOrigins: ['https://admin.example.com'], // otros origenes cuyas paginas pueden hacer POST aca
+});
+```
+
+Las requests con un metodo fuera de `ignoreMethods` (`GET`, `HEAD` y `OPTIONS` por defecto) tienen que traer el token, `c.get('csrfToken')`, en el header `X-CSRF-Token` o en un campo `_csrf` del formulario, igual al de la cookie, y venir de las paginas de la propia app:
+
+- Una request cuyo `Origin` no es el de la app ni esta en `trustedOrigins` recibe 403, igual que una sin `Origin` cuyo `Sec-Fetch-Site` es `cross-site`. El `Sec-Fetch-Site: same-origin` del navegador se toma tal cual, asi que un proxy que termina TLS (la app ve `http://`) no rompe los formularios del mismo origen; un navegador que solo manda `Origin` detras de ese proxy necesita el origen publico en `trustedOrigins`. Las requests sin ninguno de los dos headers (otros servidores, clientes de linea de comandos) quedan a cargo del token. **Breaking:** un frontend en otro origen, otro subdominio incluido, tiene que estar en `trustedOrigins`.
+- La cookie es `__Host-csrf` mientras sea `Secure` (el default): solo el propio host de la app puede setearla. Como `_csrf`, un subdominio hermano podia setearla para el dominio padre con un token que conoce y mandar ese token, y `SameSite` no frena una request del mismo sitio. Con `cookieOptions.secure: false` es `_csrf`; un `cookieName` que definas se respeta.
+- Con `SessionFeature`, una request con una sesion almacenada necesita un token firmado con el ID de esa sesion, asi que se rechaza un token de otra sesion o de una visita anonima; las requests anonimas reciben tokens sin atar. Desde las paginas de la propia app (`Sec-Fetch-Site: same-origin`, o su propio `Origin` o uno de confianza) el token sin atar se sigue aceptando, y se reemplaza por uno atado: la pagina que guardo la sesion (un login sin `regenerateSession()`, un carrito) se renderizo con el. `regenerateSession()` emite un token nuevo, disponible como `c.get('csrfToken')` desde ese momento (renderizalo, o devolvelo a una SPA). **Breaking:** una SPA tiene que volver a leer el token despues de iniciar o cerrar sesion; uno viejo se reemplaza en la siguiente request, y una request no segura que lo trae recibe 403. `CsrfFeature` corre despues de `SessionFeature` sin importar en que orden las registres.
+- El `secret` debe tener al menos 32 caracteres (**breaking**): uno corto se puede romper por fuerza bruta offline a partir de un solo token, y con eso falsificar cualquiera.
 
 ## Respuestas Estandarizadas
 

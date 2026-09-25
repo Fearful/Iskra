@@ -1,6 +1,9 @@
-import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from '../types';
+import type { EmailAdapter, EmailAddress, EmailConfig, EmailMessage, TemplateData } from '../types';
 import * as nodemailer from 'nodemailer';
-import { checkEmail, checkHeaders, cleanName } from '../headers';
+import { checkEmail, checkHeaders, checkRecipients, checkReplyTo, cleanName } from '../headers';
+
+/** nodemailer's form of a checked recipient: it quotes or encodes the name itself. */
+const toMailbox = ({ name, address }: EmailAddress) => (name ? { name, address } : address);
 
 export class SmtpEmailAdapter implements EmailAdapter {
     private transporter: nodemailer.Transporter;
@@ -26,18 +29,23 @@ export class SmtpEmailAdapter implements EmailAdapter {
     async send(message: EmailMessage) {
         const from = message.from || this.config.from;
         if (!from) throw new Error('From address required');
+        // Joined into one string, nodemailer parsed each value as an address
+        // list: one entry could add recipients or a group.
+        const cc = checkRecipients(message.cc, 'cc recipient').map(toMailbox);
+        const bcc = checkRecipients(message.bcc, 'bcc recipient').map(toMailbox);
+        const replyTo = checkReplyTo(message.replyTo);
 
         const info = await this.transporter.sendMail({
             // An address object: nodemailer quotes or encodes the name, which
             // interpolated into `"name" <email>` could add another sender.
             from: { name: from.name ? cleanName(from.name) : '', address: checkEmail(from.email) },
-            to: Array.isArray(message.to) ? message.to.join(', ') : message.to,
+            to: checkRecipients(message.to).map(toMailbox),
             subject: message.subject,
             text: message.text,
             html: message.html,
-            cc: message.cc ? (Array.isArray(message.cc) ? message.cc.join(', ') : message.cc) : undefined,
-            bcc: message.bcc ? (Array.isArray(message.bcc) ? message.bcc.join(', ') : message.bcc) : undefined,
-            replyTo: message.replyTo,
+            cc: cc.length > 0 ? cc : undefined,
+            bcc: bcc.length > 0 ? bcc : undefined,
+            replyTo: replyTo && toMailbox(replyTo),
             attachments: message.attachments?.map((a) => ({
                 filename: a.filename,
                 content: typeof a.content === 'string' ? a.content : Buffer.from(a.content),

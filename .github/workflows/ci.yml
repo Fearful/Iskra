@@ -81,10 +81,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -104,7 +106,7 @@ jobs:
         run: bun test --coverage --coverage-reporter=lcov
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./coverage/lcov.info
           # Informational only for now: a failed upload must not fail CI.
@@ -121,10 +123,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -132,12 +136,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: '17'
@@ -170,14 +174,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # The binary is checked against the SHA-256 published with the release
+      # (osv-scanner_SHA256SUMS) before it runs.
       - name: Install osv-scanner
+        env:
+          OSV_SCANNER_SHA256: 03d800073a330d053047b26ff4484136d866aee4f486e12fb82aa452bd4002ca
         run: |
           curl -sSfL \
             "https://github.com/google/osv-scanner/releases/download/v2.3.2/osv-scanner_linux_amd64" \
-            -o /usr/local/bin/osv-scanner
-          chmod +x /usr/local/bin/osv-scanner
+            -o osv-scanner
+          echo "$OSV_SCANNER_SHA256  osv-scanner" | sha256sum -c -
+          install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+          rm osv-scanner
           osv-scanner --version
 
       - name: Scan dependencies for known CVEs (osv-scanner)
@@ -189,3 +201,36 @@ jobs:
           --lockfile=pom.xml:sdks/java/iskra-client/pom.xml
           --lockfile=pom.xml:sdks/java/iskra-client/examples/mvc-auth/pom.xml
           --lockfile=requirements.txt:sdks/python/iskra-client/examples/fastapi-auth/requirements.txt
+
+  # Secret scanning: gitleaks over the whole history and the working tree, with
+  # the allowlist in .gitleaks.toml (test fixtures and documented placeholders).
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Checked against the SHA-256 in the release's gitleaks_8.30.1_checksums.txt.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          echo "$GITLEAKS_SHA256  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm gitleaks gitleaks.tar.gz
+          gitleaks version
+
+      - name: Scan the history for secrets
+        run: gitleaks git --config .gitleaks.toml --redact --no-banner .
+
+      - name: Scan the working tree for secrets
+        run: gitleaks dir --config .gitleaks.toml --redact --no-banner .

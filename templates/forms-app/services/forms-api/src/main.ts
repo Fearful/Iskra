@@ -36,7 +36,8 @@ app.register(
         router: honoApp,
         features: [
             new HealthCheckFeature({ path: '/health' }),
-            new CsrfFeature({ secret: config.csrf.secret }),
+            // PUBLIC_ORIGINS: the pages' public origins, for its Origin check.
+            new CsrfFeature(config.csrf),
             new RateLimitFeature({
                 max: 60,
                 windowMs: 60_000,
