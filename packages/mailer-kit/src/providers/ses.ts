@@ -1,5 +1,5 @@
 import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from '../types';
-import { formatAddress } from '../headers';
+import { checkRecipients, checkReplyTo, formatAddress, formatRecipient } from '../headers';
 
 /**
  * Minimal structural shape of the value returned by
@@ -77,11 +77,15 @@ export class SesEmailAdapter implements EmailAdapter {
             throw new Error('Custom headers are not supported by the ses adapter yet');
         }
 
-        const { client, command } = await this.resolveSdk();
+        // SES parses each entry as an address list: one mailbox per entry.
+        const toAddresses = checkRecipients(message.to).map(formatRecipient);
+        const cc = checkRecipients(message.cc, 'cc recipient').map(formatRecipient);
+        const bcc = checkRecipients(message.bcc, 'bcc recipient').map(formatRecipient);
+        const ccAddresses = cc.length > 0 ? cc : undefined;
+        const bccAddresses = bcc.length > 0 ? bcc : undefined;
+        const replyTo = checkReplyTo(message.replyTo);
 
-        const toAddresses = Array.isArray(message.to) ? message.to : [message.to];
-        const ccAddresses = message.cc ? (Array.isArray(message.cc) ? message.cc : [message.cc]) : undefined;
-        const bccAddresses = message.bcc ? (Array.isArray(message.bcc) ? message.bcc : [message.bcc]) : undefined;
+        const { client, command } = await this.resolveSdk();
 
         const body: Record<string, { Data: string; Charset: string }> = {};
         if (message.text) body.Text = { Data: message.text, Charset: 'UTF-8' };
@@ -94,7 +98,7 @@ export class SesEmailAdapter implements EmailAdapter {
                 ...(ccAddresses ? { CcAddresses: ccAddresses } : {}),
                 ...(bccAddresses ? { BccAddresses: bccAddresses } : {}),
             },
-            ...(message.replyTo ? { ReplyToAddresses: [message.replyTo] } : {}),
+            ...(replyTo ? { ReplyToAddresses: [formatRecipient(replyTo)] } : {}),
             Content: {
                 Simple: {
                     Subject: { Data: message.subject, Charset: 'UTF-8' },

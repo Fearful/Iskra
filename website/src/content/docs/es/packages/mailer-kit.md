@@ -83,7 +83,7 @@ const mailer = await createEmailAdapter({
 
 #### Cabeceras personalizadas (allowlist)
 
-Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permiten nombres de una lista blanca y el resto se rechaza lanzando un error (proteccion contra inyeccion de cabeceras). Ademas, todo lo que venga despues de un CR o LF en el valor se descarta para evitar inyeccion. La misma lista se aplica a SMTP y SendGrid; las dos cabeceras `X-Mailgun-*` solo a Mailgun.
+Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permiten nombres de una lista blanca y el resto se rechaza lanzando un error (proteccion contra inyeccion de cabeceras). Ademas, todo lo que venga despues de un CR o LF en el valor se descarta para evitar inyeccion; el `subject` de Mailgun se corta igual en un CR o LF. La misma lista se aplica a SMTP y SendGrid; las dos cabeceras `X-Mailgun-*` solo a Mailgun.
 
 Cabeceras permitidas:
 
@@ -132,11 +132,11 @@ El adaptador de SES todavia no soporta `attachments` ni `headers`: un mensaje co
 ```typescript
 // Enviar un mensaje
 await mailer.send({
-    to: 'usuario@example.com',        // o un array de direcciones
+    to: 'usuario@example.com',        // o un array de destinatarios
     subject: 'Asunto',
     text: 'Cuerpo en texto plano',
     html: '<p>Cuerpo en HTML</p>',
-    cc: 'copia@example.com',
+    cc: { name: 'Ana', address: 'ana@example.com' },   // con nombre visible
     bcc: ['oculta@example.com'],
     replyTo: 'responder@example.com',
 });
@@ -144,7 +144,29 @@ await mailer.send({
 
 Todos los adaptadores devuelven `{ messageId, success }`.
 
-Todos los adaptadores ponen entre comillas (o codifican, si no es ASCII) el nombre visible de `from`, asi que no puede agregar otra direccion, y rechazan un email con espacios, `<>`, comas o comillas. Un `content` de adjunto de tipo string es texto; para archivos binarios pasa un `Uint8Array`.
+### Destinatarios
+
+Cada entrada de `to`, `cc`, `bcc` y `replyTo` es **una sola direccion**, o un objeto
+`{ name, address }` para darle un nombre visible. Un string que incluye un nombre
+visible, una lista o un grupo se rechaza antes de enviar nada, en todos los
+adaptadores (tambien el mock): los proveedores leen ese valor como una lista de
+direcciones, asi que `"bob@example.com <attacker@evil.test>, x@example.com"` enviaba
+a `attacker@evil.test`, y `"undisclosed: a@evil.test; b@x.com"` o
+`"a@evil.test:b@x.com"` enviaban a personas que una allowlist que revisaba el texto
+nunca vio. Una direccion no puede contener espacios, caracteres de control ni
+`<>()[]\,;:"`, y debe tener exactamente una `@`; un nombre no puede contener
+caracteres de control (CR/LF). `replyTo` acepta un solo destinatario.
+
+```typescript
+await mailer.send({ to: ['a@example.com', 'b@example.com'], subject: 'x', text: 't' }); // ok
+await mailer.send({ to: { name: 'Bob Smith', address: 'bob@example.com' }, subject: 'x', text: 't' }); // ok
+await mailer.send({ to: 'Bob Smith <bob@example.com>', subject: 'x', text: 't' }); // Error: Invalid email address
+await mailer.send({ to: 'a@example.com, b@example.com', subject: 'x', text: 't' }); // Error: pasa un array
+```
+
+`checkRecipients(value)` aplica las mismas reglas, por si quieres validar la entrada por tu cuenta.
+
+Todos los adaptadores ponen entre comillas (o codifican, si no es ASCII) el nombre visible de `from` (y el de un destinatario), asi que no puede agregar otra direccion. Un `content` de adjunto de tipo string es texto; para archivos binarios pasa un `Uint8Array`.
 
 ### Plantillas (no soportadas todavia)
 

@@ -246,6 +246,7 @@ new Kernel({
         },
     });
     ```
+- **Email (`EmailFeature`):** el adaptador que entrega rechaza un mensaje (la promesa que devuelve se rechaza) cuyo `subject` o `headers` lleven un CR/LF, o cuyas entradas de `to`/`cc`/`bcc`/`replyTo` no sean cada una una sola direccion o un objeto `{ name, address }`: ver [destinatarios en mailer-kit](/es/packages/mailer-kit/#destinatarios). Los destinatarios de tipo objeto tambien se revisan (pasaban como `"[object Object]"`).
 - **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar. Ver la seccion de Auth.
 
 ## Auth

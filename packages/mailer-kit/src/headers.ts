@@ -1,3 +1,5 @@
+import type { EmailAddress, EmailRecipient } from './types';
+
 /**
  * Outbound custom mail headers callers may set on every provider. Anything
  * else is rejected so a caller cannot spoof Sender / routing headers via the
@@ -34,10 +36,18 @@ export function checkHeaders(
     return checked;
 }
 
-/** A bare addr-spec: no display name, brackets, separators, quotes or whitespace. */
+/**
+ * What an address may not contain unquoted: whitespace and control characters,
+ * and what starts a display name, comment, group or list (`<>()[]\,;:"`).
+ * `a@evil.test:b@x.com` is a group that mails b@x.com only.
+ */
+const ADDRESS_SPECIALS = /[\s\p{Cc}<>()[\]\\,;:"]/u;
+
+/** A bare addr-spec: one `@`, no display name, brackets, separators, quotes or whitespace. */
 export function checkEmail(email: string): string {
-    const trimmed = email.trim();
-    if (!trimmed || /[\s<>,;"\\]/.test(trimmed)) {
+    const trimmed = typeof email === 'string' ? email.trim() : '';
+    const at = trimmed.indexOf('@');
+    if (at < 1 || at !== trimmed.lastIndexOf('@') || at === trimmed.length - 1 || ADDRESS_SPECIALS.test(trimmed)) {
         throw new Error(`Invalid email address: ${JSON.stringify(email)}`);
     }
     return trimmed;
@@ -45,6 +55,41 @@ export function checkEmail(email: string): string {
 
 /** A display name on one line (CR/LF would start a new header). */
 export const cleanName = (name: string): string => name.replace(/[\r\n]+/g, ' ').trim();
+
+/**
+ * The recipients of a `to`/`cc`/`bcc`/`replyTo` field, one mailbox each. A
+ * string is a single bare address: one value such as
+ * `"bob@x.com <spy@evil.test>, y@x.com"` or `"list: spy@evil.test;"` mailed
+ * other people than the ones an allowlist checked. An object's address is
+ * checked the same way and its name may not hold control characters.
+ */
+export function checkRecipients(
+    value: EmailRecipient | EmailRecipient[] | undefined,
+    field = 'recipient',
+): EmailAddress[] {
+    if (value === undefined) return [];
+    return (Array.isArray(value) ? value : [value]).map((recipient) => {
+        if (typeof recipient === 'string') return { address: checkEmail(recipient) };
+        if (typeof recipient !== 'object' || recipient === null || typeof recipient.address !== 'string') {
+            throw new Error(`Invalid ${field}: expected an email address or { name, address }`);
+        }
+        const { name, address } = recipient;
+        if (name !== undefined && (typeof name !== 'string' || /\p{Cc}/u.test(name))) {
+            throw new Error(`Invalid ${field} name: control characters (CR/LF) are not allowed`);
+        }
+        return name ? { name, address: checkEmail(address) } : { address: checkEmail(address) };
+    });
+}
+
+/** `replyTo`, checked like the recipients: one address at most. */
+export function checkReplyTo(value: EmailRecipient | undefined): EmailAddress | undefined {
+    const list = checkRecipients(value, 'replyTo');
+    if (list.length > 1) throw new Error('Invalid replyTo: expected a single address');
+    return list[0];
+}
+
+/** A checked recipient as an RFC 5322 mailbox (see {@link formatAddress}). */
+export const formatRecipient = ({ name, address }: EmailAddress): string => formatAddress({ name, email: address });
 
 /**
  * `from` as an RFC 5322 mailbox. A display name with special characters is
