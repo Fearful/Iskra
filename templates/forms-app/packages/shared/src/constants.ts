@@ -24,10 +24,8 @@ export const FIELD_TYPES = Object.values(FieldType);
 export const FORM_STATUSES = Object.values(FormStatus);
 
 export const REDIS_KEYS = {
-    formSchema: (spaceSlug: string, formSlug: string) =>
-        `forms:schema:${spaceSlug}:${formSlug}`,
-    formMeta: (spaceSlug: string, formSlug: string) =>
-        `forms:meta:${spaceSlug}:${formSlug}`,
+    formSchema: (spaceSlug: string, formSlug: string) => `forms:schema:${spaceSlug}:${formSlug}`,
+    formMeta: (spaceSlug: string, formSlug: string) => `forms:meta:${spaceSlug}:${formSlug}`,
     formIndex: 'forms:index',
 } as const;
 
@@ -38,3 +36,6 @@ export const QUEUE_NAMES = {
 export const JOB_NAMES = {
     ANSWER_SUBMIT: 'answer.submit',
 } as const;
+
+/** The reCAPTCHA v3 action a form page requests its token for, and forms-api requires. */
+export const RECAPTCHA_ACTION = 'submit';

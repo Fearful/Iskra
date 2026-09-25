@@ -51,6 +51,24 @@ El template esta pensado para escenarios donde hay miles de formularios abiertos
 
 En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegarian dos nginx separados (uno en DMZ, otro en la red interna).
 
+`docker-compose.yml` reproduce esas zonas con redes de Docker: cada servicio esta solo en
+las redes de lo que usa, asi que forms-api llega a nginx y a Redis y a nada mas (ni a
+Postgres ni a form-manager).
+
+| Red | Servicios |
+|-----|-----------|
+| `public` | nginx, forms-api |
+| `admin` | nginx, admin-api, admin-frontend |
+| `public-redis` | forms-api, Redis |
+| `redis` | Redis, form-manager, cron, answer-writer |
+| `db` | PostgreSQL, admin-api, form-manager, cron, answer-writer |
+| `control` | admin-api, cron, form-manager (su API `/internal`) |
+
+Solo nginx publica un puerto en todas las interfaces (80). Postgres y Redis se publican en
+`127.0.0.1` (5432 y 6379) para `create-admin` y el [flujo de desarrollo](#flujo-de-desarrollo);
+donde nada en la maquina los necesite, quita esos `ports`. Redis exige password
+(`REDIS_PASSWORD`).
+
 ## Kits utilizados
 
 - [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, DI, logger, event bus
@@ -84,11 +102,28 @@ En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegari
 ```bash
 # Desde la raiz del monorepo
 bun install
+cd templates/forms-app
+
+# Secretos: no tienen valores por defecto, sin ellos docker compose no arranca
+cat > .env <<EOF
+DB_PASSWORD=$(openssl rand -hex 32)
+REDIS_PASSWORD=$(openssl rand -hex 32)
+AUTH_SECRET=$(openssl rand -base64 32)
+INTERNAL_API_TOKEN=$(openssl rand -base64 32)
+CSRF_SECRET=$(openssl rand -base64 32)
+IP_HASH_SECRET=$(openssl rand -base64 32)
+# Las claves de reCAPTCHA v3 las emite Google: reemplaza estas dos
+RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET=$(openssl rand -hex 32)
+EOF
 
 # Levantar todo el stack
-cd templates/forms-app
 docker compose up --build
 ```
+
+Las claves de reCAPTCHA las emite Google (ver
+[Envios de formularios y reCAPTCHA](#envios-de-formularios-y-recaptcha)); hasta que las
+pongas el stack arranca, pero todo envio se rechaza con 403.
 
 En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
 de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
@@ -107,16 +142,22 @@ El admin-api no permite registrarse publicamente: todas sus rutas requieren sesi
 
 ```bash
 cd services/admin-api
-DATABASE_URL=postgresql://forms:secret@localhost:5432/forms_app \
-  bun run create-admin admin@example.com 'una-contrasena-larga'
+set -a; . ../../.env; set +a  # DB_PASSWORD
+DATABASE_URL="postgresql://forms:$DB_PASSWORD@localhost:5432/forms_app" \
+  bun run create-admin admin@example.com --name 'Ada Lovelace'
 ```
+
+El script pide la contrasena dos veces, sin mostrarla. No la acepta como argumento: los
+argumentos de un proceso los ve cualquier usuario con `ps` y quedan en el historial del
+shell. Sin terminal (un script, CI) la lee de la variable `ADMIN_PASSWORD` o de la primera
+linea de stdin (`bun run create-admin admin@example.com < archivo-con-la-contrasena`).
 
 Despues inicia sesion en http://localhost/admin/login.
 
 ### Envios de formularios y reCAPTCHA
 
-forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que con las claves de
-ejemplo (`your-site-key` / `your-secret-key`) todo envio se rechaza con 403. Para probar
+forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que sin claves reales
+(como en el inicio rapido) todo envio se rechaza con 403. Para probar
 localmente, registra un par de claves v3 con el dominio `localhost` en
 https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
 `RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
@@ -124,21 +165,39 @@ formulario, asi que re-publicalo despues de cambiarla).
 
 ## Variables de entorno
 
-Copia `.env.example` a `.env`:
+`docker compose` las lee de `.env` (ver `.env.example`). Los secretos no tienen valor por
+defecto: en produccion (las imagenes se construyen con `NODE_ENV=production`) un servicio
+no arranca si le falta uno, si es mas corto de lo pedido, si es el valor de desarrollo o
+si parece un ejemplo (`change-me`, `your-secret`, `placeholder`...).
+Fuera de produccion (`bun dev`) cada servicio usa un valor de desarrollo. Generalos con
+`openssl rand -base64 32`, salvo los passwords que van dentro de una URL de conexion
+(`DB_PASSWORD`, `REDIS_PASSWORD`): `openssl rand -hex 32`, porque la `/` y el `+` de
+base64 rompen la URL.
+
+**Secretos** (obligatorios):
+
+| Variable | Servicio | Descripcion |
+|----------|----------|-------------|
+| `DB_PASSWORD` | postgres y los servicios que lo usan | Password de PostgreSQL |
+| `REDIS_PASSWORD` | redis y los servicios que lo usan | Password de Redis (`requirepass`) |
+| `AUTH_SECRET` | admin-api | Firma las sesiones de Better Auth, 32+ caracteres. Con el cache de sesion en cookie, quien lo conoce puede fabricar la sesion de cualquier admin |
+| `INTERNAL_API_TOKEN` | admin-api, cron, form-manager | Token de la API `/internal` de form-manager, 32+ caracteres: admin-api y cron lo envian (`Authorization: Bearer`) y form-manager responde 401 sin el |
+| `CSRF_SECRET` | forms-api | Firma los tokens CSRF, 32+ caracteres |
+| `IP_HASH_SECRET` | forms-api | Clave del hash diario de IP de cada respuesta, 32+ caracteres y distinta de `CSRF_SECRET` (sin ella el hash se puede revertir probando todas las IPv4) |
+| `RECAPTCHA_SECRET` | forms-api | Clave privada de reCAPTCHA v3, la emite Google |
+
+**Otras**:
 
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
-| `DB_PASSWORD` | Password de PostgreSQL | `secret` |
-| `DATABASE_URL` | URL de conexion a Postgres | `postgresql://forms:secret@postgres:5432/forms_app` |
-| `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
-| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens), 32+ caracteres | `dev-only-auth-secret-change-me-32chars` |
+| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
+| `RECAPTCHA_HOSTNAMES` | Hostnames (separados por coma) desde los que se sirven los formularios: forms-api rechaza los tokens de reCAPTCHA emitidos en otro sitio. Definila en produccion | vacio (cualquier hostname) |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
-| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
-| `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
-| `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |
-| `IP_HASH_SECRET` | Clave del hash diario de IP de cada respuesta (sin ella el hash se puede revertir probando todas las IPv4) | `CSRF_SECRET` |
+| `PUBLIC_ORIGINS` | Origenes publicos (separados por coma) de los formularios, p. ej. `https://forms.example.com`: forms-api rechaza (CSRF) los envios desde otro origen. Hace falta detras de un proxy que termina TLS, donde forms-api recibe `http://` | `http://localhost` |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
+| `DATABASE_URL` | URL de conexion a Postgres (compose la arma con `DB_PASSWORD`) | `postgresql://forms:<DB_PASSWORD>@postgres:5432/forms_app` |
+| `REDIS_URL` | URL de conexion a Redis (compose la arma con `REDIS_PASSWORD`) | `redis://:<REDIS_PASSWORD>@redis:6379` |
 | `FORM_MANAGER_URL` | URL interna del form-manager | `http://form-manager:4001` |
 
 ## Estructura del proyecto
@@ -242,8 +301,12 @@ templates/forms-app/
     └── answer-writer/                    # @forms-app/answer-writer
         └── src/
             ├── main.ts                   # App + DbDriver + WorkerManager (consumer)
-            └── domain/writer/
-                └── writer.service.ts     # Buffer de respuestas + flush por cantidad (50) o tiempo (2s)
+            └── domain/
+                ├── answer-job.ts         # Handler del job: valida y despues guarda
+                ├── validation/
+                │   └── answer-validator.service.ts # Revalida cada respuesta contra el formulario en Postgres
+                └── writer/
+                    └── writer.service.ts # Buffer de respuestas + flush por cantidad (50) o tiempo (2s)
 ```
 
 ## Base de datos
@@ -280,15 +343,19 @@ Todos los endpoints excepto auth requieren sesion autenticada (401 sin sesion). 
 | `DELETE` | `/api/forms/:id` | Eliminar formulario |
 | `POST` | `/api/forms/:id/publish` | Publicar formulario (scheduled + trigger prerender) |
 | `POST` | `/api/forms/:id/prerender` | Forzar pre-renderizado |
-| `GET` | `/api/forms/:id/answers` | Respuestas paginadas (query directo a Postgres) |
+| `GET` | `/api/forms/:id/answers` | Respuestas paginadas (query directo a Postgres; `page` >= 1, `pageSize` de 1 a 100, 50 por defecto) |
 
 ### form-manager (puerto 4001) — intranet
+
+Solo la llaman admin-api y cron, con `Authorization: Bearer <INTERNAL_API_TOKEN>`; sin ese
+token responde 401 (el token se compara en tiempo constante).
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | `POST` | `/internal/prerender/:formId` | Construir archivos estaticos para un formulario |
 | `POST` | `/internal/lifecycle/open` | Abrir formulario (actualiza status + Redis) |
 | `POST` | `/internal/lifecycle/close` | Cerrar formulario (actualiza status + TTL en Redis) |
+| `POST` | `/internal/lifecycle/remove` | Despublicar un formulario borrado (claves de Redis y archivos estaticos) |
 
 ### forms-api (puerto 3000) — via nginx `/formularios/`
 
@@ -356,18 +423,18 @@ Cada tipo de campo tiene limites maximos definidos en `field-constraints.ts` par
 5. POST a `/formularios/api/submit/:spaceSlug/:formSlug` con datos + tokens
 6. **forms-api**: valida CSRF → lee schema de Redis (cache local 30s) → verifica reCAPTCHA con Google → valida datos con AJV + errorMessages → hashea IP con salt diario → encola en BullMQ
 7. Retorna `202 Accepted`
-8. **answer-writer**: consume de la cola, acumula en buffer, hace batch INSERT cuando hay 50 respuestas o pasaron 2 segundos
+8. **answer-writer**: consume de la cola, vuelve a validar cada respuesta (formulario existente y abierto, JSON Schema de Postgres), acumula en buffer, hace batch INSERT cuando hay 50 respuestas o pasaron 2 segundos
 
 ## Flujo de pre-renderizado
 
 1. Admin crea formulario con campos y validaciones via la interfaz
 2. `schema-generator.ts` convierte campos → JSON Schema con errorMessages
 3. Admin publica → admin-api llama a form-manager
-4. form-manager lee formulario de Postgres, genera archivos temporales:
+4. form-manager lee formulario de Postgres, genera archivos temporales en un directorio privado (`mkdtemp`, modo 0700) que borra al terminar, tambien si el build falla:
    - `index.html` con la estructura del formulario
    - `main.ts` con JS vanilla (validacion Zod, CSRF, reCAPTCHA, submit)
    - CSS con estilos base
-5. Corre `vite.build()` con el `vite-plugin-jsonschema`
+5. Corre `vite.build()` con el `vite-plugin-jsonschema` y una configuracion cerrada: sin archivo de config, sin `.env`, sin `public/`, sin buscar configs de PostCSS ni `tsconfig.json` en los directorios padre (otro usuario de la maquina podria dejarlos en el directorio temporal compartido)
 6. Output va al volumen compartido: `/app/static/{spaceSlug}/{formSlug}/`
 7. Escribe schema en Redis para que forms-api lo tenga inmediatamente
 
@@ -377,18 +444,60 @@ Cada tipo de campo tiene limites maximos definidos en `field-constraints.ts` par
 
 El servicio publico (`forms-api`) **no tiene conexion a PostgreSQL**. Solo habla con Redis. Esto significa que si un atacante compromete el servicio expuesto a internet:
 
-- No tiene acceso a la base de datos
+- No tiene acceso a la base de datos: por red solo llega a nginx y a Redis (ver
+  [Zonas de red](#zonas-de-red-produccion)), ni a PostgreSQL ni a form-manager
 - No puede leer datos de otros formularios (solo lo que esta en Redis)
-- No puede modificar formularios ni usuarios
-- Solo puede encolar datos a una cola de Redis (que el answer-writer valida antes de insertar)
+- No puede modificar formularios ni usuarios. Tiene el password de Redis, asi que puede
+  cambiar las copias de los schemas que forms-api usa, pero no las de PostgreSQL
+- Solo puede encolar respuestas en Redis, y answer-writer las vuelve a validar antes de
+  insertarlas (ver abajo). Lo que si puede: guardar respuestas que cumplan el schema de un
+  formulario abierto, con el score de reCAPTCHA y el hash de IP que quiera
+
+### Revalidacion en answer-writer
+
+La cola esta en Redis, al alcance de forms-api (y de quien tenga acceso a Redis), asi que
+answer-writer no confia en lo que encuentra ahi. Antes de insertar cada respuesta comprueba
+que el job tenga la forma que encola forms-api, que el formulario exista y este abierto, y
+que los datos cumplan su JSON Schema con la misma configuracion de AJV que forms-api. El
+schema se lee de PostgreSQL (`forms.validation_schema`), no de Redis, y se cachea 30
+segundos; un rechazo siempre se decide con una lectura nueva. Las respuestas que ya estaban
+en la cola cuando el formulario cerro se aceptan hasta 5 minutos despues de su fecha de
+cierre. Un job invalido falla sin reintentos (`UnrecoverableError` de BullMQ) y queda entre
+los jobs fallidos de la cola. Si editas los campos de un formulario abierto, las respuestas
+que no cumplan el schema nuevo tambien se rechazan.
+
+### Autorizacion del admin (un solo tenant)
+
+Todas las cuentas de admin son equivalentes: cualquier admin con sesion puede ver, editar y
+borrar todos los espacios, formularios y respuestas. No hay roles ni espacios por usuario, y
+las cuentas se crean solo con `create-admin`. Da cuentas unicamente a personas de confianza
+total; si varios equipos (o clientes) comparten la instalacion, agrega en admin-api un
+control por espacio (por ejemplo una tabla de miembros) antes de usarla asi.
+
+### API interna de form-manager
+
+Las rutas `/internal/*` de form-manager (pre-renderizar, abrir, cerrar y despublicar, que
+borra archivos) exigen `Authorization: Bearer <INTERNAL_API_TOKEN>`, comparado en tiempo
+constante; sin el responden 401. Solo admin-api y cron tienen el token, y en
+`docker-compose.yml` solo ellos comparten red (`control`) con form-manager.
 
 ### CSRF
 
-Proteccion via `CsrfFeature` de Iskra. El formulario pre-renderizado obtiene un token via cookie + header `X-CSRF-Token`. Previene que sitios externos envien respuestas en nombre del usuario.
+Proteccion via `CsrfFeature` de Iskra. El formulario pre-renderizado obtiene un token via cookie + header `X-CSRF-Token`. Previene que sitios externos envien respuestas en nombre del usuario. `PUBLIC_ORIGINS` lista los origenes publicos de los formularios, que `CsrfFeature` acepta en su chequeo de `Origin`.
 
 ### reCAPTCHA v3
 
-Verificacion invisible sin interaccion del usuario. Cada envio incluye un token que se verifica contra la API de Google. Se rechaza si el score es menor a 0.5 (configurable). El score se guarda con la respuesta para analisis posterior.
+Verificacion invisible sin interaccion del usuario. Cada envio incluye un token que se verifica contra la API de Google. forms-api lo rechaza si Google no lo valida, si fue emitido para otra accion que `submit` (la que pide el formulario), si viene de un hostname fuera de `RECAPTCHA_HOSTNAMES` (cuando esta definida) o si el score es menor a 0.5 (configurable); un error al consultar a Google tambien lo rechaza. El score se guarda con la respuesta para analisis posterior.
+
+### Content-Security-Policy
+
+forms-api sirve cada formulario con una CSP restrictiva (`FORM_PAGE_CSP` en
+`static.routes.ts`): scripts y estilos solo del propio origen (ninguno inline), mas los
+origenes que Google documenta para reCAPTCHA v3 (`www.google.com/recaptcha/`,
+`www.gstatic.com/recaptcha/` y su iframe), conexiones solo a forms-api y a reCAPTCHA, y
+`frame-ancestors 'none'` (ademas de `X-Frame-Options: DENY`): ningun sitio puede
+enmarcar el formulario. Si cambias `html-template.ts` o `form-runtime.ts` para cargar algo
+mas (un script inline, otra fuente, imagenes externas), actualiza esa politica.
 
 ### Rate limiting
 
@@ -396,17 +505,24 @@ Verificacion invisible sin interaccion del usuario. Cada envio incluye un token 
 
 ### Hash de IP
 
-No se guarda la IP cruda. Se hashea con SHA256 usando un salt que rota diariamente. Permite detectar envios duplicados sin almacenar datos personales.
+No se guarda la IP cruda, sino un HMAC-SHA256 de la IP y la fecha con la clave `IP_HASH_SECRET`: cambia cada dia y, sin la clave, no se puede revertir probando todas las IPv4. Permite detectar envios duplicados del mismo dia sin almacenar la IP.
 
 ### Validacion en capas
 
 1. **Cliente**: Zod (UX inmediata, no es barrera de seguridad)
 2. **Servidor**: AJV con JSON Schema (barrera real, con los mismos mensajes)
-3. **Constraints de campos**: Limites duros por tipo de campo para proteger la base de datos
+3. **answer-writer**: AJV otra vez, con el JSON Schema de PostgreSQL, antes de insertar
+4. **Constraints de campos**: Limites duros por tipo de campo para proteger la base de datos
 
 ### Secretos
 
-Todos los secretos (AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
+Todos los secretos (ver [Variables de entorno](#variables-de-entorno)) se configuran via
+variables de entorno y no tienen valores por defecto en `docker-compose.yml`. En
+produccion un servicio no arranca si le falta uno, si es demasiado corto, si es el valor
+de desarrollo o si parece un ejemplo (`change-me`, `your-secret`, `placeholder`...); los
+valores de desarrollo existen solo para `bun dev`. Los passwords de PostgreSQL y Redis
+tambien son obligatorios, y el de admin no se pasa nunca por la linea de comandos (ver
+[Crear el primer admin](#crear-el-primer-admin)).
 
 ## Escalabilidad
 
@@ -479,10 +595,15 @@ docker compose up -d forms-api
 ## Flujo de desarrollo
 
 ```bash
-# 1. Levantar infra
+# 1. Levantar infra (en 127.0.0.1:5432 y 127.0.0.1:6379, con los passwords de .env)
 docker compose up postgres redis -d
 
-# 2. Levantar servicios individualmente para desarrollo
+# 2. Las URLs hacia esa infra, en cada terminal donde corra un servicio
+set -a; . ./.env; set +a
+export DATABASE_URL="postgresql://forms:$DB_PASSWORD@localhost:5432/forms_app"
+export REDIS_URL="redis://:$REDIS_PASSWORD@localhost:6379"
+
+# 3. Levantar servicios individualmente para desarrollo
 cd services/admin-api && bun dev
 cd services/admin-frontend && bun dev  # (en otra terminal)
 cd services/form-manager && bun dev
@@ -508,8 +629,9 @@ A partir de aca podes:
 Para produccion necesitas:
 
 1. Dos instancias de nginx: una en la DMZ (solo `/formularios/`) y otra en la red interna (`/admin/`)
-2. Secretos reales para AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET
-3. PostgreSQL y Redis en alta disponibilidad
-4. Al menos 2 replicas de forms-api y answer-writer
+2. Secretos propios para cada variable de [Variables de entorno](#variables-de-entorno) (sin ellos los servicios no arrancan), y `PUBLIC_ORIGINS` y `RECAPTCHA_HOSTNAMES` con tu dominio
+3. PostgreSQL y Redis sin puertos publicados (quita los `ports` de `127.0.0.1` del compose de desarrollo)
+4. PostgreSQL y Redis en alta disponibilidad
+5. Al menos 2 replicas de forms-api y answer-writer
 
 Mas info general en la [guia de despliegue](https://iskra-docs.fly.dev/es/guides/deployment/).

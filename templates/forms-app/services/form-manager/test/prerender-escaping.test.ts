@@ -1,24 +1,48 @@
 import { describe, expect, it } from 'bun:test';
 import { escapeHtml, generateFormHtml } from '../src/domain/prerender/html-template.ts';
 import { generateFormRuntime } from '../src/domain/prerender/form-runtime.ts';
+import { RECAPTCHA_ACTION } from '@forms-app/shared';
 
 // Form pages are public: admin-defined text must render as text.
 const XSS = '<img src=x onerror=alert(1)>"\'&';
-const field = (overrides: Record<string, unknown>) => ({
-    id: 'f', formId: 'form-1', fieldType: 'text', label: XSS, name: 'nombre', position: 0, required: true,
-    options: null, maxLength: null, min: null, max: null, placeholder: XSS, helpText: XSS, errorMessage: null,
-    ...overrides,
-}) as any;
+const field = (overrides: Record<string, unknown>) =>
+    ({
+        id: 'f',
+        formId: 'form-1',
+        fieldType: 'text',
+        label: XSS,
+        name: 'nombre',
+        position: 0,
+        required: true,
+        options: null,
+        maxLength: null,
+        min: null,
+        max: null,
+        placeholder: XSS,
+        helpText: XSS,
+        errorMessage: null,
+        ...overrides,
+    }) as any;
 
 describe('prerendered form HTML', () => {
     it('escapes every admin-defined value', () => {
-        const html = generateFormHtml(XSS, XSS, [
-            field({}),
-            field({ name: 'color', fieldType: 'select', options: [{ label: XSS, value: '"><script>alert(1)</script>' }] }),
-            field({ name: 'size', fieldType: 'radio', options: [{ label: XSS, value: XSS }] }),
-            field({ name: 'tags', fieldType: 'checkbox', options: [{ label: XSS, value: XSS }] }),
-            field({ name: 'ok', fieldType: 'checkbox', options: null }),
-        ], 'form-1', 'key"><script>');
+        const html = generateFormHtml(
+            XSS,
+            XSS,
+            [
+                field({}),
+                field({
+                    name: 'color',
+                    fieldType: 'select',
+                    options: [{ label: XSS, value: '"><script>alert(1)</script>' }],
+                }),
+                field({ name: 'size', fieldType: 'radio', options: [{ label: XSS, value: XSS }] }),
+                field({ name: 'tags', fieldType: 'checkbox', options: [{ label: XSS, value: XSS }] }),
+                field({ name: 'ok', fieldType: 'checkbox', options: null }),
+            ],
+            'form-1',
+            'key"><script>',
+        );
         expect(html).not.toContain('<img');
         expect(html).not.toContain('<script>alert');
         expect(html).not.toContain('key"><script>');
@@ -41,5 +65,12 @@ describe('form runtime', () => {
         for (const literal of literals) expect(code).toContain(literal);
         const outside = literals.reduce((rest, literal) => rest.split(literal).join('""'), code);
         expect(outside).not.toContain('alert(');
+    });
+});
+
+describe('form runtime reCAPTCHA', () => {
+    it('requests its token for the action forms-api requires', () => {
+        const code = generateFormRuntime('form-1', 'space', 'form', 'site-key');
+        expect(code).toContain(`{ action: ${JSON.stringify(RECAPTCHA_ACTION)} }`);
     });
 });

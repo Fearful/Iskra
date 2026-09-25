@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { build } from 'vite';
 import jsonSchemaPlugin from '@forms-app/vite-plugin-jsonschema';
@@ -25,7 +26,17 @@ export async function buildFormBundle(opts: {
     await build({
         root: opts.sourceDir,
         base: opts.base,
+        // This configuration and nothing else: Vite otherwise reads a config
+        // file, .env files and public/ from the build directory, a PostCSS
+        // config (code it runs) and a tsconfig.json from it or any parent
+        // (the shared temp directory), and a cache next to a parent's
+        // package.json.
         configFile: false,
+        envDir: false,
+        publicDir: false,
+        css: { postcss: {} },
+        esbuild: { tsconfigRaw: '{}' },
+        cacheDir: join(opts.sourceDir, '.vite'),
         plugins: [
             jsonSchemaPlugin({
                 schemas: [{ id: opts.formId, schema: opts.validationSchema }],
@@ -75,60 +86,56 @@ export class PrerenderService {
 
         const recaptchaSiteKey = process.env.RECAPTCHA_SITE_KEY || 'your-site-key';
 
-        // 2. Create temp build directory
-        const tmpDir = join('/tmp', 'form-builds', formId);
-        mkdirSync(tmpDir, { recursive: true });
-
-        // 3. Generate source files
-        const htmlContent = generateFormHtml(
-            form.title,
-            form.description,
-            fields,
-            formId,
-            recaptchaSiteKey,
-        );
-        writeFileSync(join(tmpDir, 'index.html'), htmlContent);
-
-        const runtimeContent = generateFormRuntime(formId, space.slug, form.slug, recaptchaSiteKey);
-        writeFileSync(join(tmpDir, 'main.ts'), runtimeContent);
-
-        // Basic CSS
-        mkdirSync(join(tmpDir, 'assets'), { recursive: true });
-        writeFileSync(join(tmpDir, 'assets', 'style.css'), DEFAULT_STYLES);
-
-        // 4. Output directory
+        // 2. A private build directory (mode 0700, random name). The fixed
+        // /tmp/form-builds/<formId> could be made first by another user of
+        // the machine, who then chose files the build read.
+        const tmpDir = mkdtempSync(join(tmpdir(), 'form-build-'));
         const outputDir = join(config.staticDir, space.slug, form.slug);
-        mkdirSync(outputDir, { recursive: true });
+        try {
+            // 3. Generate source files
+            const htmlContent = generateFormHtml(form.title, form.description, fields, formId, recaptchaSiteKey);
+            writeFileSync(join(tmpDir, 'index.html'), htmlContent);
 
-        // 5. Build with Vite
-        await buildFormBundle({
-            sourceDir: tmpDir,
-            outputDir,
-            formId,
-            validationSchema,
-            base: publicFormBase(space.slug, form.slug),
-        });
+            const runtimeContent = generateFormRuntime(formId, space.slug, form.slug, recaptchaSiteKey);
+            writeFileSync(join(tmpDir, 'main.ts'), runtimeContent);
 
-        // 6. Write form schema to Redis (so forms-api has it immediately)
-        if (this.redis) {
-            const schemaKey = REDIS_KEYS.formSchema(space.slug, form.slug);
-            const metaKey = REDIS_KEYS.formMeta(space.slug, form.slug);
+            // Basic CSS
+            mkdirSync(join(tmpDir, 'assets'), { recursive: true });
+            writeFileSync(join(tmpDir, 'assets', 'style.css'), DEFAULT_STYLES);
 
-            await this.redis.set(schemaKey, JSON.stringify(validationSchema));
-            await this.redis.set(
-                metaKey,
-                JSON.stringify({
-                    formId: form.id,
-                    status: form.status,
-                    startsAt: form.startsAt?.toISOString() ?? null,
-                    endsAt: form.endsAt?.toISOString() ?? null,
-                }),
-            );
-            await this.redis.sadd(REDIS_KEYS.formIndex, `${space.slug}:${form.slug}`);
+            // 4. Output directory
+            mkdirSync(outputDir, { recursive: true });
+
+            // 5. Build with Vite
+            await buildFormBundle({
+                sourceDir: tmpDir,
+                outputDir,
+                formId,
+                validationSchema,
+                base: publicFormBase(space.slug, form.slug),
+            });
+
+            // 6. Write form schema to Redis (so forms-api has it immediately)
+            if (this.redis) {
+                const schemaKey = REDIS_KEYS.formSchema(space.slug, form.slug);
+                const metaKey = REDIS_KEYS.formMeta(space.slug, form.slug);
+
+                await this.redis.set(schemaKey, JSON.stringify(validationSchema));
+                await this.redis.set(
+                    metaKey,
+                    JSON.stringify({
+                        formId: form.id,
+                        status: form.status,
+                        startsAt: form.startsAt?.toISOString() ?? null,
+                        endsAt: form.endsAt?.toISOString() ?? null,
+                    }),
+                );
+                await this.redis.sadd(REDIS_KEYS.formIndex, `${space.slug}:${form.slug}`);
+            }
+        } finally {
+            // 7. Clean up temp dir, also after a failed build (it used to stay).
+            rmSync(tmpDir, { recursive: true, force: true });
         }
-
-        // 7. Clean up temp dir
-        rmSync(tmpDir, { recursive: true, force: true });
 
         console.log(`Prerendered form ${formId} to ${outputDir}`);
         return { outputDir };

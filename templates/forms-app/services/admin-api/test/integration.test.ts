@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { eq } from "drizzle-orm";
-import { answers } from "@forms-app/shared/db";
-import { SpaceService } from "../src/domain/spaces/space.service.ts";
-import { FormService } from "../src/domain/forms/form.service.ts";
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import { eq } from 'drizzle-orm';
+import { answers } from '@forms-app/shared/db';
+import { SpaceService } from '../src/domain/spaces/space.service.ts';
+import { FormService } from '../src/domain/forms/form.service.ts';
 
 // Heavy integration: the admin-api domain services against a real Postgres with
 // the actual Drizzle schema (FK cascades, enums, unique index). Gated behind a
 // credential-checked connection. Use a 5433 test container on this machine
 // (native PG occupies 5432): TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5433/postgres
-const PG_URL = process.env.TEST_PG_URL || "postgres://postgres:postgres@127.0.0.1:5432/postgres";
+const PG_URL = process.env.TEST_PG_URL || 'postgres://postgres:postgres@127.0.0.1:5432/postgres';
 
 async function pgUsable(url: string): Promise<boolean> {
     try {
@@ -59,7 +59,7 @@ CREATE TABLE answers (
 
 const pgUp = await pgUsable(PG_URL);
 
-(pgUp ? describe : describe.skip)("admin-api domain services (requires Postgres)", () => {
+(pgUp ? describe : describe.skip)('admin-api domain services (requires Postgres)', () => {
     let client: ReturnType<typeof postgres>;
     let db: any;
 
@@ -77,99 +77,109 @@ const pgUp = await pgUsable(PG_URL);
         await client.end();
     });
 
-    it("CRUDs a space", async () => {
-        const space = await SpaceService.create({ name: "Acme", slug: "acme" });
+    it('CRUDs a space', async () => {
+        const space = await SpaceService.create({ name: 'Acme', slug: 'acme' });
         expect(space.id).toBeDefined();
 
-        expect(await SpaceService.findBySlug("acme")).toMatchObject({ name: "Acme" });
-        expect((await SpaceService.findById(space.id))?.name).toBe("Acme");
+        expect(await SpaceService.findBySlug('acme')).toMatchObject({ name: 'Acme' });
+        expect((await SpaceService.findById(space.id))?.name).toBe('Acme');
         expect((await SpaceService.findAll()).length).toBeGreaterThanOrEqual(1);
 
-        const updated = await SpaceService.update(space.id, { name: "Acme Inc" });
-        expect(updated?.name).toBe("Acme Inc");
+        const updated = await SpaceService.update(space.id, { name: 'Acme Inc' });
+        expect(updated?.name).toBe('Acme Inc');
 
         await SpaceService.delete(space.id);
         expect(await SpaceService.findById(space.id)).toBeUndefined();
     });
 
-    it("creates a form with fields, enforces constraints and generates a validation schema", async () => {
-        const space = await SpaceService.create({ name: "Forms Co", slug: "forms-co" });
+    it('creates a form with fields, enforces constraints and generates a validation schema', async () => {
+        const space = await SpaceService.create({ name: 'Forms Co', slug: 'forms-co' });
 
         const form = await FormService.create(space.id, {
-            title: "Contact",
-            slug: "contact",
+            title: 'Contact',
+            slug: 'contact',
             fields: [
-                { fieldType: "email", name: "email", label: "Email", position: 0, required: true },
+                { fieldType: 'email', name: 'email', label: 'Email', position: 0, required: true },
                 // maxLength way over the text cap (10000) → must be clamped by enforceConstraints
-                { fieldType: "text", name: "msg", label: "Message", position: 1, required: false, maxLength: 99_999_999 },
+                {
+                    fieldType: 'text',
+                    name: 'msg',
+                    label: 'Message',
+                    position: 1,
+                    required: false,
+                    maxLength: 99_999_999,
+                },
             ],
         } as any);
 
         expect(form.fields.length).toBe(2);
-        expect(form.status).toBe("draft");
-        expect(form.validationSchema!.properties.email.format).toBe("email");
-        expect(form.validationSchema!.required).toContain("email");
+        expect(form.status).toBe('draft');
+        expect(form.validationSchema!.properties.email.format).toBe('email');
+        expect(form.validationSchema!.required).toContain('email');
         // constraint enforcement flowed into both the stored field and the schema
         expect(form.validationSchema!.properties.msg.maxLength).toBe(10000);
-        expect(form.fields.find((f: any) => f.name === "msg")?.maxLength).toBe(10000);
+        expect(form.fields.find((f: any) => f.name === 'msg')?.maxLength).toBe(10000);
 
         // round-trips from Postgres with fields ordered by position
         const fetched = await FormService.findById(form.id);
-        expect(fetched?.fields.map((f: any) => f.name)).toEqual(["email", "msg"]);
-        expect(fetched?.validationSchema!.properties.email.format).toBe("email");
+        expect(fetched?.fields.map((f: any) => f.name)).toEqual(['email', 'msg']);
+        expect(fetched?.validationSchema!.properties.email.format).toBe('email');
     });
 
-    it("replaces fields and regenerates the schema on update", async () => {
-        const space = await SpaceService.create({ name: "Upd", slug: "upd" });
+    it('replaces fields and regenerates the schema on update', async () => {
+        const space = await SpaceService.create({ name: 'Upd', slug: 'upd' });
         const form = await FormService.create(space.id, {
-            title: "F", slug: "f",
-            fields: [{ fieldType: "text", name: "old", label: "Old", position: 0 }],
+            title: 'F',
+            slug: 'f',
+            fields: [{ fieldType: 'text', name: 'old', label: 'Old', position: 0 }],
         } as any);
 
         const updated = await FormService.update(form.id, {
-            title: "F2",
-            fields: [{ fieldType: "number", name: "age", label: "Age", position: 0, required: true, min: 0, max: 120 }],
+            title: 'F2',
+            fields: [{ fieldType: 'number', name: 'age', label: 'Age', position: 0, required: true, min: 0, max: 120 }],
         } as any);
 
-        expect(updated?.title).toBe("F2");
-        expect(updated?.fields.map((f: any) => f.name)).toEqual(["age"]);
-        expect(updated?.validationSchema!.properties.age).toMatchObject({ type: "number", minimum: 0, maximum: 120 });
+        expect(updated?.title).toBe('F2');
+        expect(updated?.fields.map((f: any) => f.name)).toEqual(['age']);
+        expect(updated?.validationSchema!.properties.age).toMatchObject({ type: 'number', minimum: 0, maximum: 120 });
         expect(updated?.validationSchema!.properties.old).toBeUndefined();
 
-        await FormService.setStatus(form.id, "open");
-        expect((await FormService.findById(form.id))?.status).toBe("open");
+        await FormService.setStatus(form.id, 'open');
+        expect((await FormService.findById(form.id))?.status).toBe('open');
     });
 
-    it("rolls back create and update when a field cannot be stored", async () => {
-        const space = await SpaceService.create({ name: "Tx", slug: "tx" });
+    it('rolls back create and update when a field cannot be stored', async () => {
+        const space = await SpaceService.create({ name: 'Tx', slug: 'tx' });
         // An invalid field type fails in the database, after the form row.
-        const bad = [{ fieldType: "bogus", name: "x", label: "X", position: 0 }];
-        await expect(FormService.create(space.id, { title: "F", slug: "tx-f", fields: bad } as any)).rejects.toThrow();
+        const bad = [{ fieldType: 'bogus', name: 'x', label: 'X', position: 0 }];
+        await expect(FormService.create(space.id, { title: 'F', slug: 'tx-f', fields: bad } as any)).rejects.toThrow();
         expect(await FormService.findBySpaceId(space.id)).toEqual([]);
 
         const form = await FormService.create(space.id, {
-            title: "F", slug: "tx-g",
-            fields: [{ fieldType: "text", name: "kept", label: "Kept", position: 0 }],
+            title: 'F',
+            slug: 'tx-g',
+            fields: [{ fieldType: 'text', name: 'kept', label: 'Kept', position: 0 }],
         } as any);
         await expect(FormService.update(form.id, { fields: bad } as any)).rejects.toThrow();
         // The fields used to be deleted before the failing insert.
-        expect((await FormService.findById(form.id))?.fields.map((f: any) => f.name)).toEqual(["kept"]);
+        expect((await FormService.findById(form.id))?.fields.map((f: any) => f.name)).toEqual(['kept']);
     });
 
-    it("opens a scheduled form that has no start date", async () => {
-        const { SchedulerService } = await import("../../cron/src/domain/scheduler.service.ts");
-        const space = await SpaceService.create({ name: "Sched", slug: "sched" });
+    it('opens a scheduled form that has no start date', async () => {
+        const { SchedulerService } = await import('../../cron/src/domain/scheduler.service.ts');
+        const space = await SpaceService.create({ name: 'Sched', slug: 'sched' });
         const form = await FormService.create(space.id, {
-            title: "F", slug: "now",
-            fields: [{ fieldType: "text", name: "a", label: "A", position: 0 }],
+            title: 'F',
+            slug: 'now',
+            fields: [{ fieldType: 'text', name: 'a', label: 'A', position: 0 }],
         } as any);
-        await FormService.setStatus(form.id, "scheduled");
+        await FormService.setStatus(form.id, 'scheduled');
 
         const opened: string[] = [];
         const realFetch = globalThis.fetch;
         globalThis.fetch = (async (_url: unknown, init: any) => {
             opened.push(JSON.parse(init.body).formId);
-            return new Response("{}", { status: 200 });
+            return new Response('{}', { status: 200 });
         }) as typeof fetch;
         const log = console.log;
         console.log = () => {};
@@ -184,11 +194,12 @@ const pgUp = await pgUsable(PG_URL);
         expect(opened).toContain(form.id);
     });
 
-    it("cascades form and field deletion when a space is deleted", async () => {
-        const space = await SpaceService.create({ name: "Casc", slug: "casc" });
+    it('cascades form and field deletion when a space is deleted', async () => {
+        const space = await SpaceService.create({ name: 'Casc', slug: 'casc' });
         const form = await FormService.create(space.id, {
-            title: "C", slug: "c",
-            fields: [{ fieldType: "text", name: "a", label: "A", position: 0 }],
+            title: 'C',
+            slug: 'c',
+            fields: [{ fieldType: 'text', name: 'a', label: 'A', position: 0 }],
         } as any);
 
         expect(await FormService.findById(form.id)).toBeDefined();
@@ -199,9 +210,9 @@ const pgUp = await pgUsable(PG_URL);
         expect(await FormService.findById(form.id)).toBeUndefined();
     });
 
-    it("paginates answers newest-first", async () => {
-        const space = await SpaceService.create({ name: "Ans", slug: "ans" });
-        const form = await FormService.create(space.id, { title: "A", slug: "a", fields: [] } as any);
+    it('paginates answers newest-first', async () => {
+        const space = await SpaceService.create({ name: 'Ans', slug: 'ans' });
+        const form = await FormService.create(space.id, { title: 'A', slug: 'a', fields: [] } as any);
 
         for (let i = 0; i < 3; i++) {
             await db.insert(answers).values({
@@ -209,7 +220,7 @@ const pgUp = await pgUsable(PG_URL);
                 formId: form.id,
                 data: { i },
                 submittedAt: new Date(Date.now() + i * 1000),
-                ipHash: "h",
+                ipHash: 'h',
                 recaptchaScore: 90,
             });
         }
