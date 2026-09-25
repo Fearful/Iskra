@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -7,7 +7,8 @@ from typing import Optional
 class SessionInfo:
     id: str = ""
     expires_at: Optional[str] = None
-    token: Optional[str] = None
+    # Out of repr(): it authenticates as the user, and objects end up in logs.
+    token: Optional[str] = field(default=None, repr=False)
 
     @classmethod
     def from_dict(cls, raw: dict) -> SessionInfo:
@@ -44,8 +45,8 @@ class Session:
     # The Cookie header value that authenticates as this session, captured
     # from the sign-in / sign-up response. Pass the Session (or this string)
     # to IskraClient.with_session() to make requests as the user; keep it
-    # server-side, it is as sensitive as the user's password.
-    cookie: Optional[str] = None
+    # server-side, it is as sensitive as the user's password (and out of repr()).
+    cookie: Optional[str] = field(default=None, repr=False)
 
     @classmethod
     def from_dict(cls, raw: dict, cookie: Optional[str] = None) -> Session:

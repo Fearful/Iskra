@@ -96,3 +96,43 @@ def test_connection_errors_are_iskra_exceptions():
     with pytest.raises(IskraException) as info:
         client.get("/anything")
     assert info.value.status_code == 0
+
+
+def test_absolute_urls_are_refused_before_any_credential_leaves(base_url: str):
+    import http.server
+    import threading
+
+    seen: list = []
+
+    class Attacker(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server's naming
+            seen.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Attacker)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with IskraClient(base_url=base_url, api_key="sk-live-SECRET") as client:
+            as_user = client.with_session("better-auth.session_token=VICTIM.sig")
+            for path in (f"http://127.0.0.1:{server.server_port}/steal", f"//127.0.0.1:{server.server_port}/steal"):
+                with pytest.raises(ValueError):
+                    as_user.get(path)
+        assert seen == []
+    finally:
+        server.shutdown()
+
+
+def test_secrets_stay_out_of_repr():
+    from iskra_client import IskraConfig
+    from iskra_client.auth.models import Session, SessionInfo
+
+    config = IskraConfig(base_url="http://iskra", api_key="sk-live-SECRET", headers={"Authorization": "Bearer X"})
+    session = Session(session=SessionInfo(id="s1", token="TOKEN-abc"), cookie="better-auth.session_token=TOKEN-abc.sig")
+    text = repr(config) + repr(session)
+    for secret in ("sk-live-SECRET", "Bearer X", "TOKEN-abc"):
+        assert secret not in text
+    assert "http://iskra" in text and "s1" in text
