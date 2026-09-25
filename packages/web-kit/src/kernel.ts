@@ -232,6 +232,11 @@ export class Kernel {
                     visit(dep);
                 }
             }
+            // Optional ones only set the order, when they are registered: the
+            // CSRF middleware reads the session, so it has to run after it.
+            for (const dep of feature.optionalDependencies ?? []) {
+                if (this.features.has(dep)) visit(dep);
+            }
 
             visiting.delete(name);
             visited.add(name);

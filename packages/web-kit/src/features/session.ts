@@ -358,6 +358,12 @@ declare module 'hono' {
     interface ContextVariableMap {
         session: SessionData;
         sessionId: string;
+        /**
+         * Whether `sessionId` names a stored session: false for a new one (it
+         * is stored at the end of the request if the handler puts data in it)
+         * and after `destroySession()` or `regenerateSession()`.
+         */
+        sessionPersisted: boolean;
         destroySession: () => Promise<void>;
         /**
          * Issues a new session ID for the current data and invalidates the old
@@ -461,8 +467,10 @@ export class SessionFeature implements Feature {
 
             c.set('session', session);
             c.set('sessionId', sessionId);
+            c.set('sessionPersisted', persisted);
             c.set('destroySession', async () => {
                 destroyed = true;
+                c.set('sessionPersisted', false);
                 await this.store!.destroy(sessionId!);
                 deleteCookie(c, this.cookieName, cookieOptions);
             });
@@ -471,6 +479,7 @@ export class SessionFeature implements Feature {
                 persisted = false;
                 sessionId = crypto.randomUUID();
                 c.set('sessionId', sessionId);
+                c.set('sessionPersisted', false);
             });
 
             await next();

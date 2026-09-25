@@ -110,10 +110,18 @@ export interface ApiKeyConfig {
 }
 
 export interface CsrfConfig {
+    /** Signs the tokens; at least 32 characters. */
     secret: string;
+    /** Default `"__Host-csrf"` while the cookie is Secure (the default), `"_csrf"` otherwise. */
     cookieName?: string;
     headerName?: string;
     ignoreMethods?: string[];
+    /**
+     * Other origins whose pages may send state-changing requests (e.g. a
+     * frontend on another subdomain), as `https://app.example.com`. Requests
+     * whose `Origin` is neither the app's own nor one of these are rejected.
+     */
+    trustedOrigins?: string[];
     cookieOptions?: {
         httpOnly?: boolean;
         secure?: boolean;
@@ -126,6 +134,7 @@ export interface CsrfConfig {
 export interface Feature {
     name: string;
     dependencies?: string[]; // Required features
+    optionalDependencies?: string[]; // Features initialized first when they are registered
     peerDependencies?: string[]; // Required npm packages
     initialize(kernel: Kernel): Promise<void>;
     routes?: (app: Hono) => void;

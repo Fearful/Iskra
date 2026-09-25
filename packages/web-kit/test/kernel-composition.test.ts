@@ -127,4 +127,20 @@ describe('Kernel composition guards', () => {
         const res = await kernel.getApp().request('/');
         expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=0');
     });
+
+    it('initializes optional dependencies first when they are registered, and needs none of them', async () => {
+        const order: string[] = [];
+        const feature = (name: string, optionalDependencies?: string[]): Feature => ({
+            name,
+            optionalDependencies,
+            async initialize() {
+                order.push(name);
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(feature('csrf-like', ['session-like', 'absent']));
+        kernel.registerFeature(feature('session-like'));
+        await kernel.initialize();
+        expect(order).toEqual(['session-like', 'csrf-like']);
+    });
 });
