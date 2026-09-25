@@ -3,7 +3,7 @@ import { createLogger, type Logger } from './logger';
 import { loadAppConfig } from './config/loader';
 import type { AppConfig, AppContextRegistry, AppEvents, Driver, Plugin, Context } from './types';
 import { LifecycleError } from './errors';
-import { initOtel, shutdownOtel } from './otel';
+import { describeOtelEndpoint, initOtel, shutdownOtel } from './otel';
 
 /**
  * `app.context`: a Map whose keys in AppContextRegistry (`'db'`, `'kv'`, …)
@@ -57,7 +57,15 @@ export class App {
         // Initialize OpenTelemetry SDK before drivers (so auto-instrumentation patches libraries)
         if (this.config.otel && this.config.otel.enabled !== false) {
             await initOtel(this.config.otel, this.config.name);
-            this.logger.info({ endpoint: this.config.otel.endpoint }, 'OpenTelemetry initialized');
+            // Its origin only: the endpoint's path, query or userinfo can hold an API key.
+            const { origin, plaintext } = describeOtelEndpoint(this.config.otel);
+            this.logger.info({ endpoint: origin }, 'OpenTelemetry initialized');
+            if (plaintext) {
+                this.logger.warn(
+                    { endpoint: origin },
+                    'OpenTelemetry endpoint is plain http:// on a remote host: spans (URLs, captured headers) travel unencrypted; use https://',
+                );
+            }
         }
 
         this.logger.info('Initializing App...');

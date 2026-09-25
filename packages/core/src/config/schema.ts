@@ -29,7 +29,8 @@ export const AppConfigSchema = z
                 environment: z.string().optional(),
                 metricIntervalMs: z.number().default(60_000),
                 resourceAttributes: z.record(z.string()).optional(),
-                instrumentations: z.record(z.object({ enabled: z.boolean().optional() })).optional(),
+                // passthrough: the instrumentations' own options (hooks, redactedQueryParams) were stripped.
+                instrumentations: z.record(z.object({ enabled: z.boolean().optional() }).passthrough()).optional(),
             })
             .passthrough()
             .optional(),
