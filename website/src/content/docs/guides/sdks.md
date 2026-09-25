@@ -142,6 +142,9 @@ iskra.auth().signOut(session);
   anyone list, download and delete everyone's files: scope each user to a folder
   of their own in `authorize` (e.g. require the subfolder to be `users/<user.id>`;
   the SDK READMEs show it).
+- `timeout` bounds each request as a whole (connecting, sending, headers and body),
+  not each read, so a server trickling bytes cannot hold a call open; the Python SDK
+  also stops reading a response body past `max_response_bytes` (10 MiB by default).
 
 Both SDKs are tested against a real Iskra service,
 [`sdks/contract/server.ts`](https://github.com/fearful/iskra/tree/main/sdks/contract/server.ts),

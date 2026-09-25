@@ -58,13 +58,20 @@ async with IskraClient(base_url="http://localhost:3000") as iskra:
 iskra = IskraClient(
     base_url="http://iskra-service:3000",
     api_key="sk-xxx",                        # API key para autenticacion
-    timeout=60.0,                            # timeout en segundos (default: 30)
+    timeout=60.0,                            # segundos para toda la peticion (default: 30)
     headers={"X-Custom-Header": "valor"},    # headers adicionales
     auth_base_path="/api/sso",               # ruta base de auth (default: /api/sso)
     storage_route_prefix="/upload",          # routePrefix del UploadFeature (default: /upload)
     origin=None,                             # Origin de las peticiones con sesion (default: el de base_url)
+    max_response_bytes=10 * 1024 * 1024,     # cuerpo de respuesta mas grande que se lee (default: 10 MiB)
 )
 ```
+
+`timeout` es el plazo de **toda** la peticion (conectar, enviar, los headers y el cuerpo),
+no de cada lectura: un servidor que manda un byte cada tanto ya no puede retener la
+llamada indefinidamente. `max_response_bytes` corta la lectura de un cuerpo mas grande
+(contado ya descomprimido); en los dos casos el SDK lanza `IskraException` con
+`status_code` 0. Para descargas grandes de storage, subi `max_response_bytes`.
 
 Un solo `IskraClient` puede atender a todos los usuarios de tu backend: reutiliza
 conexiones y **nunca guarda cookies**, asi que la sesion de un usuario no se filtra

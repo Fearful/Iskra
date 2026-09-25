@@ -143,6 +143,10 @@ iskra.auth().signOut(session);
   sesion deja que cualquiera liste, descargue o borre los archivos de los demas: exigi
   en `authorize` una carpeta propia por usuario (por ejemplo, que la subcarpeta sea
   `users/<user.id>`; los READMEs de los SDKs lo muestran).
+- `timeout` limita cada peticion entera (conectar, enviar, headers y cuerpo), no cada
+  lectura, asi que un servidor que manda bytes de a poco no puede retener la llamada; el
+  SDK de Python ademas deja de leer un cuerpo de respuesta que supera
+  `max_response_bytes` (10 MiB por defecto).
 
 Los dos SDKs se testean contra un servicio Iskra real,
 [`sdks/contract/server.ts`](https://github.com/fearful/iskra/tree/main/sdks/contract/server.ts),

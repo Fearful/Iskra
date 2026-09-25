@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 from iskra_client.auth.client import AuthClient, SessionLike, session_cookie
-from iskra_client.config import IskraConfig
+from iskra_client.config import DEFAULT_MAX_RESPONSE_BYTES, IskraConfig
 from iskra_client.health.client import HealthClient
 from iskra_client.http_client import HttpClientWrapper
 from iskra_client.responses import IskraResponse
@@ -14,12 +14,15 @@ class IskraClient:
         self,
         base_url: str,
         api_key: Optional[str] = None,
-        timeout: float = 30.0,
+        timeout: Optional[float] = 30.0,
         headers: Optional[dict] = None,
         auth_base_path: str = "/api/sso",
         origin: Optional[str] = None,
         storage_route_prefix: str = "/upload",
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> None:
+        """`timeout` bounds each whole request, in seconds; `max_response_bytes`
+        the size of each response body (see IskraConfig)."""
         config = IskraConfig(
             base_url=base_url,
             api_key=api_key,
@@ -28,6 +31,7 @@ class IskraClient:
             auth_base_path=auth_base_path,
             origin=origin,
             storage_route_prefix=storage_route_prefix,
+            max_response_bytes=max_response_bytes,
         )
         self._init(HttpClientWrapper(config), owns_transport=True)
 
