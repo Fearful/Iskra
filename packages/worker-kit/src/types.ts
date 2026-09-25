@@ -1,3 +1,5 @@
+import type { KeepJobs } from 'bullmq';
+
 export interface WorkerManagerOptions {
     /** URL de conexión a Redis (ej: 'redis://user:pass@localhost:6379/0'; `rediss://` activa TLS) */
     connection:
@@ -43,10 +45,17 @@ export interface JobOptions {
         type: 'fixed' | 'exponential';
         delay: number;
     };
-    /** Eliminar el job de Redis al completarse */
-    removeOnComplete?: boolean | number;
-    /** Eliminar el job de Redis al fallar */
-    removeOnFail?: boolean | number;
+    /**
+     * Jobs completados que quedan en Redis, con sus datos: `true` los borra,
+     * un número conserva los últimos N, `{ age, count }` por edad (s) y
+     * cantidad. Default `{ count: 1000 }`; `false` los conserva todos.
+     */
+    removeOnComplete?: boolean | number | KeepJobs;
+    /**
+     * Jobs fallidos (sin reintentos pendientes) que quedan en Redis, igual que
+     * removeOnComplete. Default `{ age: 7 días, count: 5000 }`; `false` los conserva todos.
+     */
+    removeOnFail?: boolean | number | KeepJobs;
     /**
      * Programa el job como repetible (cron o intervalo).
      * Se reenvía a la opción `repeat` de BullMQ.

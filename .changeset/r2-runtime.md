@@ -2,6 +2,7 @@
 "@iskra-bun/process-kit": minor
 "@iskra-bun/core": minor
 "@iskra-bun/web-kit": minor
+"@iskra-bun/worker-kit": minor
 ---
 
 **Security:** runtime hardening from the second audit round.
@@ -12,3 +13,4 @@
 - `web-kit`: `OtelTracingFeature` exported `url.full` as requested (@hono/otel sets it to `c.req.url`): the `?token=` of an email verification link, the token of better-auth's `/reset-password/<token>` and `?api_key=` reached the collector. The values of `SECRET_QUERY_PARAMS` (or the new `redactedQueryParams`) and that path token are now `REDACTED`. New `ignoreIncomingTraceContext` option to start a new trace per request instead of continuing the client's `traceparent` (default unchanged). `@opentelemetry/api` is now a direct dependency (it already came with `@hono/otel`).
 - `web-kit`: `OpenAPIFeature`'s `/docs` page loaded `@scalar/api-reference@latest` on the app's origin. It now loads a pinned release (1.68.0) with its SRI hash and `crossorigin`, sends a Content-Security-Policy (scripts from that host only; requests only to the app and the spec's `servers`), turns off Scalar's web fonts and AI agent (which sends the spec to Scalar's servers), and HTML-escapes the title. New options: `docs: false` serves neither `/openapi.json` nor `/docs`; `authorize(c)` gates both (they are registered before middleware added after `initialize()`, so a `basicAuth()` there did not cover them); `scalar: { src, integrity }` or `false`.
 - `web-kit` (**breaking**): `HealthCheckFeature`'s `/health/ready` lists the check names (`checks`, `failed`) and `/health/live` the `uptime` only with `includeDetails: true`, like `/health`; the names of failed readiness checks are logged instead.
+- `worker-kit` (**breaking**): finished jobs are no longer kept in Redis forever with their payloads (BullMQ's default when `removeOnComplete`/`removeOnFail` are unset, which worker-kit never set). The queue keeps the last 1000 completed jobs and the failed ones of the last 7 days (at most 5000); `defaultJobOptions` or a job's options override it (`false` keeps them all), and both options now take BullMQ's `{ age, count }` form. `result()` of a job removed since rejects. The dead-letter example in the docs logged the whole payload with `console.error`, outside the logger's redaction; it logs ids now.
