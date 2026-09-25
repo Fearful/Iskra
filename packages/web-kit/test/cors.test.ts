@@ -30,3 +30,27 @@ describe('CorsFeature origin', () => {
         expect(await allowedOrigin(config, 'https://evil.test')).toBeNull();
     });
 });
+
+describe('CorsFeature credentials', () => {
+    it("refuses credentials with any origin ('*' or unset)", async () => {
+        // Regression: this sent `Access-Control-Allow-Origin: *` with
+        // credentials, which browsers reject, and said nothing on the server.
+        const configs: CorsConfig[] = [{ credentials: true }, { credentials: true, origin: '*' }];
+        for (const config of configs) {
+            const kernel = new Kernel({ logger: false });
+            kernel.registerFeature(new CorsFeature(config));
+            await expect(kernel.initialize()).rejects.toThrow(/credentials: true.*needs `origin`/);
+        }
+    });
+
+    it('allows credentials for the listed origins', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new CorsFeature({ credentials: true, origin: ['https://a.example'] }));
+        await kernel.initialize();
+        kernel.getApp().get('/', (c) => c.text('ok'));
+        const res = await kernel.getApp().request('/', { headers: { Origin: 'https://a.example' } });
+        expect(res.headers.get('access-control-allow-origin')).toBe('https://a.example');
+        expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+        await kernel.shutdown();
+    });
+});
