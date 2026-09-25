@@ -28,6 +28,7 @@ export interface ProcessorOptions {
 
 /** Lo que este modulo usa del ProcessManager. */
 export interface ProcessSender {
+    /** `false` (o una promesa de `false`): el mensaje no se envio. */
     send(name: string, data: unknown): unknown;
 }
 
@@ -82,7 +83,20 @@ export function createProcessor(app: App, processes: ProcessSender, options: Pro
                 }, timeoutMs),
             };
             inFlight.set(requestId, pending);
-            processes.send(PROCESS_NAME, { ...data, requestId, deadline: Date.now() + timeoutMs });
+
+            // process-kit resuelve false si no lo envio (el proceso no corre, o
+            // no leyo lo que ya se le mando): el pedido fallaba recien al vencer.
+            const refused = () => {
+                if (inFlight.get(requestId) !== pending) return;
+                inFlight.delete(requestId);
+                clearTimeout(pending.timeout);
+                if (!pending.settled) reject(new ProcessorError('The processor is busy', 503));
+            };
+            Promise.resolve(
+                processes.send(PROCESS_NAME, { ...data, requestId, deadline: Date.now() + timeoutMs }),
+            ).then((sent) => {
+                if (sent === false) refused();
+            }, refused);
         });
     }
 
@@ -155,7 +169,10 @@ export function createProcessor(app: App, processes: ProcessSender, options: Pro
             const result = await sendToProcess(body as Record<string, unknown>);
             return c.json({ success: true, result });
         } catch (err) {
-            if (err instanceof ProcessorError) return c.json({ success: false, error: err.message }, err.status);
+            if (err instanceof ProcessorError) {
+                if (err.status === 503) c.header('Retry-After', '1');
+                return c.json({ success: false, error: err.message }, err.status);
+            }
             throw err;
         }
     });

@@ -46,6 +46,23 @@ describe('python-data-processor /process', () => {
         expect(sent).toEqual([]);
     });
 
+    it('fails at once when the process manager does not send the request', async () => {
+        // process-kit's send() resolves to false for a child that is not
+        // reading its stdin: the request used to wait for its timeout.
+        const app = new App({ name: 'ProcessorTest', logger: { level: 'silent' }, shutdownSignals: false });
+        const processor = createProcessor(app, { send: async () => false }, { timeoutMs: 60_000 });
+        app.emit('process:message', { name: PROCESS_NAME, message: { type: 'status' } });
+
+        const res = await processor.router.request('/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        expect(res.status).toBe(503);
+        expect(res.headers.get('retry-after')).toBe('1');
+        expect(processor.inFlight()).toBe(0);
+    });
+
     it('refuses requests beyond the in-flight cap', async () => {
         const { sent, post } = setup({ maxInFlight: 2 });
         void post('{}');
