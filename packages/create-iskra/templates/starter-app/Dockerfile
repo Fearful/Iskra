@@ -3,7 +3,7 @@
 # Needs the lockfile: run `bun install` once before the first build.
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.2 AS builder
 
 WORKDIR /build
 

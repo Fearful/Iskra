@@ -3,7 +3,7 @@
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # The Bun the monorepo is pinned to (.bun-version).
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.2 AS builder
 
 WORKDIR /build
 
