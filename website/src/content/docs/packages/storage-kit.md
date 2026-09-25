@@ -67,6 +67,7 @@ const storage = await createStorageAdapter({
 
 ```typescript
 // Store a file
+// options: { contentType?, contentDisposition?, overwrite?, metadata? }
 const file = await storage.put(path, data, options?);
 
 // Read bytes
@@ -82,7 +83,8 @@ const exists = await storage.exists(path);
 const files = await storage.list(prefix?);
 
 // Generate URL (pre-signed for S3/MinIO)
-const url = await storage.url(path, expiresIn?);
+// options: { contentType?, contentDisposition? } served by the URL
+const url = await storage.url(path, expiresIn?, options?);
 
 // Copy
 await storage.copy(from, to);
@@ -116,10 +118,63 @@ directly to `put`, `get`, `getStream`, `delete`, and the other methods. Validati
 the shape of keys at your application boundary is still recommended as defense in
 depth.
 
+### Content type and disposition
+
+A file is stored and served with a type taken from its extension (`contentTypeFor`),
+never with the type an uploader sent: an `.svg` or `.html` file stored as
+`image/svg+xml` or `text/html` runs its scripts on the origin that serves it. Only
+images, PDF, text, CSV, JSON, ZIP and common audio/video extensions have a type;
+anything else, including HTML, SVG, XML and JavaScript, is `application/octet-stream`.
+
+Only raster images (PNG, JPEG, GIF, WebP, AVIF, BMP, ICO) are served inline;
+everything else is a download (`Content-Disposition: attachment`, `dispositionFor`):
+
+- S3/MinIO: `put()` stores that `Content-Disposition` with the object (pass
+  `contentDisposition` to choose another), and the URLs of `url()` are signed with
+  the type and disposition of the path's extension, whatever the object was stored
+  with (pass `{ contentType, contentDisposition }` to serve something else).
+- Local: `url()` returns `/storage/<path>`, a folder your app serves itself. Serve it
+  with the same headers (`Content-Type: contentTypeFor(path)`,
+  `Content-Disposition: dispositionFor(type)`, `X-Content-Type-Options: nosniff`,
+  ideally `Content-Security-Policy: sandbox`), not with the type a static server
+  infers from the extension.
+
+```typescript
+import { contentTypeFor, dispositionFor } from '@iskra-bun/storage-kit';
+
+contentTypeFor('logo.svg');    // 'application/octet-stream'
+contentTypeFor('photo.png');   // 'image/png'
+dispositionFor('image/png');   // 'inline'
+dispositionFor('application/pdf'); // 'attachment'
+```
+
+### Not overwriting a file
+
+`put()` replaces a file already stored at the path. With `overwrite: false` it
+throws a `FileExistsError` instead (S3 `If-None-Match: *`, an exclusive create on
+the local disk):
+
+```typescript
+import { FileExistsError } from '@iskra-bun/storage-kit';
+
+try {
+    await storage.put('docs/report.pdf', data, { overwrite: false });
+} catch (error) {
+    if (error instanceof FileExistsError) {
+        // someone else's file is already there
+    }
+}
+```
+
+On S3 this needs conditional writes (AWS S3 since August 2024; check your MinIO
+or S3-compatible server supports `If-None-Match` on `PUT`).
+
 ### Secure-by-default S3 endpoints
 
 The S3 adapter refuses a plaintext `http://` endpoint to avoid sending credentials
-and data in the clear:
+and data in the clear. The endpoint is parsed as a URL, as the AWS SDK parses it,
+so `http:/host`, `http:host` or `http:\\host` count as plaintext too, and an
+endpoint that is not an `http(s)` URL is rejected:
 
 ```typescript
 new S3StorageAdapter({
