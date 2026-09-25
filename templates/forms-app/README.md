@@ -292,8 +292,12 @@ templates/forms-app/
     └── answer-writer/                    # @forms-app/answer-writer
         └── src/
             ├── main.ts                   # App + DbDriver + WorkerManager (consumer)
-            └── domain/writer/
-                └── writer.service.ts     # Buffer de respuestas + flush por cantidad (50) o tiempo (2s)
+            └── domain/
+                ├── answer-job.ts         # Handler del job: valida y despues guarda
+                ├── validation/
+                │   └── answer-validator.service.ts # Revalida cada respuesta contra el formulario en Postgres
+                └── writer/
+                    └── writer.service.ts # Buffer de respuestas + flush por cantidad (50) o tiempo (2s)
 ```
 
 ## Base de datos
@@ -410,7 +414,7 @@ Cada tipo de campo tiene limites maximos definidos en `field-constraints.ts` par
 5. POST a `/formularios/api/submit/:spaceSlug/:formSlug` con datos + tokens
 6. **forms-api**: valida CSRF → lee schema de Redis (cache local 30s) → verifica reCAPTCHA con Google → valida datos con AJV + errorMessages → hashea IP con salt diario → encola en BullMQ
 7. Retorna `202 Accepted`
-8. **answer-writer**: consume de la cola, acumula en buffer, hace batch INSERT cuando hay 50 respuestas o pasaron 2 segundos
+8. **answer-writer**: consume de la cola, vuelve a validar cada respuesta (formulario existente y abierto, JSON Schema de Postgres), acumula en buffer, hace batch INSERT cuando hay 50 respuestas o pasaron 2 segundos
 
 ## Flujo de pre-renderizado
 
@@ -434,7 +438,22 @@ El servicio publico (`forms-api`) **no tiene conexion a PostgreSQL**. Solo habla
 - No tiene acceso a la base de datos
 - No puede leer datos de otros formularios (solo lo que esta en Redis)
 - No puede modificar formularios ni usuarios
-- Solo puede encolar datos a una cola de Redis (que el answer-writer valida antes de insertar)
+- Solo puede encolar respuestas en Redis, y answer-writer las vuelve a validar antes de
+  insertarlas (ver abajo). Lo que si puede: guardar respuestas que cumplan el schema de un
+  formulario abierto, con el score de reCAPTCHA y el hash de IP que quiera
+
+### Revalidacion en answer-writer
+
+La cola esta en Redis, al alcance de forms-api (y de quien tenga acceso a Redis), asi que
+answer-writer no confia en lo que encuentra ahi. Antes de insertar cada respuesta comprueba
+que el job tenga la forma que encola forms-api, que el formulario exista y este abierto, y
+que los datos cumplan su JSON Schema con la misma configuracion de AJV que forms-api. El
+schema se lee de PostgreSQL (`forms.validation_schema`), no de Redis, y se cachea 30
+segundos; un rechazo siempre se decide con una lectura nueva. Las respuestas que ya estaban
+en la cola cuando el formulario cerro se aceptan hasta 5 minutos despues de su fecha de
+cierre. Un job invalido falla sin reintentos (`UnrecoverableError` de BullMQ) y queda entre
+los jobs fallidos de la cola. Si editas los campos de un formulario abierto, las respuestas
+que no cumplan el schema nuevo tambien se rechazan.
 
 ### CSRF
 
@@ -456,7 +475,8 @@ No se guarda la IP cruda. Se hashea con SHA256 usando un salt que rota diariamen
 
 1. **Cliente**: Zod (UX inmediata, no es barrera de seguridad)
 2. **Servidor**: AJV con JSON Schema (barrera real, con los mismos mensajes)
-3. **Constraints de campos**: Limites duros por tipo de campo para proteger la base de datos
+3. **answer-writer**: AJV otra vez, con el JSON Schema de PostgreSQL, antes de insertar
+4. **Constraints de campos**: Limites duros por tipo de campo para proteger la base de datos
 
 ### Secretos
 
