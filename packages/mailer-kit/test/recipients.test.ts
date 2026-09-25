@@ -29,7 +29,6 @@ const SMUGGLING: unknown[] = [
     'bob@',
     '',
     42,
-    null,
 ];
 
 describe('checkRecipients', () => {
@@ -47,6 +46,9 @@ describe('checkRecipients', () => {
             { name: 'Ana, "CEO" <x@y>', address: 'ana@example.com' },
         ]);
         expect(checkRecipients(undefined)).toEqual([]);
+        // An absent optional field may arrive as null; a null entry is invalid.
+        expect(checkRecipients(null as any)).toEqual([]);
+        expect(() => checkRecipients(['ok@example.com', null] as any)).toThrow(/Invalid/);
     });
 });
 

@@ -67,7 +67,8 @@ export function checkRecipients(
     value: EmailRecipient | EmailRecipient[] | undefined,
     field = 'recipient',
 ): EmailAddress[] {
-    if (value === undefined) return [];
+    // null too: an optional field often arrives as null from JSON.
+    if (value === undefined || value === null) return [];
     return (Array.isArray(value) ? value : [value]).map((recipient) => {
         if (typeof recipient === 'string') return { address: checkEmail(recipient) };
         if (typeof recipient !== 'object' || recipient === null || typeof recipient.address !== 'string') {
