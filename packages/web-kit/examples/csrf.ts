@@ -15,6 +15,9 @@ basicKernel.registerFeature(
     }),
 );
 
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await basicKernel.initialize();
+
 basicKernel.getApp().get("/form", (c) => {
     const csrfToken = c.get("csrfToken");
 
@@ -58,6 +61,9 @@ sessionKernel.registerFeature(
         secret: "csrf-secret",
     }),
 );
+
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await sessionKernel.initialize();
 
 sessionKernel.getApp().get("/login", (c) => {
     const csrfToken = c.get("csrfToken");

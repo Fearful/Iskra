@@ -47,6 +47,19 @@ function ttlArgs(ttl: number): ['EX', number] | ['PX', number] {
     return Number.isInteger(ttl) ? ['EX', ttl] : ['PX', Math.max(1, Math.round(ttl * 1000))];
 }
 
+/**
+ * ioredis errors carry the command they answer with its arguments: AUTH's
+ * password on a refused login, which the app then logged. Only the command
+ * name is kept.
+ */
+function withoutCommandArgs<E>(error: E): E {
+    const command = (error as { command?: { name?: unknown; args?: unknown } } | null)?.command;
+    if (command && typeof command === 'object' && 'args' in command) {
+        (error as { command: unknown }).command = { name: command.name };
+    }
+    return error;
+}
+
 export class RedisAdapter implements KVAdapter {
     id = 'redis';
     private client: Redis | null = null;
@@ -75,14 +88,14 @@ export class RedisAdapter implements KVAdapter {
         } else {
             client = new Redis({ ...this.options, lazyConnect: true });
         }
-        client.on('error', (error: Error) => this.hooks.onError?.(error));
+        client.on('error', (error: Error) => this.hooks.onError?.(withoutCommandArgs(error)));
         try {
             await client.connect();
         } catch (error) {
             client.disconnect();
             // The message, not the URL: it may carry the password.
             throw new Error(`Could not connect to Redis: ${error instanceof Error ? error.message : String(error)}`, {
-                cause: error,
+                cause: withoutCommandArgs(error),
             });
         }
         this.client = client;

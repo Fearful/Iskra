@@ -95,7 +95,7 @@ import type { Hono } from 'hono';
 
 export class GreetingFeature implements Feature {
   name = 'greeting';
-  dependencies = ['errorHandler'];
+  dependencies = ['error-handler'];
 
   async initialize(kernel: Kernel) {
     // Set up shared state, read config from the kernel.
@@ -121,8 +121,18 @@ app.register(new WebPlugin({ port: 3000, features: [new GreetingFeature()] }));
 
 ### `dependencies` vs `peerDependencies`
 
-- `dependencies` — features que **deben** estar presentes e inicializarse primero. Si falta alguna, es un error.
-- `peerDependencies` — features que, **si están presentes**, deben inicializarse primero, pero son opcionales.
+- `dependencies` — nombres de features que **deben** estar registradas. Se inicializan primero, así que su middleware corre antes que el tuyo. Si falta alguna, es un error.
+- `peerDependencies` — nombres de **paquetes npm** que la feature necesita. Si falta alguno solo se registra un warning, y no cambian el orden de inicialización.
+
+Las features sin dependencias entre sí corren su middleware en el orden en que se registraron.
+
+### Reglas que aplica el Kernel
+
+- **Middleware en `initialize()`, rutas en `routes()`.** Hono solo corre el middleware registrado antes de una ruta. El Kernel registra primero el middleware de todas las features y después las rutas de todas, así CSRF, rate limiting, auth y CORS aplican a todas las rutas. Una feature que agrega una ruta en `initialize()` se saltearía el middleware de las features inicializadas después, así que `initialize()` falla.
+- **Nombres únicos.** Registrar una feature con un nombre ya usado lanza un error. Antes reemplazaba a la primera en silencio: un helper llamado `csrf` eliminaba la verificación CSRF. `RateLimitFeature` acepta un `name` para un segundo limitador.
+- **Rutas después de `initialize()`.** Con un `Kernel` suelto, llamá a `await kernel.initialize()` antes de `kernel.getApp().get(...)`: una ruta agregada antes se saltearía las cabeceras de seguridad y el middleware de todas las features, así que `initialize()` lanza un error. Con `WebPlugin`, pasá tus rutas como `router`.
+
+Un Driver, Plugin o Feature corre con acceso total a la app: su configuración y secretos, `app.context` (donde `set()` reemplaza una clave existente como `db`) y todos los eventos del bus. Revisalo como a cualquier otra dependencia.
 
 ## Empaquetar para reutilizar
 

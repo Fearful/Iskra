@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Requests:** a request path that is a URL of its own (`https://other.host/x`, `//other.host/x`) raises `ValueError`. httpx sends an absolute URL as is, ignoring `base_url`, so the API key and the user's session cookie went to that host (the Java SDK already refused it).
+- **Secrets:** `repr()` of `IskraConfig` leaves out `api_key` and `headers`, and that of `Session`/`SessionInfo` the cookie and token, so they don't end up in logs and error reports that print these objects.
 - **Storage:** a file name or subfolder segment `.` or `..` raises `ValueError`: httpx resolved it, so `download("x", subfolder="../contract")` left the upload routes and sent the API key and session cookie to another route.
 - **Errors:** connection failures and timeouts raise `IskraException` (status 0) instead of an `httpx` error that `except IskraException` handlers (such as the FastAPI example's) did not catch.
 - **Sessions:** `get_session(session)` returns the session with its `cookie` (it was None), so it can be passed to `with_session()`.

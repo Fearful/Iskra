@@ -54,6 +54,11 @@ export interface SocketDriverOptions {
     rateWindowMs?: number;
 }
 
+/** A room or topic name as the authz hooks expect it: a non-empty string. */
+function isTopicName(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
 /** Per-connection rate-limit bookkeeping, replaced immutably on each update. */
 interface RateState {
     count: number;
@@ -215,21 +220,34 @@ export class SocketDriver implements Driver {
                 ? { count: 1, windowStart: now }
                 : { count: prev.count + 1, windowStart: prev.windowStart };
         this.rateStates.set(key, next);
+        if (next.count === this.rateLimit + 1) {
+            // Once per window: a warning per dropped frame let a flooding
+            // client write ~23 bytes of log for each byte it sent.
+            this.app?.logger.warn(
+                { connectionId: key },
+                'Socket message rate limit exceeded; dropping frames until the window ends',
+            );
+        }
         return next.count <= this.rateLimit;
     }
 
     private async handleMessage(ws: ServerWebSocket<SocketData>, message: string | Buffer) {
         try {
-            if (!this.allowMessage(ws)) {
-                this.app?.logger.warn(
+            if (!this.allowMessage(ws)) return;
+
+            const text = typeof message === 'string' ? message : new TextDecoder().decode(message);
+            let eventData: { event?: unknown; payload?: unknown } | null;
+            try {
+                eventData = JSON.parse(text);
+            } catch {
+                // The client's mistake: an error with a stack for each such
+                // frame was another way to flood the logs.
+                this.app?.logger.debug(
                     { connectionId: ws.data.connectionId },
-                    'Socket message rate limit exceeded; dropping frame',
+                    'Dropping a socket frame that is not JSON',
                 );
                 return;
             }
-
-            const text = typeof message === 'string' ? message : new TextDecoder().decode(message);
-            const eventData = JSON.parse(text);
             if (!eventData || typeof eventData !== 'object') return;
             const { event } = eventData;
             // Only string names: `["disconnected"]` passed the reserved-name
@@ -274,6 +292,13 @@ export class SocketDriver implements Driver {
 
     /** Subscribe to a room only when the authz hook permits it. */
     private joinAuthorized(ws: ServerWebSocket<SocketData>, room: string) {
+        if (!isTopicName(room)) {
+            this.app?.logger.warn(
+                { connectionId: ws.data.connectionId },
+                'Denied socket join: the room is not a string',
+            );
+            return;
+        }
         if (!this.canJoin(ws, room)) {
             this.app?.logger.warn(
                 { connectionId: ws.data.connectionId, room },
@@ -286,6 +311,16 @@ export class SocketDriver implements Driver {
 
     /** Publish to a topic only when the authz hook permits it, using the envelope. */
     private publishAuthorized(ws: ServerWebSocket<SocketData>, topic: string, data: unknown) {
+        // Checked before the hook: a handler passing the client's payload on
+        // could hand it `["global"]`, which passes `topic !== 'global'` and
+        // which Bun's publish() turns into "global".
+        if (!isTopicName(topic)) {
+            this.app?.logger.warn(
+                { connectionId: ws.data.connectionId },
+                'Denied socket broadcast: the topic is not a string',
+            );
+            return;
+        }
         if (!this.canPublish(ws, topic)) {
             this.app?.logger.warn(
                 { connectionId: ws.data.connectionId, topic },

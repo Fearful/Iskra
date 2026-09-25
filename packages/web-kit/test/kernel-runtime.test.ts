@@ -148,6 +148,7 @@ describe('Kernel runtime', () => {
         expect(new Kernel().getConfig().hostname).toBe('0.0.0.0');
 
         const kernel = new Kernel({ port: 0, maxRequestBodySize: 1024, shutdownGraceMs: 200 });
+        await kernel.initialize();
         kernel.getApp().post('/echo', async (c) => c.text(String((await c.req.text()).length)));
         await kernel.start();
         const port = (kernel as any).server.port;

@@ -6,6 +6,14 @@ import { consoleLogger, silentLogger, type KernelLogger } from './logging';
 import type { FeatureRegistry } from './feature-registry';
 
 /**
+ * The app's handlers, as `METHOD path`. Middleware (`app.use()`) is
+ * registered for every method (`ALL`) and is left out.
+ */
+function handlerRoutes(app: Hono): string[] {
+    return app.routes.filter((r) => r.method !== 'ALL').map((r) => `${r.method} ${r.path}`);
+}
+
+/**
  * Core microkernel orchestrator that manages features, dependencies, and application lifecycle.
  */
 export class Kernel {
@@ -48,6 +56,19 @@ export class Kernel {
 
         this.logger.debug('Initializing Web-Kit Kernel');
 
+        // Hono runs only the middleware registered before a route, so a route
+        // added before initialize() (`getApp().post(...)`, then `start()`)
+        // skipped the security headers and every feature's middleware: its
+        // POSTs were served without CSRF, rate limit or auth.
+        const early = handlerRoutes(this.app);
+        if (early.length > 0) {
+            throw new Error(
+                `Routes were added before Kernel.initialize() (${early.join(', ')}): they would skip the ` +
+                    "security headers and every feature's middleware (CSRF, rate limit, auth…). " +
+                    "Call `await kernel.initialize()` before adding routes, or pass them as WebPlugin's `router`.",
+            );
+        }
+
         this.validateFeatureDependencies();
         await this.validatePeerDependencies();
         this.applySecurityHeaders();
@@ -60,7 +81,16 @@ export class Kernel {
         const orderedFeatures = this.sortFeaturesByDependencies();
         for (const feature of orderedFeatures) {
             this.logger.debug(`Initializing feature: ${feature.name}`);
+            const before = handlerRoutes(this.app).length;
             await feature.initialize(this);
+            // Same reason: a route a feature adds here escapes the middleware
+            // of the features initialized after it.
+            if (handlerRoutes(this.app).length !== before) {
+                throw new Error(
+                    `Feature '${feature.name}' added routes in initialize(); register them in routes(app), ` +
+                        "which runs after every feature's middleware.",
+                );
+            }
         }
         for (const feature of orderedFeatures) {
             feature.routes?.(this.app);
@@ -89,28 +119,37 @@ export class Kernel {
         this.app.use('*', async (c: Context, next: Next) => {
             await next();
 
+            // A header the route set itself is kept: overwriting it replaced a
+            // stricter one (e.g. `CSP: sandbox` on user-uploaded HTML, or
+            // `X-Frame-Options: DENY`) with the global default.
+            const set = (name: string, value: string) => {
+                if (!c.res.headers.has(name)) c.res.headers.set(name, value);
+            };
+
             if (headers.xFrameOptions) {
-                c.res.headers.set('X-Frame-Options', headers.xFrameOptions);
+                set('X-Frame-Options', headers.xFrameOptions);
             }
             if (headers.xContentTypeOptions) {
-                c.res.headers.set('X-Content-Type-Options', 'nosniff');
+                set('X-Content-Type-Options', 'nosniff');
             }
             if (headers.xXssProtection) {
-                c.res.headers.set('X-XSS-Protection', '1; mode=block');
+                set('X-XSS-Protection', '1; mode=block');
             }
             if (headers.referrerPolicy) {
-                c.res.headers.set('Referrer-Policy', headers.referrerPolicy);
+                set('Referrer-Policy', headers.referrerPolicy);
             }
             if (headers.strictTransportSecurity) {
                 const hsts = headers.strictTransportSecurity;
-                let hstsValue = `max-age=${hsts.maxAge || 31536000}`;
+                // `??`: `maxAge: 0` is how HSTS is turned off in browsers that
+                // have cached it; `||` turned it into a year.
+                let hstsValue = `max-age=${hsts.maxAge ?? 31536000}`;
                 if (hsts.includeSubDomains) hstsValue += '; includeSubDomains';
                 if (hsts.preload) hstsValue += '; preload';
-                c.res.headers.set('Strict-Transport-Security', hstsValue);
+                set('Strict-Transport-Security', hstsValue);
             }
             if (headers.contentSecurityPolicy) {
                 if (typeof headers.contentSecurityPolicy === 'string') {
-                    c.res.headers.set('Content-Security-Policy', headers.contentSecurityPolicy);
+                    set('Content-Security-Policy', headers.contentSecurityPolicy);
                 } else if (headers.contentSecurityPolicy.directives) {
                     const directives = Object.entries(headers.contentSecurityPolicy.directives)
                         .map(([key, value]) => {
@@ -118,14 +157,14 @@ export class Kernel {
                             return `${key} ${values}`;
                         })
                         .join('; ');
-                    c.res.headers.set('Content-Security-Policy', directives);
+                    set('Content-Security-Policy', directives);
                 }
             }
             if (headers.permissionsPolicy) {
                 const policy = Object.entries(headers.permissionsPolicy)
                     .map(([key, value]) => `${key}=(${value.join(' ')})`)
                     .join(', ');
-                c.res.headers.set('Permissions-Policy', policy);
+                set('Permissions-Policy', policy);
             }
         });
     }
@@ -133,6 +172,15 @@ export class Kernel {
     registerFeature(feature: Feature): void {
         if (this.initialized) {
             throw new Error('Cannot register features after initialization');
+        }
+        // A second feature with the same name used to replace the first one
+        // silently: a helper named 'csrf' dropped the CSRF check, a second
+        // RateLimitFeature the first limiter.
+        if (this.features.has(feature.name)) {
+            throw new Error(
+                `A feature named '${feature.name}' is already registered; feature names must be unique ` +
+                    '(RateLimitFeature takes a `name` for a second limiter).',
+            );
         }
 
         this.features.set(feature.name, feature);

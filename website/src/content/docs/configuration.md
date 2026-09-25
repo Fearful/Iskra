@@ -28,7 +28,9 @@ export default {
 
 ## Environment Variables
 
-Iskra automatically loads `.env` files thanks to c12. Create a `.env` in your project:
+Iskra automatically loads `.env` files thanks to c12. It does not read `.apprc` files, and it loads `extends` layers only from local paths: remote sources (`github:`, `gitlab:`, `https://`) would be downloaded and run on every start.
+
+Create a `.env` in your project:
 
 ```bash
 # .env

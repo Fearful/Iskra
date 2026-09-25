@@ -355,4 +355,59 @@ describe('JSON Schema Validation Feature', () => {
 
         await kernel.shutdown();
     });
+
+    // ─── Error formatting cost ──────────────────────────────────────────────
+
+    it('formats an error per array item in linear time and reports at most 100', async () => {
+        const kernel = await createKernel();
+        const app = kernel.getApp();
+        const schema = {
+            type: 'object',
+            properties: { items: { type: 'array', items: { type: 'object' } } },
+        };
+        app.post('/orders', validateJson({ body: schema }), (c) => c.json({ ok: true }));
+
+        // 40k failing items (~117 KiB): de-duplicating with Array.includes()
+        // blocked the event loop for ~5 s.
+        const started = performance.now();
+        const res = await app.request('/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: new Array(40_000).fill(1) }),
+        });
+        const elapsed = performance.now() - started;
+
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.details.errors).toHaveLength(100);
+        expect(Object.keys(body.details.fields)).toHaveLength(100);
+        expect(elapsed).toBeLessThan(1500);
+
+        await kernel.shutdown();
+    });
+
+    it('keeps a "__proto__" field path as a plain field', async () => {
+        const kernel = await createKernel();
+        const app = kernel.getApp();
+        const schema = {
+            type: 'object',
+            properties: { name: { type: 'string' } },
+            additionalProperties: { type: 'string' },
+        };
+        app.post('/users', validateJson({ body: schema }), (c) => c.json({ ok: true }));
+
+        const res = await app.request('/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // An object: the default coerceTypes would turn a number into a string.
+            body: '{"__proto__": {"x": 1}}',
+        });
+
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(Object.keys(body.details.fields)).toEqual(['__proto__']);
+        expect(body.details.errors).toEqual(['__proto__: must be string']);
+
+        await kernel.shutdown();
+    });
 });

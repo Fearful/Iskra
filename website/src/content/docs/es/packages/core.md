@@ -98,13 +98,13 @@ Se configura con `logger.level` en la config de la app.
 
 ### Redaccion de secretos
 
-El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Un campo con alguno de estos nombres (sin importar mayusculas), a cualquier profundidad de un objeto plano o array, se reemplaza por `[REDACTED]`:
+El logger censura automaticamente los campos sensibles en su salida (tanto en desarrollo como en produccion). Un campo con alguno de estos nombres, a cualquier profundidad de un objeto plano, array o error logueado, se reemplaza por `[REDACTED]`; los nombres se comparan sin mayusculas, `-` ni `_` (`api_key` y `X-API-Key` son `apiKey`):
 
-`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `proxyAuthorization`, `cookie`, `setCookie`, `sessionId`
 
-`config.env` y `*.data` tambien se censuran. El objeto que se pasa no se modifica: se escribe una copia censurada.
+Tambien un campo cuyo nombre termina en `password`, `passwd`, `secret`, `token`, `apiKey`, `secretKey`, `privateKey` o `accessKey` (`dbPassword`, `x-auth-token`, `AWS_SECRET_ACCESS_KEY`). `config.env` y `*.data` tambien se censuran, igual que los bindings de los loggers hijos (`logger.child({ ... })`). El objeto que se pasa no se modifica: se escribe una copia censurada.
 
-Solo se miran los nombres de los campos, no los valores: una URL de conexion con la contrasena adentro (`postgres://user:pass@host/db`) se escribe tal cual, igual que los campos de instancias de clases (solo se recorren objetos planos y arrays). Hay que limpiarlos antes de loguearlos.
+Los errores se escriben como los escribe pino (tipo, mensaje, stack, causas y sus propios campos), con sus campos censurados de la misma forma: el `config.headers.Authorization` de un error de un cliente HTTP no llega al log. En los mensajes, y en el mensaje y el stack de los errores, se enmascaran la contrasena de una URL `scheme://usuario:contrasena@host` y los parametros de query con pinta de secreto (`?authToken=`, `&X-Amz-Signature=`). Los demas valores, y los campos de otras instancias de clases, se escriben tal cual: hay que limpiarlos antes de loguearlos.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

@@ -98,13 +98,13 @@ Configured with `logger.level` in the app config.
 
 ### Secret redaction
 
-The logger automatically censors sensitive fields in its output (in both development and production). A field with one of these names (in any case), at any depth of a plain object or array, is replaced with `[REDACTED]`:
+The logger automatically censors sensitive fields in its output (in both development and production). A field with one of these names, at any depth of a plain object, array or logged error, is replaced with `[REDACTED]`; names are compared without case, `-` or `_` (`api_key` and `X-API-Key` are `apiKey`):
 
-`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `cookie`
+`password`, `pass`, `passwd`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `refreshToken`, `idToken`, `secret`, `clientSecret`, `secretKey`, `privateKey`, `authorization`, `proxyAuthorization`, `cookie`, `setCookie`, `sessionId`
 
-`config.env` and `*.data` are censored too. The object you pass is not modified: the censored copy is what gets written.
+So is a field whose name ends in `password`, `passwd`, `secret`, `token`, `apiKey`, `secretKey`, `privateKey` or `accessKey` (`dbPassword`, `x-auth-token`, `AWS_SECRET_ACCESS_KEY`). `config.env` and `*.data` are censored too, and so are the bindings of child loggers (`logger.child({ ... })`). The object you pass is not modified: the censored copy is what gets written.
 
-Only field names are checked, not values: a connection URL with a password in it (`postgres://user:pass@host/db`) is written as is, and so are the fields of class instances (only plain objects and arrays are walked). Scrub those before logging them.
+Errors are written as pino writes them (type, message, stack, causes, their own fields), with their fields censored the same way: an HTTP client error's `config.headers.Authorization` does not reach the log. In messages, and in the message and stack of errors, the password of a `scheme://user:password@host` URL and secret-looking query parameters (`?authToken=`, `&X-Amz-Signature=`) are masked. Other values, and the fields of other class instances, are written as they are: scrub those before logging them.
 
 ```typescript
 app.logger.info({ password: 'top-secret', userId: 123 }, 'Login');

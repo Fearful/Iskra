@@ -70,7 +70,7 @@ defineRoute({
 });
 ```
 
-It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets).
+It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets). Request bodies are capped at 16 MiB, as in the Kernel (`maxRequestBodySize`; Bun alone allows 128 MiB).
 
 ## Kernel
 
@@ -79,7 +79,8 @@ The `Kernel` is the micro-kernel that orchestrates the web features:
 - Resolves dependencies between features (topological sort)
 - Detects circular dependencies
 - Initializes every feature (which registers its middleware) before registering any feature's routes, so each feature's middleware (CSRF, rate limit, auth, CORS…) applies to every route, whatever the order the features were registered in
-- Applies security headers automatically (whatever you pass in `securityHeaders` is merged over the defaults)
+- Refuses what would bypass that middleware: routes added to `getApp()` before `initialize()` (add them after `await kernel.initialize()`, or pass them as WebPlugin's `router`), routes a feature adds in `initialize()` instead of `routes()`, and a second feature with a name already registered (it used to replace the first one silently; `RateLimitFeature` takes a `name` for a second limiter)
+- Applies security headers automatically (whatever you pass in `securityHeaders` is merged over the defaults); a header a route sets itself, such as a stricter `Content-Security-Policy`, is kept
 - Manages the lifecycle (init, start, shutdown)
 
 Server defaults, configurable in `new Kernel({ ... })`:
@@ -247,6 +248,7 @@ new AuthFeature({
 - `baseURL` is the app's public origin (it defaults to `BETTER_AUTH_URL`). Better Auth derives the cookies' `Secure` flag from it, so it is **required in production**: without it `http://localhost:3000` was used, and cookies went out without `Secure`.
 - Auth attempts (`POST` requests to `{basePath}/*` other than sign-out: sign-in, sign-up, password reset…) are rate-limited per IP by default (20 / 15 min) to throttle credential stuffing; session reads and OAuth callbacks are not counted. In production Better Auth also applies its own, stricter per-path limits. Tune the first with `rateLimit: { max, windowMs }`, or pass `rateLimit: false` to turn both off when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
 - The client IP (for these limiters, the sessions' `ipAddress` and `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so `X-Forwarded-For` is used; otherwise the header is ignored, since any client can forge it.
+- Sessions are checked against a signed cookie cache without a database lookup, so a session revoked by sign-out keeps working until that cache expires: `cookieCacheMaxAge` (seconds, default 300) sets how long.
 - Use `requireAuth(kernel)` as middleware to protect routes that require a session.
 
 ## Sessions

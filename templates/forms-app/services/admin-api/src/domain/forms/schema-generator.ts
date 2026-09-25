@@ -56,6 +56,10 @@ export function generateJsonSchema(fields: FieldDefinition[]): JsonSchema {
     const requiredMessages: Record<string, string> = {};
 
     for (const field of fields) {
+        // `properties["__proto__"] = ...` replaces the object's prototype: the
+        // field vanished from the schema and its `required` always passed.
+        if (field.name === '__proto__') throw new Error('"__proto__" is not a valid field name');
+
         const errorMessage = buildErrorMessages(field);
         /** A required text answer must not be empty (`""` passed `required`). */
         const nonEmpty = (prop: JsonSchemaProperty) => {

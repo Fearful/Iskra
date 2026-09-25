@@ -28,7 +28,9 @@ export default {
 
 ## Variables de Entorno
 
-Iskra carga automaticamente archivos `.env` gracias a c12. Crea un `.env` en tu proyecto:
+Iskra carga automaticamente archivos `.env` gracias a c12. No lee archivos `.apprc`, y carga capas `extends` solo desde rutas locales: las fuentes remotas (`github:`, `gitlab:`, `https://`) se descargarian y ejecutarian en cada arranque.
+
+Crea un `.env` en tu proyecto:
 
 ```bash
 # .env

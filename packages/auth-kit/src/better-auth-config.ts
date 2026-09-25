@@ -200,6 +200,11 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         ...(rateLimit === false ? { rateLimit: { enabled: false } } : {}),
         advanced: {
             disableCSRFCheck,
+            // Pinned: left unset, better-auth skips its Origin check (CSRF on
+            // cookie requests) and its callbackURL/redirectTo validation (open
+            // redirects) whenever it thinks it runs under test: NODE_ENV=test,
+            // or any TEST variable other than "false" (TEST=0 included).
+            disableOriginCheck: false,
             generateId: () => crypto.randomUUID().replace(/-/g, ''),
             ...(ipAddressHeaders ? { ipAddress: { ipAddressHeaders } } : {}),
         },

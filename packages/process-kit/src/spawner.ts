@@ -249,6 +249,11 @@ export class ProcessManager implements Driver {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        // Set once a line outgrew MAX_LINE_LENGTH: the rest of it, up to the
+        // next newline, is dropped. It used to be read as a line of its own,
+        // so text a child echoed (`user said: <1 MiB of spaces>{"type":…}`)
+        // came out as a JSON process:message.
+        let skippingRestOfLine = false;
 
         try {
             while (true) {
@@ -260,20 +265,27 @@ export class ProcessManager implements Driver {
                 const lines = buffer.split('\n');
                 // Keep the last chunk if it's not a complete line (doesn't end with \n)
                 buffer = lines.pop() || '';
-                // A child that never prints a newline must not grow this forever.
-                if (buffer.length > MAX_LINE_LENGTH) {
-                    lines.push(buffer);
-                    buffer = '';
+                if (skippingRestOfLine && lines.length > 0) {
+                    lines.shift();
+                    skippingRestOfLine = false;
                 }
 
                 for (const line of lines) {
                     if (!line.trim()) continue;
                     this.processLine(name, line);
                 }
+
+                // A child that never prints a newline must not grow this forever.
+                if (buffer.length > MAX_LINE_LENGTH) {
+                    // Truncated: a log line, never parsed as a message.
+                    if (!skippingRestOfLine) this.app?.emit('process:log', { name, text: buffer });
+                    buffer = '';
+                    skippingRestOfLine = true;
+                }
             }
             // The last line may lack a trailing newline; it used to be dropped.
             buffer += decoder.decode();
-            if (buffer.trim()) this.processLine(name, buffer);
+            if (!skippingRestOfLine && buffer.trim()) this.processLine(name, buffer);
         } catch (err) {
             // A thrown error here is a broken pipe mid-read, distinct from the
             // normal end-of-stream (`done: true`) that exits the loop above.
@@ -419,7 +431,10 @@ export class ProcessManager implements Driver {
 
         const initialBackoffMs = config.restartBackoff?.initialMs ?? 1000;
 
-        this.app.logger.info(`Spawning process: ${name} (${config.command} ${config.args?.join(' ') || ''})`);
+        // Arguments only at debug: they can carry credentials (`--db-url
+        // postgres://user:password@…`), which no key-based redaction sees.
+        this.app.logger.info(`Spawning process: ${name} (${config.command}, ${config.args?.length ?? 0} args)`);
+        this.app.logger.debug({ name, command: config.command, args: config.args ?? [] }, `Process ${name} arguments`);
 
         try {
             const proc = Bun.spawn([config.command, ...(config.args || [])], {
@@ -518,6 +533,15 @@ export class ProcessManager implements Driver {
 
         // Bun's Subprocess.stdin is a FileSink when stdin is piped.
         const stdin = procInfo.process.stdin as FileSink;
+
+        // One message per line: a string with a line break would reach the
+        // child as several messages (`'alice\n{"cmd":"delete_all"}'`).
+        if (typeof data === 'string' && /[\r\n]/.test(data)) {
+            this.app?.logger.warn(
+                `Not sending a string with a line break to process ${name}: send an object to have it JSON-encoded`,
+            );
+            return;
+        }
 
         try {
             // If data is object, stringify it and add newline

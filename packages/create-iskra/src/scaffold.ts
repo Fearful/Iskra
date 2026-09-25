@@ -171,10 +171,14 @@ export function scaffold(options: ScaffoldOptions): ScaffoldResult {
         throw new Error('El nombre del proyecto no puede estar vacio.');
     }
 
+    // Only a listed name: `join()` resolved "../../x" to any directory on
+    // disk, which was then copied into the new project.
+    const available = listTemplates(templatesRoot);
     const templateDir = join(templatesRoot, template);
-    if (!existsSync(templateDir) || !statSync(templateDir).isDirectory()) {
-        const available = listTemplates(templatesRoot).join(', ') || '(ninguno)';
-        throw new Error(`El template "${template}" no existe. Templates disponibles: ${available}.`);
+    if (!available.includes(template) || !statSync(templateDir).isDirectory()) {
+        throw new Error(
+            `El template "${template}" no existe. Templates disponibles: ${available.join(', ') || '(ninguno)'}.`,
+        );
     }
 
     if (!isEmptyDir(targetDir)) {

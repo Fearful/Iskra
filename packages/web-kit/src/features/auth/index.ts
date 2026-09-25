@@ -156,6 +156,9 @@ export class AuthFeature implements Feature {
             enableEmailPassword: this.config.enableEmailPassword ?? this.authMode === 'email',
             disableSignUp: this.config.enableSelfRegistration === false,
             disableCSRFCheck,
+            ...(this.config.cookieCacheMaxAge !== undefined
+                ? { cookieCacheMaxAge: this.config.cookieCacheMaxAge }
+                : {}),
             socialProviders: this.config.socialProviders,
             oidcConfig: this.config.oidcConfig,
             // `rateLimit: false` turns off both limiters, as documented.

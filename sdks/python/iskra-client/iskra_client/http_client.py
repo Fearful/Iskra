@@ -25,6 +25,15 @@ def _origin_of(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
+def _check_path(path: str) -> None:
+    """A path on the Iskra service, never a URL of its own: httpx sends an
+    absolute URL as is, ignoring base_url, so `get("https://other.host/x")`
+    sent the API key and the user's session cookie to that host."""
+    parts = urlsplit(path)
+    if parts.scheme or parts.netloc:
+        raise ValueError(f"Request path must be a path on the Iskra service, not a URL: {path!r}")
+
+
 class _Transport:
     """The httpx clients shared by an IskraClient and its session-bound views."""
 
@@ -108,6 +117,7 @@ class HttpClientWrapper:
     ) -> httpx.Response:
         """Sends a request and returns the raw response, raising the matching
         IskraException for a 4xx/5xx status not listed in `ok_statuses`."""
+        _check_path(path)
         try:
             resp = self._transport.sync.request(
                 method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
@@ -143,6 +153,7 @@ class HttpClientWrapper:
         files: Any = None,
         ok_statuses: Collection[int] = (),
     ) -> httpx.Response:
+        _check_path(path)
         try:
             resp = await self._transport.async_client.request(
                 method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers

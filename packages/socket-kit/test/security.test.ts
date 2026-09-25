@@ -431,3 +431,81 @@ describe('socket-kit connect payload id (LOW driver.ts:41)', () => {
         ws.close();
     });
 });
+
+// ---------------------------------------------------------------------------
+// canPublish deny-lists and non-string topics; rate-limit log volume
+// ---------------------------------------------------------------------------
+describe('socket-kit topic types and log volume', () => {
+    let app: App;
+    const PORT = 3579;
+    const warnings: string[] = [];
+
+    beforeAll(async () => {
+        app = new App({ name: 'SocketTopicTypes', logger: { level: 'silent' } });
+        const warn = app.logger.warn.bind(app.logger);
+        (app.logger as any).warn = (obj: unknown, msg?: string) => {
+            warnings.push(String(msg ?? obj));
+            return warn(obj as never, msg as never);
+        };
+
+        const router = new SocketRouter();
+        // Passes the client's topic on, as the docs' examples do.
+        router.on('shout', async (ctx) => {
+            const p = ctx.payload as { topic: string; msg: unknown };
+            ctx.broadcast(p.topic, p.msg);
+        });
+        router.on('join-room', async (ctx) => ctx.join((ctx.payload as { room: string }).room));
+        router.on('tick', async () => {});
+
+        app.register(
+            new SocketDriver({
+                port: PORT,
+                router,
+                // A deny-list, like the docs' example.
+                canPublish: (_connection, topic) => topic !== 'global',
+                canJoin: (_connection, room) => room !== 'admins',
+                rateLimit: 3,
+                rateWindowMs: 60_000,
+            }),
+        );
+        await app.start();
+    });
+
+    afterAll(async () => {
+        await app.stop();
+    });
+
+    const open = async () => {
+        const ws = new WebSocket(`ws://localhost:${PORT}`);
+        await new Promise((resolve) => (ws.onopen = () => resolve(true)));
+        return ws;
+    };
+
+    it('does not publish to a denied topic given as an array', async () => {
+        const victim = await open();
+        const received: string[] = [];
+        victim.onmessage = (event) => received.push(String(event.data));
+        const attacker = await open();
+
+        attacker.send(JSON.stringify({ event: 'shout', payload: { topic: ['global'], msg: 'FORGED' } }));
+        attacker.send(JSON.stringify({ event: 'join-room', payload: { room: ['admins'] } }));
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(received).toEqual([]);
+        expect(warnings).toContain('Denied socket broadcast: the topic is not a string');
+        expect(warnings).toContain('Denied socket join: the room is not a string');
+        victim.close();
+        attacker.close();
+    });
+
+    it('warns once per window, not once per dropped frame', async () => {
+        warnings.length = 0;
+        const ws = await open();
+        for (let i = 0; i < 50; i++) ws.send(JSON.stringify({ event: 'tick' }));
+        for (let i = 0; i < 20; i++) ws.send('not json');
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(warnings.filter((w) => w.startsWith('Socket message rate limit exceeded'))).toHaveLength(1);
+        ws.close();
+    });
+});

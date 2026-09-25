@@ -16,6 +16,9 @@ basicKernel.registerFeature(
     }),
 );
 
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await basicKernel.initialize();
+
 basicKernel.getApp().get("/", (c) => {
     return c.json({
         message: "Rate limited: 10 requests per minute",
@@ -44,6 +47,9 @@ cacheStoreKernel.registerFeature(
         store: "cache", // Use cache feature for storage
     }),
 );
+
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await cacheStoreKernel.initialize();
 
 cacheStoreKernel.getApp().get("/distributed", (c) => {
     return c.json({

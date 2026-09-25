@@ -47,4 +47,54 @@ describe("generated schema module", () => {
         }, { typeExport: false }));
         expect(schema.safeParse({ "first-name": "Ada" }).success).toBe(true);
     });
+
+    it("refuses a number keyword that is not a number instead of writing it into the code", () => {
+        const g = globalThis as { pwned?: string[] };
+        const payload = "(globalThis.pwned = [...(globalThis.pwned ?? []), 'ran'], 5)";
+        const cases: Array<[string, Record<string, unknown>]> = [
+            ["minLength", { type: "string", minLength: payload }],
+            ["maxLength", { type: "string", maxLength: payload }],
+            ["minimum", { type: "number", minimum: payload }],
+            ["maximum", { type: "integer", maximum: payload }],
+            ["minItems", { type: "array", items: { enum: ["a"] }, minItems: payload }],
+        ];
+        delete g.pwned;
+        for (const [keyword, prop] of cases) {
+            expect(() =>
+                transformJsonSchemaToZod({ type: "object", properties: { f: prop } } as any, { typeExport: false }),
+            ).toThrow(`"${keyword}" must be`);
+        }
+        expect(g.pwned).toBeUndefined();
+
+        // Lengths and item counts are integers; bounds may be fractional.
+        expect(() =>
+            transformJsonSchemaToZod({ type: "object", properties: { f: { type: "string", maxLength: 2.5 } } } as any),
+        ).toThrow('"maxLength" must be an integer');
+        const schema = load(transformJsonSchemaToZod({
+            type: "object",
+            properties: { price: { type: "number", minimum: 0.5, maximum: 1e3 } },
+            required: ["price"],
+        } as any, { typeExport: false }));
+        expect(schema.safeParse({ price: 0.75 }).success).toBe(true);
+        expect(schema.safeParse({ price: 0.25 }).success).toBe(false);
+    });
+
+    it("refuses a __proto__ property, which would vanish from the shape unvalidated", () => {
+        // As read from a database JSON column: an own "__proto__" key.
+        const properties = JSON.parse('{"__proto__": {"type": "string", "minLength": 3}}');
+        expect(() =>
+            transformJsonSchemaToZod({ type: "object", properties, required: ["__proto__"] } as any),
+        ).toThrow('"__proto__" is not a valid property name');
+    });
+
+    it("builds a field named like an Object.prototype member", () => {
+        const schema = load(transformJsonSchemaToZod({
+            type: "object",
+            properties: { constructor: { type: "string", minLength: 1 } },
+            required: ["constructor"],
+            errorMessage: { required: {} },
+        } as any, { typeExport: false }));
+        expect(schema.safeParse({ constructor: "x" }).success).toBe(true);
+        expect(schema.safeParse({}).success).toBe(false);
+    });
 });

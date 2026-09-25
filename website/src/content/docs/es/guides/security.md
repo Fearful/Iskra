@@ -25,12 +25,14 @@ export default {
 };
 ```
 
-El logger redacta campos sensibles automáticamente. Las claves que coinciden con `password`, `pass`, `apiKey`, `apiSecret`, `token`, `authToken`, `secret`, `config.env`, y cualquier `*.data` se reemplazan por `[REDACTED]` antes de escribir nada:
+El logger redacta campos sensibles automáticamente, a cualquier profundidad. Claves como `password`, `pass`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `secret`, `clientSecret`, `privateKey`, `authorization`, `cookie`, `setCookie` y `sessionId`, y las que terminan en `password`, `secret`, `token`, `apiKey`, `secretKey`, `privateKey` o `accessKey`, se reemplazan por `[REDACTED]` antes de escribir nada, igual que `config.env` y cualquier `*.data`. Las claves se comparan sin mayúsculas, `-` ni `_`, así que `api_key`, `X-API-Key` y `DB_PASSWORD` también coinciden:
 
 ```typescript
-app.logger.info({ password: 'hunter2', token: 'abc' }, 'login');
-// → { password: '[REDACTED]', token: '[REDACTED]' }
+app.logger.info({ password: 'hunter2', headers: { 'x-api-key': 'abc' } }, 'login');
+// → { password: '[REDACTED]', headers: { 'x-api-key': '[REDACTED]' } }
 ```
+
+Lo mismo aplica a los bindings de los loggers hijos y a los campos de los errores logueados (por ejemplo `config.headers.Authorization` de un cliente HTTP). En los mensajes, y en los mensajes y stacks de los errores, se enmascaran la contraseña de una URL `scheme://usuario:contraseña@host` y los parámetros de query con pinta de secreto (`?authToken=`, `&X-Amz-Signature=`).
 
 ## Protección CSRF
 
@@ -69,7 +71,7 @@ new SocketDriver({
 });
 ```
 
-`maxPayloadLength` acota el tamaño del frame y el rate limit por conexión descarta a quienes superan su presupuesto de mensajes, protegiendo contra floods.
+`maxPayloadLength` acota el tamaño del frame y el rate limit por conexión descarta los frames que superan el presupuesto de mensajes de la conexión, protegiendo contra floods (registra un warning por ventana, no uno por frame). Los hooks solo se llaman con salas y topics string: un handler que reenvía el valor del cliente no puede colar `["global"]` por una lista de denegación como `topic !== 'global'`.
 
 ## Email
 
@@ -108,6 +110,12 @@ new S3Adapter({
     connection: { endpoint: 'https://s3.example.com' /* useSSL activo por defecto */ },
 });
 ```
+
+## Plugins y configuración
+
+Los kits, drivers, plugins y features web corren con acceso total a la app, así que el Kernel evita que su composición la debilite: una segunda feature con un nombre ya registrado (un helper llamado `csrf`, un segundo `RateLimitFeature`) se rechaza en vez de reemplazar a la primera en silencio, y las rutas agregadas antes de `initialize()`, o por una feature en `initialize()` en lugar de `routes()`, hacen fallar `initialize()` en vez de quedar sin las cabeceras de seguridad ni el middleware de las demás features.
+
+`new App()` sin configuración lee `app.config.*` del directorio de trabajo (y `.env`). Ya no lee archivos `.apprc` ni descarga capas `extends` desde `github:`, `gitlab:` o `https://` (las rutas locales en `extends` siguen funcionando). Para un CLI o binario de escritorio que corre en directorios que no controlás, pasá la configuración a `new App({ ... })`.
 
 ## Hardening HTTP
 
