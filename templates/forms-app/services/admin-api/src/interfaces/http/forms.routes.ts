@@ -16,7 +16,12 @@ const FieldOptionSchema = z.object({
 const CreateFieldSchema = z.object({
     fieldType: z.enum(FIELD_TYPES as [FieldType, ...FieldType[]]),
     label: z.string().min(1).max(255),
-    name: z.string().min(1).max(100).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+    name: z
+        .string()
+        .min(1)
+        .max(100)
+        .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/)
+        .refine((name) => name !== '__proto__', 'Reserved field name'),
     position: z.number().int().min(0),
     required: z.boolean().optional(),
     options: z.array(FieldOptionSchema).optional(),

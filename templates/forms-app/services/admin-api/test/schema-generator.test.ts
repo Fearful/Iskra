@@ -97,4 +97,10 @@ describe("generateJsonSchema", () => {
         expect(schema.properties.t.errorMessage.required).toBe("Please fill this in");
         expect(schema.properties.t.errorMessage.type).toBe("Please fill this in");
     });
+
+    it("refuses a field named __proto__, which would vanish from the schema", () => {
+        expect(() =>
+            generateJsonSchema([{ fieldType: "text", name: "__proto__", label: "X", required: true }]),
+        ).toThrow('"__proto__" is not a valid field name');
+    });
 });

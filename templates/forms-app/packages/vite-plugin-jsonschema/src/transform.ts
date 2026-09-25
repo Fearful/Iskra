@@ -46,9 +46,25 @@ function escapeString(str: string): string {
         .replace(/\u2029/g, '\\u2029');
 }
 
-/** An object key for the generated module: bare when it is an identifier, quoted otherwise. */
+/**
+ * An object key for the generated module: bare when it is an identifier,
+ * quoted otherwise. `__proto__`, bare or quoted, would set the prototype of the
+ * shape object instead of adding the field, so the field went unvalidated.
+ */
 function propertyKey(name: string): string {
+    if (name === '__proto__') throw new Error('JSON Schema: "__proto__" is not a valid property name');
     return /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * A schema number for the generated code. Written into it as is, so anything
+ * but a finite number (e.g. the string `"(fetch(...), 5)"` from a schema that
+ * was not built by the admin API) would run in every visitor's browser.
+ */
+function literalNumber(value: unknown, keyword: string, { integer = false } = {}): string {
+    const valid = typeof value === 'number' && Number.isFinite(value) && (!integer || Number.isInteger(value));
+    if (!valid) throw new Error(`JSON Schema: "${keyword}" must be a${integer ? 'n integer' : ' finite number'}`);
+    return String(value);
 }
 
 function interpolateMessage(msg: string, values: Record<string, unknown>): string {
@@ -112,14 +128,14 @@ function transformProperty(
                     const msg = msgs.minLength
                         ? `'${escapeString(interpolateMessage(msgs.minLength, { min: prop.minLength }))}'`
                         : undefined;
-                    chain += `.min(${prop.minLength}${msg ? `, ${msg}` : ''})`;
+                    chain += `.min(${literalNumber(prop.minLength, 'minLength', { integer: true })}${msg ? `, ${msg}` : ''})`;
                 }
 
                 if (prop.maxLength !== undefined) {
                     const msg = msgs.maxLength
                         ? `'${escapeString(interpolateMessage(msgs.maxLength, { max: prop.maxLength }))}'`
                         : undefined;
-                    chain += `.max(${prop.maxLength}${msg ? `, ${msg}` : ''})`;
+                    chain += `.max(${literalNumber(prop.maxLength, 'maxLength', { integer: true })}${msg ? `, ${msg}` : ''})`;
                 }
 
                 if (prop.pattern) {
@@ -141,14 +157,14 @@ function transformProperty(
                     const msg = msgs.minimum
                         ? `'${escapeString(interpolateMessage(msgs.minimum, { min: prop.minimum }))}'`
                         : undefined;
-                    chain += `.min(${prop.minimum}${msg ? `, ${msg}` : ''})`;
+                    chain += `.min(${literalNumber(prop.minimum, 'minimum')}${msg ? `, ${msg}` : ''})`;
                 }
 
                 if (prop.maximum !== undefined) {
                     const msg = msgs.maximum
                         ? `'${escapeString(interpolateMessage(msgs.maximum, { max: prop.maximum }))}'`
                         : undefined;
-                    chain += `.max(${prop.maximum}${msg ? `, ${msg}` : ''})`;
+                    chain += `.max(${literalNumber(prop.maximum, 'maximum')}${msg ? `, ${msg}` : ''})`;
                 }
                 break;
             }
@@ -166,7 +182,7 @@ function transformProperty(
                 const item = prop.items?.enum?.length ? enumOf(prop.items.enum, '') : 'z.string()';
                 chain = `z.array(${item}${params ? `, ${params}` : ''})`;
                 if (prop.minItems) {
-                    chain += `.min(${prop.minItems}, '${escapeString(msgs.minItems ?? reqMsg ?? 'Required')}')`;
+                    chain += `.min(${literalNumber(prop.minItems, 'minItems', { integer: true })}, '${escapeString(msgs.minItems ?? reqMsg ?? 'Required')}')`;
                 }
                 break;
             }
@@ -205,8 +221,11 @@ export function transformJsonSchemaToZod(schema: JsonSchema, { typeExport = true
     const requiredMessages = schema.errorMessage?.required ?? {};
 
     const fields = Object.entries(properties).map(([name, prop]) => {
-        const zodChain = transformProperty(name, prop, required.has(name), requiredMessages[name]);
-        return `    ${propertyKey(name)}: ${zodChain},`;
+        const key = propertyKey(name);
+        // Own keys only: a field named "constructor" read Object from the prototype.
+        const requiredMessage = Object.hasOwn(requiredMessages, name) ? requiredMessages[name] : undefined;
+        const zodChain = transformProperty(name, prop, required.has(name), requiredMessage);
+        return `    ${key}: ${zodChain},`;
     });
 
     const lines = [
