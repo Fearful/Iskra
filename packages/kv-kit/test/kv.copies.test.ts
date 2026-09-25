@@ -17,14 +17,14 @@ describe('MemoryAdapter copies values in and out', () => {
         const read = await adapter.get<typeof perms>('perm:1');
         read!.flags.admin = true;
 
-        expect(await adapter.get('perm:1')).toEqual({ roles: ['viewer'], flags: { admin: false } });
+        expect(await adapter.get<typeof perms>('perm:1')).toEqual({ roles: ['viewer'], flags: { admin: false } });
     });
 
     it('does the same through KVManager', async () => {
         const kv = new KVManager();
         await kv.set('cart', { items: [1] });
         (await kv.get<{ items: number[] }>('cart'))!.items.push(2);
-        expect(await kv.get('cart')).toEqual({ items: [1] });
+        expect(await kv.get<{ items: number[] }>('cart')).toEqual({ items: [1] });
     });
 
     it('still keeps values JSON cannot represent', async () => {
