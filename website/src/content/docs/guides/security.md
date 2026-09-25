@@ -3,7 +3,7 @@ title: Security & hardening
 description: Built-in defenses across Iskra kits — secrets, CSRF, WebSocket authz, email, storage, and HTTP hardening.
 ---
 
-Iskra ships with secure defaults so the easy path is also the safe one. This guide walks through the protections that are on out of the box and the knobs you should know about.
+Most of Iskra's defaults are the safe choice, so the easy path is also the safe one. Not all of them: some features are open until you configure them (a `SocketDriver` accepts any origin, any room and any topic; the OpenAPI docs are public). This guide walks through the protections that are on out of the box, says where a default is open, and names the options that close it.
 
 ## Secrets
 
@@ -57,19 +57,24 @@ const disableCSRFCheck = process.env.NODE_ENV !== 'production'
 
 ## WebSocket authorization
 
-`socket-kit` exposes `canJoin` and `canPublish` hooks to gate room access and publishing per connection:
+`socket-kit` is **open by default**: a `SocketDriver` without options accepts connections from any origin without authentication (it logs a warning at start), lets any client join any room and publish to any topic, `global` included, and re-emits every unhandled event on the app bus. Lock it down with `allowedOrigins` and `authenticate` (the handshake), `canJoin` and `canPublish` (per connection), and `allowedEvents`:
 
 ```typescript
 import { SocketDriver } from '@iskra-bun/socket-kit';
 
 new SocketDriver({
-    canJoin: (connection, room) => isMember(connection.data.userId, room),
-    canPublish: (connection, topic) => canWrite(connection.data.userId, topic),
+    allowedOrigins: ['https://app.example.com'], // other Origins get 403 (cross-site WebSocket hijacking)
+    authenticate: (req) => redeemTicket(new URL(req.url).searchParams.get('ticket')), // null => 401
+    canJoin: (connection, room) => isMember(connection.data.auth, room),
+    canPublish: (connection, topic) => canWrite(connection.data.auth, topic),
+    allowedEvents: ['presence:ping'],
     maxPayloadLength: 16 * 1024, // 16 KiB default — caps frame size
     rateLimit: 100,              // messages per window (default 100)
     rateWindowMs: 1000,          // window length (default 1000ms)
 });
 ```
+
+Do not authenticate the handshake with a long-lived token in the URL (`?token=<session or JWT>`): the URL is written to the access logs of every proxy and load balancer on the way. Issue a short-lived, single-use ticket from an authenticated HTTP route and redeem it in `authenticate`, or use the `Sec-WebSocket-Protocol` header or the session cookie (the cookie needs `allowedOrigins`); see [Socket Kit](/packages/socket-kit/).
 
 `maxPayloadLength` bounds frame size and the per-connection rate limit drops the frames over a connection's message budget, protecting against floods (it logs one warning per window, not one per frame). The hooks are only called with string rooms and topics: a handler that passes a client's value on cannot slip `["global"]` past a deny-list such as `topic !== 'global'`.
 
@@ -111,6 +116,18 @@ new S3Adapter({
 });
 ```
 
+## Child processes
+
+A `process-kit` child gets a minimal environment by default: `PATH`, `HOME`, the locale, `TZ`, the temp dir, `NODE_ENV` and the like, plus its `env`. `DATABASE_URL`, `AUTH_SECRET`, cloud keys and whatever was loaded from `.env` stay in the app, so a child running third-party code cannot read them; list the variables a child needs in `inheritEnv` (`true` passes them all). `send()` refuses messages once more than `maxPendingStdinBytes` (8 MiB) wait for a child that is not reading its stdin, instead of holding them all in memory.
+
+## Background jobs
+
+BullMQ keeps finished jobs in Redis with their data. `worker-kit` keeps the last 1000 completed jobs and the failed ones of the last 7 days (up to 5000) unless `removeOnComplete` / `removeOnFail` say otherwise, so job payloads (emails, tokens, personal data) do not pile up forever. When you handle `worker:dead-letter`, log the job's ids through the app logger, not its `data`.
+
+## Telemetry
+
+Spans export the URL of each request, and query strings often carry credentials. The OpenTelemetry setup of `core` (HTTP auto-instrumentation) and `OtelTracingFeature` export them with the value of secret-looking parameters (`token`, `access_token`, `api_key`, `code`, `state`, `sig`, `X-Amz-Signature`…) replaced by `REDACTED`, and `OtelTracingFeature` also masks better-auth's `/reset-password/<token>`; `redactedQueryParams` sets the list. The startup log names the OTLP endpoint by its origin only, and warns when a remote endpoint is plain `http://`. On a service that faces the internet, set `ignoreIncomingTraceContext: true` on `OtelTracingFeature` so a client's `traceparent` cannot force sampling or attach its requests to a trace of its choosing.
+
 ## Plugins and configuration
 
 Kits, drivers, plugins and web features run with full access to the app, so the Kernel keeps their composition from weakening it: a second feature with a name already registered (a helper called `csrf`, a second `RateLimitFeature`) is refused instead of silently replacing the first, and routes added before `initialize()`, or by a feature in `initialize()` instead of `routes()`, make `initialize()` fail instead of running without the security headers and the other features' middleware.
@@ -119,13 +136,15 @@ Kits, drivers, plugins and web features run with full access to the app, so the 
 
 ## HTTP hardening
 
-The health endpoint hides internal details by default. `includeDetails` defaults to `false`, so feature lists, DB checks, and raw errors (which may embed connection strings) are never serialized to clients unless you explicitly opt in:
+The health endpoints hide internal details by default. `includeDetails` defaults to `false`, so feature lists, DB checks, raw errors (which may embed connection strings), the names of readiness checks (which can name hosts) and the uptime are never serialized to clients unless you explicitly opt in; the status code still tells a load balancer or orchestrator what it needs:
 
 ```typescript
 import { HealthCheckFeature } from '@iskra-bun/web-kit';
 
 new HealthCheckFeature({ includeDetails: false }); // default
 ```
+
+The OpenAPI docs (`/openapi.json`, `/docs`) are public by default. They load one pinned Scalar release with its Subresource Integrity hash, under a Content-Security-Policy that only lets the page talk to the app and the spec's servers; gate them with `authorize(c)` (middleware added after `initialize()` does not cover them) or turn them off with `docs: false`.
 
 API keys are hashed with SHA-256 before being used as cache keys, so the plaintext secret is never persisted where a cache dump could leak it:
 
