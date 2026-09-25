@@ -35,7 +35,7 @@ User CRUD over SQLite (Drizzle ORM) with optional Oracle Database support. Great
 
 ### forms-app
 Forms platform with a microservices architecture: pre-rendered static forms, a lightweight public service (CSRF + reCAPTCHA v3), and Redis-batched inserts to PostgreSQL.
-`cd templates/forms-app && bun run dev` _(Docker Compose)_
+`cd templates/forms-app && bun run dev` _(Docker Compose; it needs a `.env` with the secrets first, see the template's README)_
 
 ## Real-time
 
