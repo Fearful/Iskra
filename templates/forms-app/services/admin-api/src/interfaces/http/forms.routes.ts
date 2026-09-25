@@ -36,14 +36,19 @@ const CreateFieldSchema = z.object({
 });
 
 /** Field names are the answer's keys: two fields with one name overwrote each other. */
-const FieldsSchema = z.array(CreateFieldSchema).refine(
-    (fields) => new Set(fields.map((f) => f.name)).size === fields.length,
-    { message: 'Field names must be unique' },
-);
+const FieldsSchema = z
+    .array(CreateFieldSchema)
+    .refine((fields) => new Set(fields.map((f) => f.name)).size === fields.length, {
+        message: 'Field names must be unique',
+    });
 
 const CreateFormSchema = z.object({
     title: z.string().min(1).max(255),
-    slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+    slug: z
+        .string()
+        .min(1)
+        .max(100)
+        .regex(/^[a-z0-9-]+$/),
     description: z.string().max(5000).optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
@@ -52,7 +57,12 @@ const CreateFormSchema = z.object({
 
 const UpdateFormSchema = z.object({
     title: z.string().min(1).max(255).optional(),
-    slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/).optional(),
+    slug: z
+        .string()
+        .min(1)
+        .max(100)
+        .regex(/^[a-z0-9-]+$/)
+        .optional(),
     description: z.string().max(5000).optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),

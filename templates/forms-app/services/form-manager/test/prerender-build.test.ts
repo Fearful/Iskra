@@ -18,9 +18,20 @@ describe('buildFormBundle', () => {
             mkdirSync(join(src, 'assets'), { recursive: true });
             const fields = [
                 {
-                    id: 'f1', formId: 'form-1', fieldType: 'email', label: 'Email', name: 'email', position: 0,
-                    required: true, options: null, maxLength: null, min: null, max: null,
-                    placeholder: null, helpText: null, errorMessage: null,
+                    id: 'f1',
+                    formId: 'form-1',
+                    fieldType: 'email',
+                    label: 'Email',
+                    name: 'email',
+                    position: 0,
+                    required: true,
+                    options: null,
+                    maxLength: null,
+                    min: null,
+                    max: null,
+                    placeholder: null,
+                    helpText: null,
+                    errorMessage: null,
                 },
             ] as any;
             writeFileSync(join(src, 'index.html'), generateFormHtml('Encuesta', null, fields, 'form-1', 'site-key'));

@@ -165,17 +165,10 @@ export class FormService {
     }
 
     static async setStatus(id: string, status: string): Promise<void> {
-        await this.db
-            .update(forms)
-            .set({ status, updatedAt: new Date() })
-            .where(eq(forms.id, id));
+        await this.db.update(forms).set({ status, updatedAt: new Date() }).where(eq(forms.id, id));
     }
 
-    static async getAnswers(
-        formId: string,
-        page = 1,
-        pageSize = 50,
-    ): Promise<PaginatedResponse<Answer>> {
+    static async getAnswers(formId: string, page = 1, pageSize = 50): Promise<PaginatedResponse<Answer>> {
         const offset = (page - 1) * pageSize;
 
         const [data, countResult] = await Promise.all([

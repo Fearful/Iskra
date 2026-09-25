@@ -19,12 +19,7 @@ export class SchedulerService {
         const formsToOpen = await this.db
             .select()
             .from(forms)
-            .where(
-                and(
-                    eq(forms.status, FormStatus.SCHEDULED),
-                    or(isNull(forms.startsAt), lte(forms.startsAt, now)),
-                ),
-            );
+            .where(and(eq(forms.status, FormStatus.SCHEDULED), or(isNull(forms.startsAt), lte(forms.startsAt, now))));
 
         let opened = 0;
         for (const form of formsToOpen) {
@@ -57,12 +52,7 @@ export class SchedulerService {
         const formsToClose = await this.db
             .select()
             .from(forms)
-            .where(
-                and(
-                    eq(forms.status, FormStatus.OPEN),
-                    lte(forms.endsAt, now),
-                ),
-            );
+            .where(and(eq(forms.status, FormStatus.OPEN), lte(forms.endsAt, now)));
 
         let closed = 0;
         for (const form of formsToClose) {

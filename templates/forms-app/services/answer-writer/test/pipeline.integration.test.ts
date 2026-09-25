@@ -1,19 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { App } from "@iskra-bun/core";
-import { WorkerManager } from "@iskra-bun/worker-kit";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { eq } from "drizzle-orm";
-import { answers } from "@forms-app/shared/db";
-import { JOB_NAMES, type AnswerJob } from "@forms-app/shared";
-import { WriterService } from "../src/domain/writer/writer.service.ts";
-import { SubmissionService } from "../../forms-api/src/domain/submission/submission.service.ts";
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { App } from '@iskra-bun/core';
+import { WorkerManager } from '@iskra-bun/worker-kit';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import { eq } from 'drizzle-orm';
+import { answers } from '@forms-app/shared/db';
+import { JOB_NAMES, type AnswerJob } from '@forms-app/shared';
+import { WriterService } from '../src/domain/writer/writer.service.ts';
+import { SubmissionService } from '../../forms-api/src/domain/submission/submission.service.ts';
 
 // Heavy end-to-end: forms-api SubmissionService.enqueueAnswer → real BullMQ on
 // Redis → answer-writer consumer (WorkerManager) → WriterService → real Postgres.
 // Gated behind BOTH Redis and Postgres. On this machine use a 5433 PG container.
-const REDIS_URL = process.env.TEST_REDIS_URL || "redis://127.0.0.1:6379";
-const PG_URL = process.env.TEST_PG_URL || "postgres://postgres:postgres@127.0.0.1:5432/postgres";
+const REDIS_URL = process.env.TEST_REDIS_URL || 'redis://127.0.0.1:6379';
+const PG_URL = process.env.TEST_PG_URL || 'postgres://postgres:postgres@127.0.0.1:5432/postgres';
 
 async function redisReachable(): Promise<boolean> {
     const url = new URL(REDIS_URL);
@@ -24,18 +24,35 @@ async function redisReachable(): Promise<boolean> {
             port: Number(url.port) || 6379,
             socket: {
                 data() {},
-                open(s) { clearTimeout(timer); s.end(); resolve(true); },
-                connectError() { clearTimeout(timer); resolve(false); },
+                open(s) {
+                    clearTimeout(timer);
+                    s.end();
+                    resolve(true);
+                },
+                connectError() {
+                    clearTimeout(timer);
+                    resolve(false);
+                },
             },
-        }).catch(() => { clearTimeout(timer); resolve(false); });
+        }).catch(() => {
+            clearTimeout(timer);
+            resolve(false);
+        });
     });
 }
 
 async function pgUsable(url: string): Promise<boolean> {
     try {
         const sql = postgres(url, { max: 1, connect_timeout: 2, idle_timeout: 1, onnotice: () => {} });
-        try { await sql`SELECT 1`; return true; } finally { await sql.end({ timeout: 1 }); }
-    } catch { return false; }
+        try {
+            await sql`SELECT 1`;
+            return true;
+        } finally {
+            await sql.end({ timeout: 1 });
+        }
+    } catch {
+        return false;
+    }
 }
 
 const SCHEMA = `
@@ -60,12 +77,12 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
         if (await predicate()) return;
         await new Promise((r) => setTimeout(r, 50));
     }
-    throw new Error("Timed out waiting for condition");
+    throw new Error('Timed out waiting for condition');
 }
 
-(enabled ? describe : describe.skip)("answer pipeline e2e (requires Redis + Postgres)", () => {
+(enabled ? describe : describe.skip)('answer pipeline e2e (requires Redis + Postgres)', () => {
     const queueName = `iskra-e2e-${Date.now()}`;
-    const FORM_ID = "form-e2e";
+    const FORM_ID = 'form-e2e';
     let client: ReturnType<typeof postgres>;
     let db: any;
     let app: App;
@@ -85,7 +102,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
         WriterService.stopFlushTimer();
         WriterService.setDb(db);
 
-        app = new App({ name: "PipelineE2E", logger: { level: "error" } });
+        app = new App({ name: 'PipelineE2E', logger: { level: 'error' } });
         wm = new WorkerManager({ connection: REDIS_URL, queueName, concurrency: 1 });
         wm.register<AnswerJob>(JOB_NAMES.ANSWER_SUBMIT, async (job) => {
             await WriterService.bufferAnswer(job.data);
@@ -99,12 +116,14 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
     afterAll(async () => {
         WriterService.stopFlushTimer();
         await wm.stop();
-        await client.unsafe("DROP TABLE IF EXISTS answers, form_fields, forms, spaces CASCADE; DROP TYPE IF EXISTS form_status, field_type;");
+        await client.unsafe(
+            'DROP TABLE IF EXISTS answers, form_fields, forms, spaces CASCADE; DROP TYPE IF EXISTS form_status, field_type;',
+        );
         await client.end();
     });
 
-    it("carries a submitted answer through BullMQ into Postgres", async () => {
-        await SubmissionService.enqueueAnswer(FORM_ID, { name: "Ada", msg: "hi" }, "ip-hash-xyz", 0.91);
+    it('carries a submitted answer through BullMQ into Postgres', async () => {
+        await SubmissionService.enqueueAnswer(FORM_ID, { name: 'Ada', msg: 'hi' }, 'ip-hash-xyz', 0.91);
 
         // The consumer buffers the job; wait for it, then flush to Postgres.
         await waitFor(() => (WriterService as any).buffer.length > 0);
@@ -112,8 +131,8 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 
         const rows = await db.select().from(answers).where(eq(answers.formId, FORM_ID));
         expect(rows.length).toBe(1);
-        expect(rows[0].data).toEqual({ name: "Ada", msg: "hi" });
-        expect(rows[0].ipHash).toBe("ip-hash-xyz");
+        expect(rows[0].data).toEqual({ name: 'Ada', msg: 'hi' });
+        expect(rows[0].ipHash).toBe('ip-hash-xyz');
         // SubmissionService scales the reCAPTCHA score to an integer (0.91 → 91)
         expect(rows[0].recaptchaScore).toBe(91);
         expect(rows[0].formId).toBe(FORM_ID);

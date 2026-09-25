@@ -80,13 +80,7 @@ export class PrerenderService {
         mkdirSync(tmpDir, { recursive: true });
 
         // 3. Generate source files
-        const htmlContent = generateFormHtml(
-            form.title,
-            form.description,
-            fields,
-            formId,
-            recaptchaSiteKey,
-        );
+        const htmlContent = generateFormHtml(form.title, form.description, fields, formId, recaptchaSiteKey);
         writeFileSync(join(tmpDir, 'index.html'), htmlContent);
 
         const runtimeContent = generateFormRuntime(formId, space.slug, form.slug, recaptchaSiteKey);
