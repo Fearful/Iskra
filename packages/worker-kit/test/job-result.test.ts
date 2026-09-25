@@ -91,7 +91,9 @@ describe('enqueue descriptor result()', () => {
 
 describe('JobHandler<T, R> return type', () => {
     it('accepts a handler that returns a value', async () => {
-        interface Payload { n: number }
+        interface Payload {
+            n: number;
+        }
 
         const handler: JobHandler<Payload, number> = async (job) => job.data.n * 2;
 

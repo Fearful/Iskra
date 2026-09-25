@@ -16,10 +16,12 @@ const socketDriver = new SocketDriver({
 app.register(socketDriver);
 
 // Setup Web Plugin (Hono)
-app.register(new WebPlugin({
-    port: config.web.port,
-    router: httpRouter,
-}));
+app.register(
+    new WebPlugin({
+        port: config.web.port,
+        router: httpRouter,
+    }),
+);
 
 // Connect HTTP events to Socket broadcast
 eventBus.on('feed:new-post', (post) => {

@@ -24,11 +24,11 @@ describe('ProcessManager', () => {
             'echo-test': {
                 command: 'echo',
                 args: ['hello world'],
-                mode: 'stdio'
-            }
+                mode: 'stdio',
+            },
         };
 
-        const listPromise = new Promise(resolve => {
+        const listPromise = new Promise((resolve) => {
             app.on('process:log', (ctx) => {
                 if (ctx.payload.text.includes('hello world')) {
                     resolve(true);
@@ -46,11 +46,11 @@ describe('ProcessManager', () => {
             'json-test': {
                 command: process.execPath,
                 args: ['-e', 'console.log(JSON.stringify({foo: "bar"}))'],
-                mode: 'stdio'
-            }
+                mode: 'stdio',
+            },
         };
 
-        const jsonPromise = new Promise(resolve => {
+        const jsonPromise = new Promise((resolve) => {
             app.on('process:message', (ctx) => {
                 if (ctx.payload.name === 'json-test') {
                     expect(ctx.payload.message).toEqual({ foo: 'bar' });

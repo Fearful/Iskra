@@ -30,10 +30,7 @@ export interface MockDriver extends Driver {
  *   await app.register(driver).start();
  *   expect(driver.calls).toEqual(['init', 'start']);
  */
-export function createMockDriver(
-    name: string = 'mock-driver',
-    hooks: MockDriverHooks = {},
-): MockDriver {
+export function createMockDriver(name: string = 'mock-driver', hooks: MockDriverHooks = {}): MockDriver {
     const calls: LifecycleCall[] = [];
 
     const driver: MockDriver = {

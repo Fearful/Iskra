@@ -92,9 +92,7 @@ describe('ProcessManager first-restart backoff', () => {
             // with currentBackoffMs = the delay just scheduled (mirrors how a real
             // restart threads currentBackoffMs forward through spawnProcess).
             for (let i = 0; i < 3; i++) {
-                const carriedBackoff = scheduled.length > 0
-                    ? scheduled[scheduled.length - 1]
-                    : initialMs;
+                const carriedBackoff = scheduled.length > 0 ? scheduled[scheduled.length - 1] : initialMs;
 
                 (pm as any).processes.set('crasher', {
                     process: { killed: false, kill: () => {} },

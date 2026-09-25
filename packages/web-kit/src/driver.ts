@@ -13,7 +13,6 @@ export class WebPlugin implements Driver {
     name = 'WebPlugin';
     private app: App | null = null;
     private kernel: Kernel;
-    private runningServer: any;
     private router?: Hono;
     /** Whether the config chose a logger (or `false`): otherwise the App's is used. */
     private ownLogger: boolean;
@@ -51,7 +50,6 @@ export class WebPlugin implements Driver {
         // We let the kernel start or we start it manually using Bun
         // Kernel.start() does Bun.serve.
         await this.kernel.start();
-        this.runningServer = true; // Placeholder, Kernel.start() might block or not return server instance directly
     }
 
     async stop() {

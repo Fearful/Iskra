@@ -1,14 +1,14 @@
-import type { Feature } from "../../types";
-import type { Kernel } from "../../kernel";
-import type { Context, Next } from "hono";
-import { createEmailAdapter } from "@iskra-bun/mailer-kit";
+import type { Feature } from '../../types';
+import type { Kernel } from '../../kernel';
+import type { Context, Next } from 'hono';
+import { createEmailAdapter } from '@iskra-bun/mailer-kit';
 
-export type { EmailConfig, EmailMessage, TemplateData, EmailAdapter } from "@iskra-bun/mailer-kit";
-export { MockEmailAdapter } from "@iskra-bun/mailer-kit";
+export type { EmailConfig, EmailMessage, TemplateData, EmailAdapter } from '@iskra-bun/mailer-kit';
+export { MockEmailAdapter } from '@iskra-bun/mailer-kit';
 
-import type { EmailConfig, EmailAdapter, EmailMessage, TemplateData } from "@iskra-bun/mailer-kit";
+import type { EmailConfig, EmailAdapter, EmailMessage, TemplateData } from '@iskra-bun/mailer-kit';
 
-declare module "hono" {
+declare module 'hono' {
     interface ContextVariableMap {
         email: EmailAdapter;
     }
@@ -35,15 +35,15 @@ function assertRecipients(to: string | string[] | undefined, label: string): voi
 }
 
 function validateMessage(message: EmailMessage): void {
-    assertRecipients(message.to, "recipient");
-    assertRecipients(message.cc, "cc recipient");
-    assertRecipients(message.bcc, "bcc recipient");
-    if (message.replyTo !== undefined) assertNoCrlf(message.replyTo, "replyTo");
-    assertNoCrlf(message.subject, "subject");
+    assertRecipients(message.to, 'recipient');
+    assertRecipients(message.cc, 'cc recipient');
+    assertRecipients(message.bcc, 'bcc recipient');
+    if (message.replyTo !== undefined) assertNoCrlf(message.replyTo, 'replyTo');
+    assertNoCrlf(message.subject, 'subject');
     if (message.headers) {
         for (const [name, value] of Object.entries(message.headers)) {
-            assertNoCrlf(name, "header name");
-            assertNoCrlf(value, "header value");
+            assertNoCrlf(name, 'header name');
+            assertNoCrlf(value, 'header value');
         }
     }
 }
@@ -57,29 +57,29 @@ function withValidation(adapter: EmailAdapter): EmailAdapter {
             return adapter.send(message);
         },
         sendTemplate: (templateName: string, to: string | string[], data: TemplateData) => {
-            assertRecipients(to, "recipient");
+            assertRecipients(to, 'recipient');
             return adapter.sendTemplate(templateName, to, data);
         },
     };
 }
 
 export class EmailFeature implements Feature {
-    name = "email";
+    name = 'email';
     private adapter?: EmailAdapter;
 
-    constructor(private config: EmailConfig) { }
+    constructor(private config: EmailConfig) {}
 
     async initialize(kernel: Kernel): Promise<void> {
         this.adapter = withValidation(await createEmailAdapter(this.config));
         const app = kernel.getApp();
-        app.use("*", async (c: Context, next: Next) => {
-            if (this.adapter) c.set("email", this.adapter);
+        app.use('*', async (c: Context, next: Next) => {
+            if (this.adapter) c.set('email', this.adapter);
             await next();
         });
     }
 
     getAdapter(): EmailAdapter {
-        if (!this.adapter) throw new Error("Email not initialized");
+        if (!this.adapter) throw new Error('Email not initialized');
         return this.adapter;
     }
 }

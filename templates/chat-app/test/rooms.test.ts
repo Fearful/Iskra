@@ -16,7 +16,9 @@ function memoryKv() {
 describe('chat rooms', () => {
     it('keeps every message sent at the same time', async () => {
         const { kv } = memoryKv();
-        await Promise.all(Array.from({ length: 10 }, (_, i) => appendMessage(kv, 'general', { username: `u${i}`, text: `m${i}` })));
+        await Promise.all(
+            Array.from({ length: 10 }, (_, i) => appendMessage(kv, 'general', { username: `u${i}`, text: `m${i}` })),
+        );
         // Each append read the same history and the last write won.
         expect((await getMessages(kv, 'general', { limit: 100 })).items).toHaveLength(10);
     });

@@ -1,6 +1,6 @@
 import type { FieldType } from '@forms-app/shared';
 import { getErrorMessage } from '@forms-app/shared/validation';
-import type { FieldErrorMessages } from '@forms-app/shared';
+import type { FieldErrorMessages, JsonSchema, JsonSchemaProperty } from '@forms-app/shared';
 
 interface FieldDefinition {
     fieldType: FieldType;
@@ -12,35 +12,6 @@ interface FieldDefinition {
     max?: number | null;
     options?: { label: string; value: string }[] | null;
     errorMessage?: string | null;
-}
-
-interface JsonSchemaProperty {
-    type: string;
-    format?: string;
-    minLength?: number;
-    maxLength?: number;
-    minimum?: number;
-    maximum?: number;
-    enum?: string[];
-    const?: boolean;
-    items?: { type: 'string'; enum: string[] };
-    minItems?: number;
-    uniqueItems?: boolean;
-    errorMessage: Record<string, string>;
-}
-
-interface JsonSchema {
-    type: 'object';
-    properties: Record<string, JsonSchemaProperty>;
-    required: string[];
-    /** Only the form's fields are accepted. */
-    additionalProperties: false;
-    /**
-     * Required-field messages by field name. They go on the object: AJV
-     * reports a missing property there, so a property's own
-     * `errorMessage.required` was never used.
-     */
-    errorMessage?: { required: Record<string, string> };
 }
 
 /** Longest accepted answer when the field sets no maxLength. */

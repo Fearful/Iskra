@@ -1,6 +1,9 @@
-import type { TrustProxy } from "./client-ip";
-import type { KernelLogger } from "./logging";
-import type { Kernel } from "./kernel";
+import type { Context, Hono } from 'hono';
+import type { OpenAPIHono } from '@hono/zod-openapi';
+import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
+import type { TrustProxy } from './client-ip';
+import type { KernelLogger } from './logging';
+import type { Kernel } from './kernel';
 
 export type { Kernel };
 
@@ -19,7 +22,7 @@ export interface KernelConfig {
     idleTimeout?: number;
     /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
     shutdownGraceMs?: number;
-    environment?: "development" | "production" | "test";
+    environment?: 'development' | 'production' | 'test';
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
     /**
      * Number of reverse proxies in front of the app (`true` = 1). Only then are
@@ -37,11 +40,11 @@ export interface KernelConfig {
 
 export interface SecurityHeadersConfig {
     contentSecurityPolicy?:
-    | string
-    | {
-        directives?: Record<string, string | string[]>;
-    };
-    xFrameOptions?: "DENY" | "SAMEORIGIN" | string;
+        | string
+        | {
+              directives?: Record<string, string | string[]>;
+          };
+    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string;
     xContentTypeOptions?: boolean;
     strictTransportSecurity?: {
         maxAge?: number;
@@ -50,14 +53,14 @@ export interface SecurityHeadersConfig {
     };
     xXssProtection?: boolean;
     referrerPolicy?:
-    | "no-referrer"
-    | "no-referrer-when-downgrade"
-    | "origin"
-    | "origin-when-cross-origin"
-    | "same-origin"
-    | "strict-origin"
-    | "strict-origin-when-cross-origin"
-    | "unsafe-url";
+        | 'no-referrer'
+        | 'no-referrer-when-downgrade'
+        | 'origin'
+        | 'origin-when-cross-origin'
+        | 'same-origin'
+        | 'strict-origin'
+        | 'strict-origin-when-cross-origin'
+        | 'unsafe-url';
     permissionsPolicy?: Record<string, string[]>;
 }
 
@@ -79,17 +82,15 @@ export interface ApiKeyMetadata {
     expiresAt?: Date;
     createdAt: Date;
     lastUsedAt?: Date;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface ApiKeyConfig {
     staticKeys?: Array<Partial<ApiKeyMetadata> & { key: string }>;
     headerName?: string;
     queryParamName?: string;
-    extractStrategies?: ("header" | "bearer" | "query" | "custom")[];
-    /** Not used yet: only `staticKeys` are validated. */
-    vaultService?: any;
-    customExtractor?: (c: any) => string | null;
+    extractStrategies?: ('header' | 'bearer' | 'query' | 'custom')[];
+    customExtractor?: (c: Context) => string | null;
     /**
      * @deprecated Ignored. Keys are looked up in memory on every request; the
      * cache kept a revoked key working and stored it in plaintext.
@@ -99,8 +100,8 @@ export interface ApiKeyConfig {
     cacheTtl?: number;
     requireScopes?: boolean;
     skipPaths?: string[];
-    onError?: (error: string, c: any) => Response | Promise<Response>;
-    onValidated?: (key: ApiKeyMetadata, c: any) => void | Promise<void>;
+    onError?: (error: string, c: Context) => Response | Promise<Response>;
+    onValidated?: (key: ApiKeyMetadata, c: Context) => void | Promise<void>;
 }
 
 export interface CsrfConfig {
@@ -111,7 +112,7 @@ export interface CsrfConfig {
     cookieOptions?: {
         httpOnly?: boolean;
         secure?: boolean;
-        sameSite?: "Strict" | "Lax" | "None";
+        sameSite?: 'Strict' | 'Lax' | 'None';
         maxAge?: number;
     };
 }
@@ -122,7 +123,7 @@ export interface Feature {
     dependencies?: string[]; // Required features
     peerDependencies?: string[]; // Required npm packages
     initialize(kernel: Kernel): Promise<void>;
-    routes?: (app: any) => void;
+    routes?: (app: Hono) => void;
     shutdown?(): Promise<void>;
 }
 
@@ -140,11 +141,11 @@ export interface CorsConfig {
 export interface RateLimitConfig {
     windowMs?: number;
     max?: number;
-    keyGenerator?: (c: any) => string;
-    skip?: (c: any) => boolean;
-    handler?: (c: any) => Response;
+    keyGenerator?: (c: Context) => string;
+    skip?: (c: Context) => boolean;
+    handler?: (c: Context) => Response;
     standardHeaders?: boolean;
-    store?: "memory" | "cache";
+    store?: 'memory' | 'cache';
 }
 
 export interface HealthCheckConfig {
@@ -155,10 +156,10 @@ export interface HealthCheckConfig {
     /** Per-check timeout for /health probes, in ms. Default 2000. */
     checkTimeoutMs?: number;
     checks?: {
-        [key: string]: (context?: any) => Promise<{
-            status: "ok" | "error";
+        [key: string]: (c: Context) => Promise<{
+            status: 'ok' | 'error';
             message?: string;
-            details?: any;
+            details?: unknown;
         }>;
     };
     readinessChecks?: {
@@ -174,20 +175,21 @@ export interface RequestIdConfig {
 export interface ErrorHandlerConfig {
     includeStack?: boolean;
     customHandlers?: {
-        [key: number]: (error: Error, c: any) => Response;
+        [key: number]: (error: Error, c: Context) => Response;
     };
-    logger?: (error: Error, c: any) => void;
+    logger?: (error: Error, c: Context) => void;
 }
 
 export interface LoggerConfig {
-    level?: "debug" | "info" | "error" | "trace" | "warning" | "fatal" | null | undefined;
-    format?: "json" | "pretty";
+    level?: 'debug' | 'info' | 'error' | 'trace' | 'warning' | 'fatal' | null | undefined;
+    format?: 'json' | 'pretty';
     sinks?: Array<
-        {
-            type: "console" | "file";
-            path?: string;
-            level?: "debug" | "info" | "warn" | "error";
-        } | Sink
+        | {
+              type: 'console' | 'file';
+              path?: string;
+              level?: 'debug' | 'info' | 'warn' | 'error';
+          }
+        | Sink
     >;
     logRequests?: boolean;
     logResponses?: boolean;
@@ -205,7 +207,7 @@ export interface AuthConfig {
      */
     rateLimit?: false | { max?: number; windowMs?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
-    authMode?: "oidc" | "email"; // Authentication mode
+    authMode?: 'oidc' | 'email'; // Authentication mode
     /**
      * Email/password sign-in. Defaults to `authMode === "email"`, so an OIDC
      * deployment does not also expose an open email/password login.
@@ -213,8 +215,8 @@ export interface AuthConfig {
     enableEmailPassword?: boolean;
     enableSelfRegistration?: boolean; // Allow `/sign-up/email` (default true); false = accounts are provisioned elsewhere
 
-    // deno-lint-ignore no-explicit-any
-    socialProviders?: Record<string, any>; // Allow other providers
+    /** better-auth's socialProviders option, as is. */
+    socialProviders?: BetterAuthConfigOptions['socialProviders'];
 
     // OIDC Configuration for Keycloak and other OIDC providers
     oidcConfig?: {
@@ -241,20 +243,20 @@ export interface AuthConfig {
 }
 
 export interface SessionConfig {
-    store: "db" | "cache" | "memory";
+    store: 'db' | 'cache' | 'memory';
     secret: string;
     ttl?: number;
     cookieName?: string;
     cookieOptions?: {
         secure?: boolean;
-        sameSite?: "Strict" | "Lax" | "None";
+        sameSite?: 'Strict' | 'Lax' | 'None';
         domain?: string;
         path?: string;
     };
 }
 
 export interface DbConfig {
-    adapter: "postgres" | "mysql" | "sqlite";
+    adapter: 'postgres' | 'mysql' | 'sqlite';
     connection?: {
         host?: string;
         port?: number;
@@ -266,7 +268,7 @@ export interface DbConfig {
 }
 
 export interface CacheConfig {
-    adapter: "redis" | "memory";
+    adapter: 'redis' | 'memory';
     connection?: {
         host?: string;
         port?: number;
@@ -303,10 +305,13 @@ export interface OpenAPIConfig {
     license?: { name: string; url?: string };
     externalDocs?: { description: string; url: string };
     security?: Array<Record<string, string[]>>;
-    securitySchemes?: Record<string, any>;
+    /** OpenAPI security scheme objects, by name (as in the spec's components). */
+    securitySchemes?: NonNullable<
+        NonNullable<ReturnType<OpenAPIHono['getOpenAPIDocument']>['components']>['securitySchemes']
+    >;
 }
 
-export type UploadAction = "upload" | "list" | "download" | "delete";
+export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
 
 export interface UploadConfig {
     projectName: string;
@@ -324,5 +329,5 @@ export interface UploadConfig {
      * the built-in upload routes (e.g. check `c.get("user")`). Pass
      * `() => true` to make them public on purpose.
      */
-    authorize?: (c: any, action: UploadAction) => boolean | Promise<boolean>;
+    authorize?: (c: Context, action: UploadAction) => boolean | Promise<boolean>;
 }

@@ -8,7 +8,7 @@ export function createHttpRoutes(kv: KVManager, db: DbDriver) {
             method: 'GET' as const,
             path: '/',
             handler: () => ({ message: 'Welcome to Iskra Full Stack App!' }),
-            doc: { summary: 'Root endpoint' }
+            doc: { summary: 'Root endpoint' },
         },
         {
             method: 'GET' as const,
@@ -18,10 +18,10 @@ export function createHttpRoutes(kv: KVManager, db: DbDriver) {
                 return {
                     uptime: process.uptime(),
                     workers: ctx.app.context.get('worker_last_ping'),
-                    last_chat: lastMsg
+                    last_chat: lastMsg,
                 };
             },
-            doc: { summary: 'Get app status' }
+            doc: { summary: 'Get app status' },
         },
         {
             method: 'GET' as const,
@@ -30,7 +30,7 @@ export function createHttpRoutes(kv: KVManager, db: DbDriver) {
                 const ok = await db.ping();
                 return { ok };
             },
-            doc: { summary: 'Test DB connection' }
-        }
+            doc: { summary: 'Test DB connection' },
+        },
     ];
 }

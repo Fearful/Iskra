@@ -10,8 +10,8 @@ export interface User {
     image?: string | null;
     createdAt: Date;
     updatedAt: Date;
-    // deno-lint-ignore no-explicit-any
-    [key: string]: any; // Allow custom fields
+    /** Custom fields: narrow them where they are read. */
+    [key: string]: unknown;
 }
 
 export interface Account {
@@ -79,8 +79,8 @@ export interface SignUpInput {
     email: string;
     password: string;
     name?: string;
-    // deno-lint-ignore no-explicit-any
-    [key: string]: any; // Allow custom fields
+    /** Custom fields: narrow them where they are read. */
+    [key: string]: unknown;
 }
 
 /**

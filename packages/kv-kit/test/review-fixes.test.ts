@@ -8,7 +8,7 @@ describe('MemoryAdapter TTLs', () => {
     let adapter: MemoryAdapter;
     afterEach(() => adapter.disconnect());
 
-    it('keeps a key whose TTL exceeds setTimeout\'s ~24.8-day limit', async () => {
+    it("keeps a key whose TTL exceeds setTimeout's ~24.8-day limit", async () => {
         adapter = new MemoryAdapter();
         await adapter.set('session', { user: 1 }, 30 * 24 * 3600);
         await Bun.sleep(20);
@@ -53,7 +53,10 @@ describe('RedisAdapter', () => {
         (app.logger as any).warn = (obj: unknown) => errors.push(obj);
         app.register(new KVManager());
 
-        const error = await app.start().then(() => undefined, (e: unknown) => e);
+        const error = await app.start().then(
+            () => undefined,
+            (e: unknown) => e,
+        );
         // start() used to resolve and the first command failed (or hung) later.
         expect(error).toBeDefined();
         expect(String((error as Error).message)).not.toContain('s3cret');

@@ -4,19 +4,19 @@
  * generic `headers` map.
  */
 export const ALLOWED_HEADERS = [
-    "reply-to",
-    "in-reply-to",
-    "references",
-    "list-unsubscribe",
-    "list-unsubscribe-post",
-    "list-id",
+    'reply-to',
+    'in-reply-to',
+    'references',
+    'list-unsubscribe',
+    'list-unsubscribe-post',
+    'list-id',
 ] as const;
 
 /**
  * Truncate a header value at the first CR/LF. Anything after a line break is an
  * injected header (or folded continuation) and must be dropped, not preserved.
  */
-export const stripCrlf = (value: string): string => value.split(/[\r\n]/)[0] ?? "";
+export const stripCrlf = (value: string): string => value.split(/[\r\n]/)[0] ?? '';
 
 /** The `headers` of a message, checked against `allowed` and without CR/LF. */
 export function checkHeaders(
@@ -44,7 +44,7 @@ export function checkEmail(email: string): string {
 }
 
 /** A display name on one line (CR/LF would start a new header). */
-export const cleanName = (name: string): string => name.replace(/[\r\n]+/g, " ").trim();
+export const cleanName = (name: string): string => name.replace(/[\r\n]+/g, ' ').trim();
 
 /**
  * `from` as an RFC 5322 mailbox. A display name with special characters is
@@ -54,10 +54,10 @@ export const cleanName = (name: string): string => name.replace(/[\r\n]+/g, " ")
  */
 export function formatAddress(from: { name?: string; email: string }): string {
     const email = checkEmail(from.email);
-    const name = from.name ? cleanName(from.name) : "";
+    const name = from.name ? cleanName(from.name) : '';
     if (!name) return email;
     // Words of RFC 5322 atext need no quoting.
     if (/^[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~ ]+$/.test(name)) return `${name} <${email}>`;
-    if (/^[\x20-\x7e]*$/.test(name)) return `"${name.replace(/(["\\])/g, "\\$1")}" <${email}>`;
-    return `=?UTF-8?B?${Buffer.from(name, "utf8").toString("base64")}?= <${email}>`;
+    if (/^[\x20-\x7e]*$/.test(name)) return `"${name.replace(/(["\\])/g, '\\$1')}" <${email}>`;
+    return `=?UTF-8?B?${Buffer.from(name, 'utf8').toString('base64')}?= <${email}>`;
 }

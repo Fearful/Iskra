@@ -1,9 +1,10 @@
 export {
     createBetterAuth,
+    mapOidcProfile,
     type Auth,
     type AuthKitDrizzleDb,
     type BetterAuthConfigOptions,
-} from "./better-auth-config";
+} from './better-auth-config';
 
 export {
     pgUser,
@@ -21,7 +22,7 @@ export {
     sqliteAccount,
     sqliteVerification,
     sqliteSchema,
-} from "./schema";
+} from './schema';
 
 export type {
     User,
@@ -36,4 +37,4 @@ export type {
     PasswordResetRequest,
     PasswordResetConfirm,
     EmailVerificationRequest,
-} from "./types";
+} from './types';

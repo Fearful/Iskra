@@ -97,7 +97,11 @@ export class ConfigError extends IskraError {
 
 export class DriverError extends IskraError {
     constructor(message: string, options?: { code?: ErrorCode; cause?: Error; context?: Record<string, unknown> }) {
-        super(message, { code: options?.code ?? ErrorCodes.DRIVER_INIT_FAILED, cause: options?.cause, context: options?.context });
+        super(message, {
+            code: options?.code ?? ErrorCodes.DRIVER_INIT_FAILED,
+            cause: options?.cause,
+            context: options?.context,
+        });
         this.name = 'DriverError';
     }
 }
@@ -116,7 +120,10 @@ export class PluginError extends IskraError {
 export class LifecycleError extends IskraError {
     public readonly failures: PromiseRejectedResult[];
 
-    constructor(message: string, options: { failures?: PromiseRejectedResult[]; cause?: Error; context?: Record<string, unknown> }) {
+    constructor(
+        message: string,
+        options: { failures?: PromiseRejectedResult[]; cause?: Error; context?: Record<string, unknown> },
+    ) {
         super(message, { code: ErrorCodes.LIFECYCLE_STOP_FAILED, cause: options.cause, context: options.context });
         this.name = 'LifecycleError';
         this.failures = options.failures ?? [];

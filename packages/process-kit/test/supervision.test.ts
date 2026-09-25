@@ -19,9 +19,15 @@ function setup() {
     const exits: any[] = [];
     const logs: string[] = [];
     const errors: string[] = [];
-    app.on('process:exit', (ctx) => { exits.push(ctx.payload); });
-    app.on('process:log', (ctx) => { logs.push(ctx.payload.text); });
-    app.on('process:error', (ctx) => { errors.push(ctx.payload.text); });
+    app.on('process:exit', (ctx) => {
+        exits.push(ctx.payload);
+    });
+    app.on('process:log', (ctx) => {
+        logs.push(ctx.payload.text);
+    });
+    app.on('process:error', (ctx) => {
+        errors.push(ctx.payload.text);
+    });
     return { app, pm, exits, logs, errors };
 }
 
@@ -49,7 +55,12 @@ describe.if(process.platform === 'linux')('ProcessManager supervision', () => {
 
     it('does not restart after a clean exit (code 0)', async () => {
         const { pm, exits } = setup();
-        await pm.spawn('clean', { command: 'true', mode: 'daemon', restartOnCrash: true, restartBackoff: { initialMs: 20 } });
+        await pm.spawn('clean', {
+            command: 'true',
+            mode: 'daemon',
+            restartOnCrash: true,
+            restartBackoff: { initialMs: 20 },
+        });
         await until(() => exits.length === 1);
         await Bun.sleep(150);
         expect(exits).toEqual([{ name: 'clean', exitCode: 0, signal: null }]);
@@ -58,19 +69,34 @@ describe.if(process.platform === 'linux')('ProcessManager supervision', () => {
 
     it('reports signal deaths as crashes (exitCode null + signal) and restarts them', async () => {
         const { pm, exits } = setup();
-        await pm.spawn('victim', { command: 'sleep', args: ['300'], mode: 'daemon', restartOnCrash: true, restartBackoff: { initialMs: 20 } });
+        await pm.spawn('victim', {
+            command: 'sleep',
+            args: ['300'],
+            mode: 'daemon',
+            restartOnCrash: true,
+            restartBackoff: { initialMs: 20 },
+        });
         const first = (pm as any).processes.get('victim').process;
         process.kill(first.pid, 'SIGKILL');
         await until(() => exits.length === 1);
         expect(exits[0]).toEqual({ name: 'victim', exitCode: null, signal: 'SIGKILL' });
-        await until(() => (pm as any).processes.get('victim')?.process !== undefined && (pm as any).processes.get('victim').process !== first);
+        await until(
+            () =>
+                (pm as any).processes.get('victim')?.process !== undefined &&
+                (pm as any).processes.get('victim').process !== first,
+        );
         await pm.stop(200);
     });
 
     it('kill() during the restart backoff cancels the pending restart', async () => {
         // Regression: kill() threw "not found" and the untracked timer respawned it.
         const { pm, exits } = setup();
-        await pm.spawn('crashy', { command: 'false', mode: 'daemon', restartOnCrash: true, restartBackoff: { initialMs: 200 } });
+        await pm.spawn('crashy', {
+            command: 'false',
+            mode: 'daemon',
+            restartOnCrash: true,
+            restartBackoff: { initialMs: 200 },
+        });
         await until(() => exits.length === 1);
 
         await pm.kill('crashy'); // no throw
@@ -91,7 +117,11 @@ describe.if(process.platform === 'linux')('ProcessManager supervision', () => {
 
     it('can be started again after stop()', async () => {
         // Regression: `stopping` was never reset, so start() after stop() spawned nothing.
-        const app = new App({ name: 'Restartable', logger: { level: 'silent' }, processes: { s: { command: 'sleep', args: ['300'] } } } as any);
+        const app = new App({
+            name: 'Restartable',
+            logger: { level: 'silent' },
+            processes: { s: { command: 'sleep', args: ['300'] } },
+        } as any);
         const pm = new ProcessManager();
         pm.init(app);
         await pm.start();

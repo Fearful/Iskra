@@ -1,13 +1,13 @@
-import type { AuthConfig, Feature, Kernel } from "../../types";
-import type { Context, Hono, Next } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { getClientIp } from "../../client-ip";
-import { type Auth, createBetterAuth } from "@iskra-bun/auth-kit";
-import { z } from "@hono/zod-openapi";
-import type { User } from "@iskra-bun/auth-kit";
-import { consoleLogger, type KernelLogger } from "../../logging";
+import type { AuthConfig, Feature, Kernel } from '../../types';
+import type { Context, Hono, Next } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { getClientIp } from '../../client-ip';
+import { type Auth, createBetterAuth } from '@iskra-bun/auth-kit';
+import { z } from '@hono/zod-openapi';
+import type { User } from '@iskra-bun/auth-kit';
+import { consoleLogger, type KernelLogger } from '../../logging';
 
-declare module "hono" {
+declare module 'hono' {
     interface ContextVariableMap {
         user: User | null;
         authUser: User | null;
@@ -29,11 +29,13 @@ const SignUpSchema = z.object({
 
 const AuthSuccessSchema = z.object({
     token: z.string().optional(),
-    user: z.object({
-        id: z.string(),
-        email: z.string(),
-        name: z.string().optional(),
-    }).optional(),
+    user: z
+        .object({
+            id: z.string(),
+            email: z.string(),
+            name: z.string().optional(),
+        })
+        .optional(),
     session: z.any().optional(),
 });
 
@@ -49,7 +51,7 @@ const SessionResponseSchema = z.object({
  * better-auth (its rate limiter and the sessions' `ipAddress`). Set on every
  * request handed to it, replacing any value the client sent.
  */
-const CLIENT_IP_HEADER = "x-iskra-client-ip";
+const CLIENT_IP_HEADER = 'x-iskra-client-ip';
 
 /**
  * The origin better-auth runs on. It decides the cookies' `Secure` flag and
@@ -59,13 +61,13 @@ const CLIENT_IP_HEADER = "x-iskra-client-ip";
 function resolveBaseURL(baseURL: string | undefined): string {
     const resolved = baseURL || process.env.BETTER_AUTH_URL;
     if (resolved) return resolved;
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === 'production') {
         throw new Error(
             "AuthFeature: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, " +
-                "e.g. \"https://app.example.com\"; without it cookies are sent without Secure.",
+                'e.g. "https://app.example.com"; without it cookies are sent without Secure.',
         );
     }
-    return "http://localhost:3000";
+    return 'http://localhost:3000';
 }
 
 /**
@@ -79,11 +81,11 @@ function assertBaseURLMatchesBasePath(baseURL: string | undefined, basePath: str
     if (!baseURL) return;
     let pathname: string;
     try {
-        pathname = new URL(baseURL).pathname.replace(/\/+$/, "");
+        pathname = new URL(baseURL).pathname.replace(/\/+$/, '');
     } catch {
         throw new Error(`AuthFeature: invalid baseURL "${baseURL}"`);
     }
-    if (pathname && pathname !== basePath.replace(/\/+$/, "")) {
+    if (pathname && pathname !== basePath.replace(/\/+$/, '')) {
         throw new Error(
             `AuthFeature: baseURL "${baseURL}" has the path "${pathname}", so better-auth would serve its routes ` +
                 `there instead of at basePath "${basePath}" and every auth request would 404. ` +
@@ -93,14 +95,14 @@ function assertBaseURLMatchesBasePath(baseURL: string | undefined, basePath: str
 }
 
 export class AuthFeature implements Feature {
-    name = "auth";
+    name = 'auth';
     private log: KernelLogger = consoleLogger;
-    dependencies = ["db"];
+    dependencies = ['db'];
 
     private auth: Auth | undefined;
-    private config: Required<Pick<AuthConfig, "secret" | "basePath">> & AuthConfig;
+    private config: Required<Pick<AuthConfig, 'secret' | 'basePath'>> & AuthConfig;
     private kernel?: Kernel;
-    private authMode: "oidc" | "email";
+    private authMode: 'oidc' | 'email';
     private createAuth: typeof createBetterAuth;
 
     // The second parameter is an internal seam: it defaults to the real
@@ -110,30 +112,30 @@ export class AuthFeature implements Feature {
     constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
         this.createAuth = createAuth;
         const baseURL = resolveBaseURL(config.baseURL);
-        assertBaseURLMatchesBasePath(baseURL, config.basePath || "/api/sso");
+        assertBaseURLMatchesBasePath(baseURL, config.basePath || '/api/sso');
         this.config = {
             ...config,
-            basePath: config.basePath || "/api/sso",
+            basePath: config.basePath || '/api/sso',
             baseURL,
         };
 
-        if (config.authMode === "oidc" || config.authMode === "email") {
+        if (config.authMode === 'oidc' || config.authMode === 'email') {
             this.authMode = config.authMode;
         } else {
-            this.authMode = config.oidcConfig ? "oidc" : "email";
+            this.authMode = config.oidcConfig ? 'oidc' : 'email';
         }
     }
 
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         this.kernel = kernel;
-        const dbFeature = kernel.getFeature("db");
+        const dbFeature = kernel.getFeature('db');
         if (!dbFeature) {
-            throw new Error("AuthFeature requires DbFeature");
+            throw new Error('AuthFeature requires DbFeature');
         }
 
         const db = dbFeature.db;
-        const adapterType = dbFeature.adapter as "postgres" | "mysql" | "sqlite";
+        const adapterType = dbFeature.adapter as 'postgres' | 'mysql' | 'sqlite';
 
         if (!adapterType) {
             throw new Error("DbFeature must expose 'adapter' type (postgres, mysql, sqlite)");
@@ -142,9 +144,7 @@ export class AuthFeature implements Feature {
         // CSRF kill-switch is honored only outside production. Even if a config
         // ships with disableCSRFCheck enabled, it is neutralized in prod so CSRF
         // protection cannot be silently turned off in a deployed environment.
-        const disableCSRFCheck = process.env.NODE_ENV !== "production"
-            ? this.config.disableCSRFCheck === true
-            : false;
+        const disableCSRFCheck = process.env.NODE_ENV !== 'production' ? this.config.disableCSRFCheck === true : false;
 
         this.auth = this.createAuth({
             db,
@@ -153,7 +153,7 @@ export class AuthFeature implements Feature {
             baseURL: this.config.baseURL,
             basePath: this.config.basePath,
             trustedOrigins: this.config.trustedOrigins,
-            enableEmailPassword: this.config.enableEmailPassword ?? this.authMode === "email",
+            enableEmailPassword: this.config.enableEmailPassword ?? this.authMode === 'email',
             disableSignUp: this.config.enableSelfRegistration === false,
             disableCSRFCheck,
             socialProviders: this.config.socialProviders,
@@ -171,27 +171,27 @@ export class AuthFeature implements Feature {
             app.use(`${this.config.basePath}/*`, this.authRateLimitMiddleware());
         }
 
-        app.use("*", async (c: Context, next: Next) => {
+        app.use('*', async (c: Context, next: Next) => {
             try {
                 const session = await this.auth!.api.getSession({
                     headers: c.req.raw.headers,
                 });
 
                 if (session && session.user) {
-                    c.set("user", session.user);
-                    c.set("authUser", session.user);
+                    c.set('user', session.user);
+                    c.set('authUser', session.user);
                 }
             } catch (error) {
                 // A failed getSession means "not authenticated" — expected for
                 // anonymous requests. Surface unexpected detail at debug only;
                 // never block the request on a session read.
-                const logger = c.get("logger");
-                if (logger?.debug) logger.debug("Auth session read failed", { error });
+                const logger = c.get('logger');
+                if (logger?.debug) logger.debug('Auth session read failed', { error });
             }
             await next();
         });
 
-        this.log.debug("Auth feature initialized (better-auth)");
+        this.log.debug('Auth feature initialized (better-auth)');
     }
 
     // ─── Auth-route rate limiting ────────────────────────────────────────────
@@ -212,14 +212,14 @@ export class AuthFeature implements Feature {
      */
     private authRateLimitMiddleware() {
         return async (c: Context, next: Next) => {
-            if (c.req.method !== "POST" || /\/sign-out\/?$/.test(c.req.path)) {
+            if (c.req.method !== 'POST' || /\/sign-out\/?$/.test(c.req.path)) {
                 await next();
                 return;
             }
             // Socket address unless the kernel is configured with `trustProxy`:
             // a raw X-Forwarded-For is client-controlled and would let an
             // attacker rotate it to bypass the limit (and grow this map).
-            const ip = getClientIp(c, this.kernel?.getConfig().trustProxy) ?? "unknown";
+            const ip = getClientIp(c, this.kernel?.getConfig().trustProxy) ?? 'unknown';
             const now = Date.now();
             if (now - this.authRateLimitLastSweep >= this.authRateLimitWindowMs) {
                 this.authRateLimitLastSweep = now;
@@ -229,13 +229,14 @@ export class AuthFeature implements Feature {
             }
             const entry = this.authRateLimitHits.get(ip);
 
-            const next_entry = !entry || now > entry.expiresAt
-                ? { count: 1, expiresAt: now + this.authRateLimitWindowMs }
-                : { count: entry.count + 1, expiresAt: entry.expiresAt };
+            const next_entry =
+                !entry || now > entry.expiresAt
+                    ? { count: 1, expiresAt: now + this.authRateLimitWindowMs }
+                    : { count: entry.count + 1, expiresAt: entry.expiresAt };
             this.authRateLimitHits.set(ip, next_entry);
 
             if (next_entry.count > this.authRateLimitMax) {
-                throw new HTTPException(429, { message: "Too many authentication attempts" });
+                throw new HTTPException(429, { message: 'Too many authentication attempts' });
             }
             await next();
         };
@@ -243,90 +244,90 @@ export class AuthFeature implements Feature {
 
     routes(app: Hono): void {
         if (!this.auth) {
-            throw new Error("Auth not initialized");
+            throw new Error('Auth not initialized');
         }
 
         const base = this.config.basePath!;
-        const openapi = this.kernel?.getFeature("openapi");
+        const openapi = this.kernel?.getFeature('openapi');
 
         // Register explicit OpenAPI-documented routes
         if (openapi) {
             openapi.addRoute(
                 {
-                    method: "post",
+                    method: 'post',
                     path: `${base}/sign-in/email`,
-                    tags: ["Auth"],
-                    summary: "Sign in with email and password",
+                    tags: ['Auth'],
+                    summary: 'Sign in with email and password',
                     request: {
                         body: {
-                            content: { "application/json": { schema: SignInSchema } },
+                            content: { 'application/json': { schema: SignInSchema } },
                         },
                     },
                     responses: {
                         200: {
-                            description: "Sign in successful",
-                            content: { "application/json": { schema: AuthSuccessSchema } },
+                            description: 'Sign in successful',
+                            content: { 'application/json': { schema: AuthSuccessSchema } },
                         },
-                        401: { description: "Invalid credentials" },
+                        401: { description: 'Invalid credentials' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
                 {
-                    method: "post",
+                    method: 'post',
                     path: `${base}/sign-up/email`,
-                    tags: ["Auth"],
-                    summary: "Create a new account",
+                    tags: ['Auth'],
+                    summary: 'Create a new account',
                     request: {
                         body: {
-                            content: { "application/json": { schema: SignUpSchema } },
+                            content: { 'application/json': { schema: SignUpSchema } },
                         },
                     },
                     responses: {
                         200: {
-                            description: "Account created",
-                            content: { "application/json": { schema: AuthSuccessSchema } },
+                            description: 'Account created',
+                            content: { 'application/json': { schema: AuthSuccessSchema } },
                         },
-                        400: { description: "Validation error" },
+                        400: { description: 'Validation error' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
                 {
-                    method: "post",
+                    method: 'post',
                     path: `${base}/sign-out`,
-                    tags: ["Auth"],
-                    summary: "Sign out",
+                    tags: ['Auth'],
+                    summary: 'Sign out',
                     responses: {
-                        200: { description: "Signed out" },
+                        200: { description: 'Signed out' },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
 
             openapi.addRoute(
                 {
-                    method: "get",
+                    method: 'get',
                     path: `${base}/get-session`,
-                    tags: ["Auth"],
-                    summary: "Get current session",
+                    tags: ['Auth'],
+                    summary: 'Get current session',
                     responses: {
                         200: {
-                            description: "Current session",
-                            content: { "application/json": { schema: SessionResponseSchema } },
+                            description: 'Current session',
+                            content: { 'application/json': { schema: SessionResponseSchema } },
                         },
                     },
                 },
-                async (c: any) => this.auth!.handler(await this.withClientIp(c)),
+                async (c: Context) => this.auth!.handler(await this.withClientIp(c)),
             );
         }
 
         // Catch-all for all other auth routes (OAuth callbacks, etc.)
-        app.on(["POST", "GET"], `${base}/*`, async (c) => {
+        app.on(['POST', 'GET'], `${base}/*`, async (c) => {
             return this.auth!.handler(await this.withClientIp(c));
         });
     }
@@ -360,19 +361,19 @@ export class AuthFeature implements Feature {
 
 export function requireAuth(kernel: Kernel) {
     return async (c: Context, next: Next) => {
-        const authFeature = kernel.getFeature("auth");
-        if (!authFeature) throw new HTTPException(500, { message: "Auth not initialized" });
+        const authFeature = kernel.getFeature('auth');
+        if (!authFeature) throw new HTTPException(500, { message: 'Auth not initialized' });
 
         const auth = authFeature.getAuth();
-        if (!auth) throw new HTTPException(500, { message: "Auth not ready" });
+        if (!auth) throw new HTTPException(500, { message: 'Auth not ready' });
 
         const session = await auth.api.getSession({ headers: c.req.raw.headers });
         if (!session || !session.user) {
-            throw new HTTPException(401, { message: "Unauthorized" });
+            throw new HTTPException(401, { message: 'Unauthorized' });
         }
 
-        c.set("user", session.user);
-        c.set("authUser", session.user);
+        c.set('user', session.user);
+        c.set('authUser', session.user);
         await next();
     };
 }

@@ -9,16 +9,22 @@ describe('App Drivers', () => {
 
         const d1: Driver = {
             name: 'D1',
-            init: () => { sequence.push('init:D1') },
+            init: () => {
+                sequence.push('init:D1');
+            },
             start: async () => {
-                await new Promise(r => setTimeout(r, 10));
-                sequence.push('start:D1')
-            }
+                await new Promise((r) => setTimeout(r, 10));
+                sequence.push('start:D1');
+            },
         };
         const d2: Driver = {
             name: 'D2',
-            init: () => { sequence.push('init:D2') },
-            start: () => { sequence.push('start:D2') }
+            init: () => {
+                sequence.push('init:D2');
+            },
+            start: () => {
+                sequence.push('start:D2');
+            },
         };
 
         app.register(d1).register(d2);
@@ -33,8 +39,10 @@ describe('App Drivers', () => {
         const app = new App({ name: 'DriverFail' });
         const failingDriver: Driver = {
             name: 'BadDriver',
-            init: () => { },
-            start: async () => { throw new Error('Failed to start path'); }
+            init: () => {},
+            start: async () => {
+                throw new Error('Failed to start path');
+            },
         };
 
         app.register(failingDriver);
@@ -45,15 +53,17 @@ describe('App Drivers', () => {
 
     it('should continue stopping other drivers if one fails to stop', async () => {
         const app = new App({ name: 'StopFail' });
-        const d1Stop = mock(() => { });
-        const d2Stop = mock(() => { throw new Error('Stop Error') });
+        const d1Stop = mock(() => {});
+        const d2Stop = mock(() => {
+            throw new Error('Stop Error');
+        });
 
-        app.register({ name: 'D1', init: () => { }, stop: d1Stop });
-        app.register({ name: 'D2', init: () => { }, stop: d2Stop });
+        app.register({ name: 'D1', init: () => {}, stop: d1Stop });
+        app.register({ name: 'D2', init: () => {}, stop: d2Stop });
 
         await app.start();
 
-        // If one fails, does Promise.all fail immediately? 
+        // If one fails, does Promise.all fail immediately?
         // We probably want "best effort" stop.
         // Let's verify current behavior.
         try {

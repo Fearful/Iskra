@@ -28,7 +28,7 @@ export interface SocketContext<TPayload = unknown, TData extends SocketData = So
 }
 
 export type SocketHandler<TPayload = unknown, TData extends SocketData = SocketData> = (
-    ctx: SocketContext<TPayload, TData>
+    ctx: SocketContext<TPayload, TData>,
 ) => Promise<void> | void;
 
 export class SocketRouter {
@@ -41,7 +41,7 @@ export class SocketRouter {
      */
     on<TPayload = unknown, TData extends SocketData = SocketData>(
         event: string,
-        handler: SocketHandler<TPayload, TData>
+        handler: SocketHandler<TPayload, TData>,
     ) {
         this.handlers.set(event, handler as SocketHandler);
         return this;

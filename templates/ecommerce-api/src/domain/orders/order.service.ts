@@ -58,22 +58,26 @@ export class OrderService {
                 createdAt: new Date(),
             };
 
-            tx.insert(orders).values({
-                id: order.id,
-                userId: order.userId,
-                total: order.total,
-                status: order.status,
-                createdAt: order.createdAt,
-            }).run();
+            tx.insert(orders)
+                .values({
+                    id: order.id,
+                    userId: order.userId,
+                    total: order.total,
+                    status: order.status,
+                    createdAt: order.createdAt,
+                })
+                .run();
 
             for (const item of input.items) {
-                tx.insert(orderItems).values({
-                    id: uuidv4(),
-                    orderId,
-                    productId: item.productId,
-                    quantity: item.quantity,
-                    price: prices.get(item.productId)!,
-                }).run();
+                tx.insert(orderItems)
+                    .values({
+                        id: uuidv4(),
+                        orderId,
+                        productId: item.productId,
+                        quantity: item.quantity,
+                        price: prices.get(item.productId)!,
+                    })
+                    .run();
             }
 
             return order;
@@ -82,19 +86,23 @@ export class OrderService {
 
     static async findAll(): Promise<Order[]> {
         if (!this.db) return [];
-        return this.db.select().from(orders).all().map((row) => ({
-            id: row.id,
-            userId: row.userId,
-            total: row.total,
-            // Only create() writes it, with one of the model's statuses.
-            status: row.status as Order['status'],
-            createdAt: row.createdAt ?? undefined,
-            items: this.db
-                .select()
-                .from(orderItems)
-                .where(eq(orderItems.orderId, row.id))
-                .all()
-                .map((i) => ({ productId: i.productId, quantity: i.quantity })),
-        }));
+        return this.db
+            .select()
+            .from(orders)
+            .all()
+            .map((row) => ({
+                id: row.id,
+                userId: row.userId,
+                total: row.total,
+                // Only create() writes it, with one of the model's statuses.
+                status: row.status as Order['status'],
+                createdAt: row.createdAt ?? undefined,
+                items: this.db
+                    .select()
+                    .from(orderItems)
+                    .where(eq(orderItems.orderId, row.id))
+                    .all()
+                    .map((i) => ({ productId: i.productId, quantity: i.quantity })),
+            }));
     }
 }

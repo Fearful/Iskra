@@ -43,6 +43,19 @@ Register it:
 app.register(new MetricsDriver());
 ```
 
+Declare what the driver puts on the app, so `app.context.get('metrics')` and `app.on('metrics:tick', …)` are typed for everyone using it (the kits do the same):
+
+```typescript
+declare module '@iskra-bun/core' {
+  interface AppContextRegistry {
+    metrics: MetricsDriver;
+  }
+  interface AppEvents {
+    'metrics:tick': { at: number };
+  }
+}
+```
+
 ### Guidelines
 
 - **`init` acquires nothing heavy** — store the `App` reference and register DI entries. Do not open sockets or connections here.

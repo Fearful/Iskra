@@ -1,5 +1,5 @@
-import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from "../types";
-import { formatAddress } from "../headers";
+import type { EmailAdapter, EmailConfig, EmailMessage, TemplateData } from '../types';
+import { formatAddress } from '../headers';
 
 /**
  * Minimal structural shape of the value returned by
@@ -54,7 +54,7 @@ export class SesEmailAdapter implements EmailAdapter {
         // without `@aws-sdk/client-sesv2` installed. The specifier is held in a
         // variable so TypeScript does not try to resolve the module at compile
         // time (it is a real runtime dependency, declared in package.json).
-        const sdkModule = "@aws-sdk/client-sesv2";
+        const sdkModule = '@aws-sdk/client-sesv2';
         const mod = (await import(sdkModule)) as Record<string, unknown>;
         const SESv2Client = mod.SESv2Client as new (cfg: { region?: string }) => SesClient;
         const SendEmailCommand = mod.SendEmailCommand as new (input: unknown) => SesCommand;
@@ -67,14 +67,14 @@ export class SesEmailAdapter implements EmailAdapter {
 
     async send(message: EmailMessage): Promise<{ messageId: string; success: boolean }> {
         const from = message.from || this.defaultFrom;
-        if (!from) throw new Error("From address required");
+        if (!from) throw new Error('From address required');
         // Simple content has no place for them: they used to be dropped while
         // the send reported success.
         if (message.attachments?.length) {
-            throw new Error("Attachments are not supported by the ses adapter yet");
+            throw new Error('Attachments are not supported by the ses adapter yet');
         }
         if (message.headers && Object.keys(message.headers).length > 0) {
-            throw new Error("Custom headers are not supported by the ses adapter yet");
+            throw new Error('Custom headers are not supported by the ses adapter yet');
         }
 
         const { client, command } = await this.resolveSdk();
@@ -84,8 +84,8 @@ export class SesEmailAdapter implements EmailAdapter {
         const bccAddresses = message.bcc ? (Array.isArray(message.bcc) ? message.bcc : [message.bcc]) : undefined;
 
         const body: Record<string, { Data: string; Charset: string }> = {};
-        if (message.text) body.Text = { Data: message.text, Charset: "UTF-8" };
-        if (message.html) body.Html = { Data: message.html, Charset: "UTF-8" };
+        if (message.text) body.Text = { Data: message.text, Charset: 'UTF-8' };
+        if (message.html) body.Html = { Data: message.html, Charset: 'UTF-8' };
 
         const input = {
             FromEmailAddress: formatAddress(from),
@@ -97,19 +97,23 @@ export class SesEmailAdapter implements EmailAdapter {
             ...(message.replyTo ? { ReplyToAddresses: [message.replyTo] } : {}),
             Content: {
                 Simple: {
-                    Subject: { Data: message.subject, Charset: "UTF-8" },
+                    Subject: { Data: message.subject, Charset: 'UTF-8' },
                     Body: body,
                 },
             },
         };
 
         const result = await client.send(command(input));
-        return { messageId: result.MessageId ?? "", success: true };
+        return { messageId: result.MessageId ?? '', success: true };
     }
 
-    async sendTemplate(_templateName: string, _to: string | string[], _data: TemplateData): Promise<{ messageId: string; success: boolean }> {
+    async sendTemplate(
+        _templateName: string,
+        _to: string | string[],
+        _data: TemplateData,
+    ): Promise<{ messageId: string; success: boolean }> {
         // No template engine is implemented yet; fail loudly rather than
         // silently sending a placeholder body that looks like a real send.
-        throw new Error("sendTemplate not supported by ses");
+        throw new Error('sendTemplate not supported by ses');
     }
 }

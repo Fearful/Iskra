@@ -12,19 +12,11 @@ import { increment } from './metrics.ts';
  * El backoff entre reintentos lo maneja BullMQ via `defaultJobOptions` (ver main.ts).
  * Cuando el ultimo intento falla, el job se mueve a la DLQ en lugar de perderse.
  */
-function withRetryAndDlq(
-    app: App,
-    dlq: WorkerManager,
-    name: string,
-    handler: JobHandler,
-): JobHandler {
+function withRetryAndDlq(app: App, dlq: WorkerManager, name: string, handler: JobHandler): JobHandler {
     return async (job) => {
         if (job.attemptsMade > 0) {
             increment('retried');
-            app.logger.warn(
-                { jobId: job.id, jobName: name, attempt: job.attemptsMade + 1 },
-                'Retrying job',
-            );
+            app.logger.warn({ jobId: job.id, jobName: name, attempt: job.attemptsMade + 1 }, 'Retrying job');
         }
 
         try {

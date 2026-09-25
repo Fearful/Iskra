@@ -38,7 +38,16 @@ export function packageNameFor(targetDir: string): string {
  * leaves `.gitignore` files out of published packages, so a bundled one never
  * reached the generated project.
  */
-export const DEFAULT_GITIGNORE = ['node_modules/', 'dist/', '.env', '.env.*', '!.env.example', '*.log', '.DS_Store', ''].join('\n');
+export const DEFAULT_GITIGNORE = [
+    'node_modules/',
+    'dist/',
+    '.env',
+    '.env.*',
+    '!.env.example',
+    '*.log',
+    '.DS_Store',
+    '',
+].join('\n');
 
 /** Directories that must never be copied from a template into a new project. */
 export const EXCLUDED_ENTRIES: readonly string[] = ['node_modules', 'dist', '.git'];
@@ -140,9 +149,7 @@ function rewriteTargetPackageJson(targetDir: string, projectName: string): numbe
     try {
         parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as Record<string, unknown>;
     } catch (error) {
-        throw new Error(
-            `El package.json del template no es JSON valido: ${(error as Error).message}`,
-        );
+        throw new Error(`El package.json del template no es JSON valido: ${(error as Error).message}`);
     }
 
     const { pkg, rewrittenDeps } = rewritePackageJson(parsed, projectName);
@@ -167,15 +174,12 @@ export function scaffold(options: ScaffoldOptions): ScaffoldResult {
     const templateDir = join(templatesRoot, template);
     if (!existsSync(templateDir) || !statSync(templateDir).isDirectory()) {
         const available = listTemplates(templatesRoot).join(', ') || '(ninguno)';
-        throw new Error(
-            `El template "${template}" no existe. Templates disponibles: ${available}.`,
-        );
+        throw new Error(`El template "${template}" no existe. Templates disponibles: ${available}.`);
     }
 
     if (!isEmptyDir(targetDir)) {
         throw new Error(
-            `El directorio destino "${targetDir}" ya existe y no esta vacio. ` +
-                'Elegi un directorio nuevo o vacio.',
+            `El directorio destino "${targetDir}" ya existe y no esta vacio. ` + 'Elegi un directorio nuevo o vacio.',
         );
     }
 

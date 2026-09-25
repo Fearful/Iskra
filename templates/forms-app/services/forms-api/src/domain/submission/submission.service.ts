@@ -51,7 +51,7 @@ export class SubmissionService {
         // The same schema object while its JSON is unchanged: AJV caches the
         // compiled validator per schema object, so a new object on every
         // refresh compiled (and kept) another validator every 30 s.
-        const schema = cached?.schemaJson === schemaJson ? cached.schema : JSON.parse(schemaJson);
+        const schema = cached && cached.schemaJson === schemaJson ? cached.schema : JSON.parse(schemaJson);
         if (cached && cached.schema !== schema) ajv.removeSchema(cached.schema);
         const meta: FormMeta = JSON.parse(metaJson);
 

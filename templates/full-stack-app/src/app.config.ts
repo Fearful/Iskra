@@ -12,7 +12,7 @@ export const appConfig = {
             command: process.env.WORKER_COMMAND || 'bun',
             args: process.env.WORKER_COMMAND ? [] : [join(import.meta.dir, 'scripts', 'worker.js')],
             mode: 'stdio' as const,
-            restartOnCrash: true
-        }
-    }
+            restartOnCrash: true,
+        },
+    },
 };

@@ -13,14 +13,13 @@ ship as **experimental** (`0.x`, breaking changes allowed in minor releases).
 The goal is to harden their APIs and graduate them to stable. See
 [VERSIONING.md](VERSIONING.md).
 
-## Test coverage ⚪
+## Test coverage 🟢
 
-- **SDK unit tests** — the Python (`sdks/python/iskra-client`) and Java
-  (`sdks/java/iskra-client`) SDKs need unit test suites (mocked HTTP) wired into
-  CI.
-- **Template smoke tests** — boot-and-probe tests for the larger templates
-  (chat-app, job-worker, cms-starter, desktop-app, universal-app) so a broken
-  template is caught in CI.
+- **SDK tests** — the Python and Java SDKs run against the real contract
+  server (`sdks/contract/server.ts`) in CI, and the Spring MVC example is built.
+- **Template smoke tests** — every template with a Dockerfile is built, started
+  and probed over HTTP (`bun run smoke:templates`, forms-app through its
+  docker compose); desktop-app and universal-app have boot tests.
 
 ## SDKs ⚪
 

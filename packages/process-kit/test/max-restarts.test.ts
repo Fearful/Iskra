@@ -16,21 +16,21 @@ describe('ProcessManager Max Restarts', () => {
             name: 'MaxRestartTest',
             logger: { level: 'error' },
             processes: {
-                'crasher': {
+                crasher: {
                     command: process.execPath,
                     args: [`${import.meta.dir}/crash-process.ts`],
                     mode: 'daemon',
                     restartOnCrash: true,
                     maxRestarts: 2,
                     restartCooldown: 60000,
-                }
-            }
+                },
+            },
         });
 
         pm = new ProcessManager();
         app.register(pm);
 
-        const maxRestartsPromise = new Promise<any>(resolve => {
+        const maxRestartsPromise = new Promise<any>((resolve) => {
             app.on('process:max-restarts', (ctx) => {
                 resolve(ctx.payload);
             });
@@ -41,7 +41,7 @@ describe('ProcessManager Max Restarts', () => {
         // Wait for the process to crash and exhaust restarts (each restart has 1s delay)
         const result = await Promise.race([
             maxRestartsPromise,
-            new Promise(resolve => setTimeout(() => resolve('timeout'), 8000)),
+            new Promise((resolve) => setTimeout(() => resolve('timeout'), 8000)),
         ]);
 
         expect(result).not.toBe('timeout');

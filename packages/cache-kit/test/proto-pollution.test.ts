@@ -38,10 +38,7 @@ describe('Cache — get() rejects prototype-pollution payloads', () => {
     });
 
     it('throws when a stored value contains a "constructor" key', async () => {
-        await adapter.set(
-            'evil-ctor',
-            '{"constructor":{"prototype":{"polluted":true}}}'
-        );
+        await adapter.set('evil-ctor', '{"constructor":{"prototype":{"polluted":true}}}');
 
         await expect(cache.get('evil-ctor')).rejects.toThrow();
     });

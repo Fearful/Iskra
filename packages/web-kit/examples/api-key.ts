@@ -4,27 +4,14 @@
  * This file demonstrates various ways to use the API Key feature:
  * 1. Basic static API keys
  * 2. API keys with scopes
- * 3. Rotating keys with vault service
+ * 3. Rotating keys (restart with the new staticKeys: lookups read them each request)
  * 4. Protected routes with middleware
  * 5. Multiple extraction strategies
  */
 
 import { Kernel } from "../src/kernel";
-import {
-    ApiKeyFeature,
-    requireAnyScope,
-    requireApiKey,
-    requireScope,
-    // @ts-ignore
-} from "../src/features/api-key";
+import { ApiKeyFeature, requireApiKey, requireScope } from "../src/features/api-key";
 import { CacheFeature } from "../src/features/cache";
-// @ts-ignore
-import type { VaultService } from "../src/features/api-key/types";
-
-// Since VaultService might not be exported from index yet, we might need to get it from types or feature file
-// Actually, types are in src/types.ts usually in web-kit structure or feature-specific.
-// Checking web-kit types: ApiKeyConfig is there. VaultService might need to be verified.
-// For now, I will assume it's available or define it locally if missing from exports.
 
 // ============================================================================
 // Example 1: Basic Static API Keys

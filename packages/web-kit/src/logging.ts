@@ -45,10 +45,10 @@ export function fromStructuredLogger(logger: {
     error(obj: object, msg: string): void;
 }): KernelLogger {
     const at =
-        (level: "debug" | "info" | "warn" | "error") =>
+        (level: 'debug' | 'info' | 'warn' | 'error') =>
         (message: string, details?: unknown): void => {
             const obj = details === undefined ? {} : details instanceof Error ? { err: details } : { details };
             logger[level](obj, message);
         };
-    return { debug: at("debug"), info: at("info"), warn: at("warn"), error: at("error") };
+    return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
 }

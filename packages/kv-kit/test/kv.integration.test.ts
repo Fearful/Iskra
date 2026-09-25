@@ -147,7 +147,11 @@ describe.if(redisUp)('Redis connection settings (requires Redis)', () => {
     it('honors { url } as documented for kv.connection', async () => {
         // Regression: ioredis ignored an object's `url`, so this connected to
         // localhost db 0 instead.
-        const app = new App({ name: 'KVUrl', logger: { level: 'error' }, kv: { driver: 'redis', connection: { url: urlDb7 } } });
+        const app = new App({
+            name: 'KVUrl',
+            logger: { level: 'error' },
+            kv: { driver: 'redis', connection: { url: urlDb7 } },
+        });
         const kv = new KVManager();
         app.register(kv);
         await app.start();

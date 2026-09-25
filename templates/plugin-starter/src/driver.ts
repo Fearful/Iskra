@@ -8,7 +8,7 @@ export class MyPluginDriver implements Driver {
     name = 'MyPluginDriver';
     private app: App | null = null;
 
-    constructor(private config: MyPluginConfig = {}) { }
+    constructor(private config: MyPluginConfig = {}) {}
 
     async init(app: App) {
         this.app = app;

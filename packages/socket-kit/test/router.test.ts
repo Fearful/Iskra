@@ -100,7 +100,9 @@ describe('SocketContext / SocketHandler type safety', () => {
     });
 
     it('typed TPayload flows through to ctx.payload without casts', () => {
-        interface PingPayload { seq: number }
+        interface PingPayload {
+            seq: number;
+        }
         // SocketHandler<PingPayload> means ctx.payload is PingPayload — no cast needed.
         const handler: SocketHandler<PingPayload> = async (ctx: SocketContext<PingPayload>) => {
             const seq: number = ctx.payload.seq; // type-checked without cast
@@ -113,7 +115,9 @@ describe('SocketContext / SocketHandler type safety', () => {
         // The generic on<TPayload>() must accept a handler narrower than the base
         // SocketHandler<unknown> WITHOUT a cast at the call site. If on() were
         // non-generic this line would fail tsc (the regression the fix prevents).
-        interface GreetPayload { name: string }
+        interface GreetPayload {
+            name: string;
+        }
         const router = new SocketRouter();
         let captured = '';
         const handler: SocketHandler<GreetPayload> = async (ctx: SocketContext<GreetPayload>) => {

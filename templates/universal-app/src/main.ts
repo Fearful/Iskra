@@ -1,5 +1,6 @@
 import { App } from '@iskra-bun/core';
 import { config } from './app.config.ts';
+import './events.ts';
 import { detectPlatform, type Platform } from './platform.ts';
 import { bootstrapDesktop } from './platforms/desktop.ts';
 import { bootstrapMobile } from './platforms/mobile.ts';

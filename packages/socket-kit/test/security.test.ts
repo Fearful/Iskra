@@ -56,7 +56,9 @@ describe('socket-kit authz hooks (HIGH driver.ts:91)', () => {
         // A listener tries to join the private "secret" room (denied), so it
         // must never receive a broadcastTo on that room.
         const listener = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { listener.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            listener.onopen = () => resolve(true);
+        });
         await new Promise((r) => setTimeout(r, 50));
 
         let leaked = false;
@@ -84,7 +86,9 @@ describe('socket-kit authz hooks (HIGH driver.ts:91)', () => {
         // must NOT reach the listener. Without the gate, the frame is delivered
         // (this is what fails today).
         const listener = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { listener.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            listener.onopen = () => resolve(true);
+        });
         await new Promise((r) => setTimeout(r, 50));
 
         let spoofed = false;
@@ -95,7 +99,9 @@ describe('socket-kit authz hooks (HIGH driver.ts:91)', () => {
 
         // Attacker triggers a publish to the denied 'global' topic via 'shout'.
         const attacker = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { attacker.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            attacker.onopen = () => resolve(true);
+        });
         attacker.send(JSON.stringify({ event: 'shout', payload: { topic: 'global', msg: { hacked: true } } }));
         await new Promise((r) => setTimeout(r, 100));
 
@@ -109,7 +115,9 @@ describe('socket-kit authz hooks (HIGH driver.ts:91)', () => {
         // the gated paths (ctx.join + ctx.broadcast), so the hook gates rather
         // than blocks everything.
         const listener = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { listener.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            listener.onopen = () => resolve(true);
+        });
         await new Promise((r) => setTimeout(r, 50));
 
         // Resolve with the frame payload, or with a sentinel after a short
@@ -131,7 +139,9 @@ describe('socket-kit authz hooks (HIGH driver.ts:91)', () => {
 
         // Publisher broadcasts to 'public' (allowed by canPublish) via ctx.broadcast.
         const publisher = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { publisher.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            publisher.onopen = () => resolve(true);
+        });
         publisher.send(JSON.stringify({ event: 'shout', payload: { topic: 'public', msg: { ok: true } } }));
 
         expect(await newsPromise).toEqual({ ok: true });
@@ -219,10 +229,14 @@ describe('socket-kit rate limit (HIGH driver.ts:26)', () => {
 
     it('drops frames once a connection exceeds its per-window budget', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         let replies = 0;
-        ws.onmessage = () => { replies += 1; };
+        ws.onmessage = () => {
+            replies += 1;
+        };
 
         // Fire 10 frames in a single burst; only the first 3 fit the budget.
         for (let i = 0; i < 10; i++) {
@@ -238,7 +252,9 @@ describe('socket-kit rate limit (HIGH driver.ts:26)', () => {
 
     it('resets the budget after the rate window elapses', async () => {
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         const before = handled;
         // Exhaust the budget.
@@ -286,7 +302,9 @@ describe('socket-kit ctx.broadcast envelope (HIGH driver.ts:92)', () => {
 
     it('wraps ctx.broadcast data in the {event, payload} envelope', async () => {
         const listener = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { listener.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            listener.onopen = () => resolve(true);
+        });
         await new Promise((r) => setTimeout(r, 50));
 
         const framePromise = new Promise<Record<string, unknown>>((resolve) => {
@@ -296,7 +314,9 @@ describe('socket-kit ctx.broadcast envelope (HIGH driver.ts:92)', () => {
         });
 
         const trigger = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { trigger.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            trigger.onopen = () => resolve(true);
+        });
         trigger.send(JSON.stringify({ event: 'emit-news', payload: {} }));
 
         const frame = await framePromise;
@@ -340,10 +360,14 @@ describe('socket-kit fallback emit validation (LOW driver.ts:96)', () => {
 
     it('does not re-emit a fallback event that is not in the allowed set', async () => {
         let received = false;
-        app.on('socket:__unlisted__', () => { received = true; });
+        app.on('socket:__unlisted__', () => {
+            received = true;
+        });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
         ws.send(JSON.stringify({ event: '__unlisted__', payload: { x: 1 } }));
         await new Promise((r) => setTimeout(r, 100));
 
@@ -357,7 +381,9 @@ describe('socket-kit fallback emit validation (LOW driver.ts:96)', () => {
         });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
         ws.send(JSON.stringify({ event: 'known-event', payload: { ok: true } }));
 
         const received = await eventPromise;
@@ -394,7 +420,9 @@ describe('socket-kit connect payload id (LOW driver.ts:41)', () => {
         });
 
         const ws = new WebSocket(`ws://localhost:${PORT}`);
-        await new Promise((resolve) => { ws.onopen = () => resolve(true); });
+        await new Promise((resolve) => {
+            ws.onopen = () => resolve(true);
+        });
 
         const payload = await connectedPromise;
         expect(payload.connectionId).toBeDefined();

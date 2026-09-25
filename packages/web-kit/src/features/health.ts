@@ -1,7 +1,7 @@
-import type { Feature, HealthCheckConfig } from "../types";
-import type { Kernel } from "../kernel";
-import type { Context, Hono } from "hono";
-import { consoleLogger, type KernelLogger } from "../logging";
+import type { Feature, HealthCheckConfig } from '../types';
+import type { Kernel } from '../kernel';
+import type { Context, Hono } from 'hono';
+import { consoleLogger, type KernelLogger } from '../logging';
 
 /** Rejects if `promise` does not settle within `ms` (a stuck probe must not hang /health). */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -13,20 +13,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export class HealthCheckFeature implements Feature {
-    name = "health";
+    name = 'health';
     private log: KernelLogger = consoleLogger;
 
     private kernel?: Kernel;
-    private config: Required<Omit<HealthCheckConfig, "checks" | "readinessChecks">> & {
-        checks?: HealthCheckConfig["checks"];
+    private config: Required<Omit<HealthCheckConfig, 'checks' | 'readinessChecks'>> & {
+        checks?: HealthCheckConfig['checks'];
     };
     private readinessChecks: Map<string, () => Promise<boolean>>;
 
     constructor(config: HealthCheckConfig = {}) {
         this.config = {
-            path: config.path || "/health",
-            readinessPath: config.readinessPath || "/health/ready",
-            livenessPath: config.livenessPath || "/health/live",
+            path: config.path || '/health',
+            readinessPath: config.readinessPath || '/health/ready',
+            livenessPath: config.livenessPath || '/health/live',
             includeDetails: config.includeDetails !== undefined ? config.includeDetails : false,
             checkTimeoutMs: config.checkTimeoutMs ?? 2000,
             checks: config.checks,
@@ -42,7 +42,7 @@ export class HealthCheckFeature implements Feature {
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         this.kernel = kernel;
-        this.log.debug("Health check feature initialized");
+        this.log.debug('Health check feature initialized');
     }
 
     routes(app: Hono): void {
@@ -58,17 +58,17 @@ export class HealthCheckFeature implements Feature {
      * per-check results and feature list are included in the body.
      */
     private async handleHealthCheck(c: Context) {
-        const checks: Record<string, { status: "ok" | "error" }> = {};
+        const checks: Record<string, { status: 'ok' | 'error' }> = {};
 
         const dbProbe = this.dbProbe(c);
-        if (dbProbe) checks.db = await this.probe("db", dbProbe);
+        if (dbProbe) checks.db = await this.probe('db', dbProbe);
 
-        const cache = this.kernel?.getFeature("cache")?.client;
+        const cache = this.kernel?.getFeature('cache')?.client;
         if (cache) {
-            checks.cache = await this.probe("cache", () => cache.exists("__health_check__"));
+            checks.cache = await this.probe('cache', () => cache.exists('__health_check__'));
         }
 
-        const customChecks: Record<string, { status: "ok" | "error"; [key: string]: unknown }> = {};
+        const customChecks: Record<string, { status: 'ok' | 'error'; [key: string]: unknown }> = {};
         for (const [name, check] of Object.entries(this.config.checks ?? {})) {
             try {
                 customChecks[name] = await withTimeout(check(c), this.config.checkTimeoutMs);
@@ -76,16 +76,16 @@ export class HealthCheckFeature implements Feature {
                 // Log the detail server-side; never serialize the raw error
                 // (it may embed connection strings or other secrets) to the client.
                 this.log.error(`Health custom check "${name}" failed`, error);
-                customChecks[name] = { status: "error" };
+                customChecks[name] = { status: 'error' };
             }
         }
 
         const healthy =
-            Object.values(checks).every((r) => r.status === "ok") &&
-            Object.values(customChecks).every((r) => r?.status !== "error");
+            Object.values(checks).every((r) => r.status === 'ok') &&
+            Object.values(customChecks).every((r) => r?.status !== 'error');
 
-        const response: any = {
-            status: healthy ? "ok" : "error",
+        const response: Record<string, unknown> = {
+            status: healthy ? 'ok' : 'error',
             timestamp: new Date().toISOString(),
         };
 
@@ -106,31 +106,31 @@ export class HealthCheckFeature implements Feature {
      * function, so the old `db.query("SELECT 1")` probe never ran.
      */
     private dbProbe(c: Context): (() => Promise<unknown>) | null {
-        const feature = this.kernel?.getFeature("db");
+        const feature = this.kernel?.getFeature('db');
         if (!feature) return null;
-        if (typeof feature.ping === "function") return () => feature.ping();
+        if (typeof feature.ping === 'function') return () => feature.ping();
         // A "db" feature of another shape may expose a query() function instead.
-        const instance: unknown = c.get("db");
+        const instance: unknown = c.get('db');
         const query = (instance as { query?: unknown } | undefined)?.query;
-        if (typeof query === "function") return () => query.call(instance, "SELECT 1");
+        if (typeof query === 'function') return () => query.call(instance, 'SELECT 1');
         return null;
     }
 
-    private async probe(name: string, fn: () => Promise<unknown>): Promise<{ status: "ok" | "error" }> {
+    private async probe(name: string, fn: () => Promise<unknown>): Promise<{ status: 'ok' | 'error' }> {
         try {
             await withTimeout(fn(), this.config.checkTimeoutMs);
-            return { status: "ok" };
+            return { status: 'ok' };
         } catch (e) {
             // Log server-side; return only a generic status so DB/cache error
             // strings (which can carry connection details) never reach the client.
             this.log.error(`Health feature check "${name}" failed`, e);
-            return { status: "error" };
+            return { status: 'error' };
         }
     }
 
     private async handleReadinessCheck(c: Context) {
         if (this.readinessChecks.size === 0) {
-            return c.json({ status: "ready" });
+            return c.json({ status: 'ready' });
         }
 
         const results: Record<string, boolean> = {};
@@ -150,17 +150,17 @@ export class HealthCheckFeature implements Feature {
         }
 
         if (failed.length > 0) {
-            return c.json({ status: "not ready", checks: results, failed }, 503);
+            return c.json({ status: 'not ready', checks: results, failed }, 503);
         }
 
-        return c.json({ status: "ready", checks: results });
+        return c.json({ status: 'ready', checks: results });
     }
 
     private async handleLivenessCheck(c: Context) {
         return c.json({
-            status: "alive",
+            status: 'alive',
             timestamp: new Date().toISOString(),
-            uptime: process.uptime()
+            uptime: process.uptime(),
         });
     }
 }

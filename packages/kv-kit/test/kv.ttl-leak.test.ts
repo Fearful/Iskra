@@ -25,31 +25,31 @@ describe('MemoryAdapter — TTL timer leak fix', () => {
         await adapter.set('k', 'second', 10);
 
         // Wait past the original timer's deadline
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
 
         const val = await adapter.get<string>('k');
         expect(val).toBe('second');
     });
 
     it('overwriting a key with NO TTL cancels the old timer', async () => {
-        await adapter.set('k', 'first', 0.1);   // 100 ms TTL
-        await adapter.set('k', 'permanent');       // no TTL — must clear old timer
+        await adapter.set('k', 'first', 0.1); // 100 ms TTL
+        await adapter.set('k', 'permanent'); // no TTL — must clear old timer
 
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
 
         const val = await adapter.get<string>('k');
         expect(val).toBe('permanent');
     });
 
     it('deleting a key cancels its pending timer', async () => {
-        await adapter.set('k', 'value', 0.5);    // 500 ms TTL
+        await adapter.set('k', 'value', 0.5); // 500 ms TTL
         await adapter.del('k');
 
         // Value is gone immediately
         expect(await adapter.get('k')).toBeUndefined();
 
         // No error / crash from the timer firing after del
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 600));
         expect(await adapter.get('k')).toBeUndefined();
     });
 
@@ -67,15 +67,15 @@ describe('MemoryAdapter — TTL timer leak fix', () => {
     });
 
     it('timer fires at the correct time after a re-set', async () => {
-        await adapter.set('k', 'value', 0.1);    // 100 ms — will be overwritten
-        await adapter.set('k', 'value2', 0.15);  // 150 ms
+        await adapter.set('k', 'value', 0.1); // 100 ms — will be overwritten
+        await adapter.set('k', 'value2', 0.15); // 150 ms
 
         // Still alive at 120 ms (old timer would have fired here)
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 120));
         expect(await adapter.get<string>('k')).toBe('value2');
 
         // Gone after 160 ms (new timer fires at ~150 ms)
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
         expect(await adapter.get('k')).toBeUndefined();
     });
 });

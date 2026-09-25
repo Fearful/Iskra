@@ -1,12 +1,12 @@
 import { Kernel } from "../src/kernel";
-import { JsonSchemaValidationFeature, createJsonSchemaValidationMiddleware } from "../src/features/json-schema-validation";
+import { validateJson } from "../src/features/json-schema-validation";
 
 // ============================================================================
 // Example: JSON Schema Validation with Custom Error Messages
 // ============================================================================
 
+// validateJson() is a plain Hono middleware: no feature to register.
 const kernel = new Kernel({ port: 8002 });
-kernel.registerFeature(new JsonSchemaValidationFeature());
 await kernel.initialize();
 
 const app = kernel.getApp();
@@ -57,27 +57,20 @@ const createUserSchema = {
     additionalProperties: false,
 };
 
-// ── Using middleware directly ────────────────────────────────────────────────
+// ── Body validation ─────────────────────────────────────────────────────────
+// A JSON Schema carries no TypeScript type: name the shape the handler gets.
 
-const middleware = createJsonSchemaValidationMiddleware({ body: createUserSchema });
+interface CreateUser {
+    name: string;
+    email: string;
+    age: number;
+}
 
-app.post("/users", middleware, (c) => {
-    const { body } = c.valid();
+app.post("/users", validateJson<CreateUser>({ body: createUserSchema }), (c) => {
+    const { body } = c.get("validated");
     return c.json({
         success: true,
         message: "User created",
-        data: body,
-    }, 201);
-});
-
-// ── Using the *JsonValidated convenience method ─────────────────────────────
-
-// @ts-ignore
-app.postJsonValidated("/users-v2", { body: createUserSchema }, (c) => {
-    const { body } = c.valid();
-    return c.json({
-        success: true,
-        message: "User created (v2)",
         data: body,
     }, 201);
 });
@@ -99,10 +92,14 @@ const listUsersQuerySchema = {
     },
 };
 
-const queryMiddleware = createJsonSchemaValidationMiddleware({ query: listUsersQuerySchema });
+interface ListUsersQuery {
+    page: number;
+    limit?: number;
+    sort?: "name" | "email" | "age";
+}
 
-app.get("/users", queryMiddleware, (c) => {
-    const { query } = c.valid();
+app.get("/users", validateJson<unknown, ListUsersQuery>({ query: listUsersQuerySchema }), (c) => {
+    const { query } = c.get("validated");
     return c.json({
         success: true,
         data: [],

@@ -1,15 +1,15 @@
-import type { Feature, CorsConfig } from "../types";
-import type { Kernel } from "../kernel";
-import { cors } from "hono/cors";
-import { consoleLogger, type KernelLogger } from "../logging";
+import type { Feature, CorsConfig } from '../types';
+import type { Kernel } from '../kernel';
+import { cors } from 'hono/cors';
+import { consoleLogger, type KernelLogger } from '../logging';
 
 export class CorsFeature implements Feature {
-    name = "cors";
+    name = 'cors';
     private log: KernelLogger = consoleLogger;
 
     constructor(private config: CorsConfig = {}) {
         if (!this.config.origin) {
-            this.config.origin = "*";
+            this.config.origin = '*';
         }
         if (this.config.credentials === undefined) {
             this.config.credentials = false;
@@ -20,17 +20,14 @@ export class CorsFeature implements Feature {
         this.log = kernel.getLogger();
         const app = kernel.getApp();
 
-        const honoConfig: any = { ...this.config };
+        // Hono's cors() wants the allowed origin back (or null), not a boolean.
+        const { origin, ...rest } = this.config;
+        const honoConfig: Parameters<typeof cors>[0] = {
+            ...rest,
+            origin: typeof origin === 'function' ? (o: string) => (origin(o) ? o : null) : (origin ?? '*'),
+        };
 
-        if (typeof this.config.origin === "function") {
-            honoConfig.origin = (origin: string) => {
-                // @ts-expect-error - origin is narrowed to a function above
-                const result = this.config.origin(origin);
-                return result ? origin : null;
-            };
-        }
-
-        app.use("*", cors(honoConfig));
-        this.log.debug("CORS feature initialized");
+        app.use('*', cors(honoConfig));
+        this.log.debug('CORS feature initialized');
     }
 }

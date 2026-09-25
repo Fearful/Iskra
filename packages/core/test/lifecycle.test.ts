@@ -24,7 +24,9 @@ describe('App lifecycle', () => {
         // Regression: Promise.all left the other drivers running (ports bound).
         const log: string[] = [];
         const app = new App({ name: 'Rollback', logger: { level: 'silent' } });
-        app.register(recorder(log, 'db')).register(recorder(log, 'web')).register(recorder(log, 'queue', { failStart: true }));
+        app.register(recorder(log, 'db'))
+            .register(recorder(log, 'web'))
+            .register(recorder(log, 'queue', { failStart: true }));
 
         await expect(app.start()).rejects.toThrow('queue failed');
         expect(log).toEqual(['start:db', 'start:web', 'stop:web', 'stop:db']);
@@ -37,7 +39,9 @@ describe('App lifecycle', () => {
     it('stops drivers in reverse start order and reports every failure', async () => {
         const log: string[] = [];
         const app = new App({ name: 'Reverse', logger: { level: 'silent' } });
-        app.register(recorder(log, 'db')).register(recorder(log, 'web', { failStop: true })).register(recorder(log, 'socket'));
+        app.register(recorder(log, 'db'))
+            .register(recorder(log, 'web', { failStop: true }))
+            .register(recorder(log, 'socket'));
         await app.start();
 
         const err = await app.stop().catch((e) => e);
@@ -56,12 +60,13 @@ describe('App lifecycle', () => {
         app.register({
             name: 'slow',
             init: () => {},
-            stop: () => new Promise<void>((resolve) => {
-                release = () => {
-                    log.push('stopped');
-                    resolve();
-                };
-            }),
+            stop: () =>
+                new Promise<void>((resolve) => {
+                    release = () => {
+                        log.push('stopped');
+                        resolve();
+                    };
+                }),
         });
         await app.start();
 
@@ -78,7 +83,12 @@ describe('App lifecycle', () => {
     it('surfaces an async plugin install failure from start()', async () => {
         // Regression: install() was not awaited, so a rejection was unhandled.
         const app = new App({ name: 'Plugins', logger: { level: 'silent' } });
-        app.use({ name: 'broken', install: async () => { throw new Error('plugin boom'); } });
+        app.use({
+            name: 'broken',
+            install: async () => {
+                throw new Error('plugin boom');
+            },
+        });
         await expect(app.start()).rejects.toThrow('plugin boom');
     });
 
@@ -120,26 +130,38 @@ describe('App lifecycle', () => {
         // Each case spawns a fresh Bun process; allow for a slow start on a loaded machine.
         const SPAWN_TIMEOUT_MS = 20_000;
 
-        it('stops the app and exits 0 on SIGTERM', async () => {
-            const { exitCode, out } = await runAndSignal();
-            expect(out).toContain('stopping');
-            expect(exitCode).toBe(0);
-        }, SPAWN_TIMEOUT_MS);
+        it(
+            'stops the app and exits 0 on SIGTERM',
+            async () => {
+                const { exitCode, out } = await runAndSignal();
+                expect(out).toContain('stopping');
+                expect(exitCode).toBe(0);
+            },
+            SPAWN_TIMEOUT_MS,
+        );
 
-        it('exits 1 when a graceful stop exceeds shutdownTimeoutMs', async () => {
-            const { exitCode, out } = await runAndSignal({ STOP_HANGS: '1', SHUTDOWN_TIMEOUT_MS: '200' });
-            expect(out).toContain('stopping');
-            expect(exitCode).toBe(1);
-        }, SPAWN_TIMEOUT_MS);
+        it(
+            'exits 1 when a graceful stop exceeds shutdownTimeoutMs',
+            async () => {
+                const { exitCode, out } = await runAndSignal({ STOP_HANGS: '1', SHUTDOWN_TIMEOUT_MS: '200' });
+                expect(out).toContain('stopping');
+                expect(exitCode).toBe(1);
+            },
+            SPAWN_TIMEOUT_MS,
+        );
 
-        it('exits 1 at once on a second signal while stopping', async () => {
-            // Regression: stop() removed the listeners on the first signal, so
-            // the second one took the default action (143) instead of the handler.
-            const started = Date.now();
-            const { exitCode, out } = await runAndSignal({ STOP_HANGS: '1', SHUTDOWN_TIMEOUT_MS: '10000' }, 2);
-            expect(out).toContain('stopping');
-            expect(exitCode).toBe(1);
-            expect(Date.now() - started).toBeLessThan(10_000);
-        }, SPAWN_TIMEOUT_MS);
+        it(
+            'exits 1 at once on a second signal while stopping',
+            async () => {
+                // Regression: stop() removed the listeners on the first signal, so
+                // the second one took the default action (143) instead of the handler.
+                const started = Date.now();
+                const { exitCode, out } = await runAndSignal({ STOP_HANGS: '1', SHUTDOWN_TIMEOUT_MS: '10000' }, 2);
+                expect(out).toContain('stopping');
+                expect(exitCode).toBe(1);
+                expect(Date.now() - started).toBeLessThan(10_000);
+            },
+            SPAWN_TIMEOUT_MS,
+        );
     });
 });

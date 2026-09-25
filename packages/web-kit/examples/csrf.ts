@@ -82,11 +82,10 @@ sessionKernel.getApp().get("/login", (c) => {
 sessionKernel.getApp().post("/login", async (c) => {
     const body = await c.req.parseBody();
 
-    // Set session after successful login
+    // The session is a plain object: set fields, and it is saved after the response.
     const session = c.get("session");
-    session.set("userId", "user123");
-    // @ts-ignore
-    session.set("username", body.username);
+    session.userId = "user123";
+    session.username = String(body.username ?? "");
 
     return c.json({ message: "Logged in successfully" });
 });

@@ -89,7 +89,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
         const outsider = await connect();
 
         // Let both sockets settle on the server side.
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
 
         // member joins room "A".
         const joinAck = waitFor(member, (d: any) => d.event === 'room:join:reply');
@@ -111,7 +111,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
         expect((received as any).payload).toEqual({ text: 'hello room A' });
 
         // Give outsider extra time to receive something (it should not).
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
         const roomNewsForOutsider = outsiderMessages.filter((m: any) => m.event === 'room-news');
         expect(roomNewsForOutsider).toHaveLength(0);
 
@@ -121,7 +121,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
 
     it('socket that left room "B" no longer receives broadcastTo("B", ...)', async () => {
         const ws = await connect();
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
 
         // Join room B.
         const joinAck = waitFor(ws, (d: any) => d.event === 'room:join:reply');
@@ -140,7 +140,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
         });
 
         driver.broadcastTo('B', 'should-not-arrive', { x: 1 });
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 150));
 
         expect(received.filter((m: any) => m.event === 'should-not-arrive')).toHaveLength(0);
 
@@ -151,7 +151,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
 
     it('emits socket:disconnected on the app event bus when a client closes', async () => {
         const ws = await connect();
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
 
         const disconnectedPayload = appOnce('socket:disconnected');
 
@@ -172,9 +172,7 @@ describe('Increment D — rooms, disconnected event, unique connection id', () =
         const { connectionId } = payload as any;
         expect(typeof connectionId).toBe('string');
         // UUID v4 pattern: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-        expect(connectionId).toMatch(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-        );
+        expect(connectionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
         ws.close();
     });

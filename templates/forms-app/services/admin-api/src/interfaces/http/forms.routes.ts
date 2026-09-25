@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { FormService } from '../../domain/forms/form.service.ts';
 import { SpaceService } from '../../domain/spaces/space.service.ts';
-import { FIELD_TYPES } from '@forms-app/shared';
+import { FIELD_TYPES, type FieldType } from '@forms-app/shared';
 import { config } from '../../app.config.ts';
 
 const app = new Hono();
@@ -14,7 +14,7 @@ const FieldOptionSchema = z.object({
 });
 
 const CreateFieldSchema = z.object({
-    fieldType: z.enum(FIELD_TYPES as [string, ...string[]]),
+    fieldType: z.enum(FIELD_TYPES as [FieldType, ...FieldType[]]),
     label: z.string().min(1).max(255),
     name: z.string().min(1).max(100).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
     position: z.number().int().min(0),

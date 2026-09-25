@@ -3,8 +3,7 @@ import { WebPlugin, CacheFeature } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { config } from './app.config.ts';
 import productRouter from './interfaces/http/router.ts';
-import { ProductService } from './domain/products/product.service.ts';
-import { OrderService } from './domain/orders/order.service.ts';
+import { setupDatabase } from './db/setup.ts';
 import { Hono } from 'hono';
 
 const app = new App({ name: 'EcommerceAPI' });
@@ -27,54 +26,16 @@ const router = new Hono();
 router.route('/api', productRouter);
 
 app.register(new DbDriver());
-app.register(new WebPlugin({
-    port: config.web.port,
-    router: router,
-    features: [
-        new CacheFeature(config.cache)
-    ]
-}));
+app.register(
+    new WebPlugin({
+        port: config.web.port,
+        router: router,
+        features: [new CacheFeature(config.cache)],
+    }),
+);
 
 async function setupDb() {
-    const dbDriver = app.context.get('db');
-    // Fail the start instead of serving every request without a database.
-    if (!dbDriver || !dbDriver.client) {
-        throw new Error('DB Driver not initialized');
-    }
-
-    // SQLite specific table creation
-    const client = dbDriver.client;
-    client.exec(`
-        CREATE TABLE IF NOT EXISTS products (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            price REAL NOT NULL,
-            stock INTEGER NOT NULL,
-            created_at INTEGER DEFAULT (unixepoch()),
-            updated_at INTEGER DEFAULT (unixepoch())
-        );
-        CREATE TABLE IF NOT EXISTS orders (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            total REAL NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at INTEGER DEFAULT (unixepoch())
-        );
-        CREATE TABLE IF NOT EXISTS order_items (
-            id TEXT PRIMARY KEY,
-            order_id TEXT NOT NULL,
-            product_id TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price REAL NOT NULL,
-            FOREIGN KEY(order_id) REFERENCES orders(id),
-            FOREIGN KEY(product_id) REFERENCES products(id)
-        );
-    `);
-    // Inject DB into services
-    ProductService.setDb(dbDriver.db);
-    OrderService.setDb(dbDriver.db);
-
+    setupDatabase(app);
     console.log('✅ Database tables created');
 }
 

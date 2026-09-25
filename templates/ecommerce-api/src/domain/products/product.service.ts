@@ -58,10 +58,11 @@ export class ProductService {
     static async decreaseStock(id: string, quantity: number, tx?: Tx): Promise<void> {
         await this.checkStock(id, quantity, tx);
         const executor = tx || this.db;
-        executor.update(products)
+        executor
+            .update(products)
             .set({
                 stock: sql`${products.stock} - ${quantity}`,
-                updatedAt: new Date()
+                updatedAt: new Date(),
             })
             .where(eq(products.id, id))
             .run();

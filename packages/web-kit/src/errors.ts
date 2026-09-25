@@ -1,14 +1,22 @@
 import { IskraError, ErrorCodes, type ErrorCode } from '@iskra-bun/core';
 import { HTTPException } from 'hono/http-exception';
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 // ─── HTTP Errors ─────────────────────────────────────────────────────────────
 
 export class HttpError extends IskraError {
     public readonly status: number;
 
-    constructor(status: number, message: string, options?: { code?: ErrorCode; cause?: Error; context?: Record<string, unknown> }) {
-        super(message, { code: options?.code ?? ErrorCodes.INTERNAL_ERROR, cause: options?.cause, context: options?.context });
+    constructor(
+        status: number,
+        message: string,
+        options?: { code?: ErrorCode; cause?: Error; context?: Record<string, unknown> },
+    ) {
+        super(message, {
+            code: options?.code ?? ErrorCodes.INTERNAL_ERROR,
+            cause: options?.cause,
+            context: options?.context,
+        });
         this.name = 'HttpError';
         this.status = status;
     }

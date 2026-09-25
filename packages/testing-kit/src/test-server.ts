@@ -52,9 +52,7 @@ export function createTestServer(handler: RequestHandler): TestServerClient {
             return Promise.resolve(
                 handler.request(
                     path,
-                    body !== undefined
-                        ? { method: 'POST', ...buildJsonInit(body, init) }
-                        : { method: 'POST', ...init },
+                    body !== undefined ? { method: 'POST', ...buildJsonInit(body, init) } : { method: 'POST', ...init },
                 ),
             );
         },
@@ -62,9 +60,7 @@ export function createTestServer(handler: RequestHandler): TestServerClient {
             return Promise.resolve(
                 handler.request(
                     path,
-                    body !== undefined
-                        ? { method: 'PUT', ...buildJsonInit(body, init) }
-                        : { method: 'PUT', ...init },
+                    body !== undefined ? { method: 'PUT', ...buildJsonInit(body, init) } : { method: 'PUT', ...init },
                 ),
             );
         },

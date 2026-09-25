@@ -107,16 +107,16 @@ const pgUp = await pgUsable(PG_URL);
 
         expect(form.fields.length).toBe(2);
         expect(form.status).toBe("draft");
-        expect(form.validationSchema.properties.email.format).toBe("email");
-        expect(form.validationSchema.required).toContain("email");
+        expect(form.validationSchema!.properties.email.format).toBe("email");
+        expect(form.validationSchema!.required).toContain("email");
         // constraint enforcement flowed into both the stored field and the schema
-        expect(form.validationSchema.properties.msg.maxLength).toBe(10000);
+        expect(form.validationSchema!.properties.msg.maxLength).toBe(10000);
         expect(form.fields.find((f: any) => f.name === "msg")?.maxLength).toBe(10000);
 
         // round-trips from Postgres with fields ordered by position
         const fetched = await FormService.findById(form.id);
         expect(fetched?.fields.map((f: any) => f.name)).toEqual(["email", "msg"]);
-        expect(fetched?.validationSchema.properties.email.format).toBe("email");
+        expect(fetched?.validationSchema!.properties.email.format).toBe("email");
     });
 
     it("replaces fields and regenerates the schema on update", async () => {
@@ -133,8 +133,8 @@ const pgUp = await pgUsable(PG_URL);
 
         expect(updated?.title).toBe("F2");
         expect(updated?.fields.map((f: any) => f.name)).toEqual(["age"]);
-        expect(updated?.validationSchema.properties.age).toMatchObject({ type: "number", minimum: 0, maximum: 120 });
-        expect(updated?.validationSchema.properties.old).toBeUndefined();
+        expect(updated?.validationSchema!.properties.age).toMatchObject({ type: "number", minimum: 0, maximum: 120 });
+        expect(updated?.validationSchema!.properties.old).toBeUndefined();
 
         await FormService.setStatus(form.id, "open");
         expect((await FormService.findById(form.id))?.status).toBe("open");

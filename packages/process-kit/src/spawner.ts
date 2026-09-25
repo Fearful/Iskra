@@ -199,7 +199,14 @@ export class ProcessManager implements Driver {
      */
     private async terminate(name: string, proc: Subprocess, gracefulTimeoutMs: number): Promise<void> {
         let exited = proc.exitCode != null || proc.signalCode != null;
-        proc.exited.then(() => { exited = true; }, () => { exited = true; });
+        proc.exited.then(
+            () => {
+                exited = true;
+            },
+            () => {
+                exited = true;
+            },
+        );
         const pid = (proc as { pid?: number }).pid;
         const gone = () => exited && !groupAlive(pid);
 
@@ -415,20 +422,17 @@ export class ProcessManager implements Driver {
         this.app.logger.info(`Spawning process: ${name} (${config.command} ${config.args?.join(' ') || ''})`);
 
         try {
-            const proc = Bun.spawn(
-                [config.command, ...(config.args || [])],
-                {
-                    env: { ...process.env, ...config.env },
-                    stdout: config.mode === 'stdio' ? 'pipe' : 'inherit',
-                    stderr: config.mode === 'stdio' ? 'pipe' : 'inherit',
-                    stdin: config.mode === 'stdio' ? 'pipe' : 'ignore',
-                    // Own process group, so stop()/kill() can signal the whole tree.
-                    detached: process.platform !== 'win32',
-                    onExit: (exitedProc, exitCode) => {
-                        this.handleExit(name, exitCode, exitedProc.signalCode ?? null, exitedProc);
-                    }
-                }
-            );
+            const proc = Bun.spawn([config.command, ...(config.args || [])], {
+                env: { ...process.env, ...config.env },
+                stdout: config.mode === 'stdio' ? 'pipe' : 'inherit',
+                stderr: config.mode === 'stdio' ? 'pipe' : 'inherit',
+                stdin: config.mode === 'stdio' ? 'pipe' : 'ignore',
+                // Own process group, so stop()/kill() can signal the whole tree.
+                detached: process.platform !== 'win32',
+                onExit: (exitedProc, exitCode) => {
+                    this.handleExit(name, exitCode, exitedProc.signalCode ?? null, exitedProc);
+                },
+            });
 
             this.trackGroup(proc.pid);
             this.processes.set(name, {
@@ -444,7 +448,6 @@ export class ProcessManager implements Driver {
                 if (proc.stdout) this.readStdOut(name, proc.stdout);
                 if (proc.stderr) this.readStdErr(name, proc.stderr);
             }
-
         } catch (err) {
             this.app.logger.error({ err }, `Failed to spawn process: ${name}`);
             // spawn() rejects with it; start() and restarts report and retry.
@@ -549,7 +552,24 @@ export class ProcessManager implements Driver {
                 const proc = info.process;
                 if (proc.killed) return;
                 await this.terminate(name, proc, gracefulTimeoutMs);
-            })
+            }),
         );
+    }
+}
+
+// Events a ProcessManager emits on the app (see the README).
+declare module '@iskra-bun/core' {
+    interface AppEvents {
+        /** A stdio child printed a line that parses as JSON. */
+        'process:message': { name: string; message: unknown };
+        /** A stdio child printed a line that is not JSON. */
+        'process:log': { name: string; text: string };
+        /** A line a stdio child wrote to stderr. */
+        'process:error': { name: string; text: string };
+        /** A child exited on its own (not after kill()/stop()); exitCode is null when a signal ended it. */
+        'process:exit': { name: string; exitCode: number | null; signal: string | null };
+        'process:max-restarts': { name: string; restarts: number; maxRestarts: number };
+        /** The command could not be spawned (a supervised process is retried). */
+        'process:spawn-error': { name: string; error: unknown };
     }
 }

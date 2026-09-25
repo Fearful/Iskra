@@ -78,7 +78,7 @@ export class FormService {
             title: input.title,
             description: input.description ?? null,
             slug: input.slug,
-            schema: input.fields as any,
+            schema: input.fields,
             validationSchema,
             startsAt: input.startsAt ? new Date(input.startsAt) : null,
             endsAt: input.endsAt ? new Date(input.endsAt) : null,
@@ -142,7 +142,7 @@ export class FormService {
 
             // Regenerate validation schema
             updates.validationSchema = generateJsonSchema(fieldRecords);
-            updates.schema = input.fields as any;
+            updates.schema = input.fields;
         }
 
         // One transaction: the fields used to be deleted first, so a failed

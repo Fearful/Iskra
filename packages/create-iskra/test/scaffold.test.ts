@@ -175,9 +175,9 @@ describe('scaffold', () => {
         mkdirSync(targetDir, { recursive: true });
         writeFileSync(join(targetDir, 'existing.txt'), 'do not clobber');
 
-        expect(() =>
-            scaffold({ template: 'demo', targetDir, projectName: 'occupied', templatesRoot }),
-        ).toThrow(/ya existe y no esta vacio/);
+        expect(() => scaffold({ template: 'demo', targetDir, projectName: 'occupied', templatesRoot })).toThrow(
+            /ya existe y no esta vacio/,
+        );
 
         // existing file untouched
         expect(readFileSync(join(targetDir, 'existing.txt'), 'utf8')).toBe('do not clobber');

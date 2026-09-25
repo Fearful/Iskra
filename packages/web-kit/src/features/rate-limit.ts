@@ -1,9 +1,10 @@
-import type { Feature, RateLimitConfig } from "../types";
-import type { Kernel } from "../kernel";
-import type { Context, Next } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { getClientIp, type TrustProxy } from "../client-ip";
-import { consoleLogger, type KernelLogger } from "../logging";
+import type { Feature, RateLimitConfig } from '../types';
+import type { Kernel } from '../kernel';
+import type { Context, Next } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { getClientIp, type TrustProxy } from '../client-ip';
+import { consoleLogger, type KernelLogger } from '../logging';
+import type { CacheAdapter } from './cache';
 
 interface RateLimitStore {
     get(key: string): Promise<number | null>;
@@ -47,10 +48,11 @@ class MemoryStore implements RateLimitStore {
 }
 
 class CacheStoreWrapper implements RateLimitStore {
-    constructor(private cache: any) { }
+    constructor(private cache: CacheAdapter) {}
 
     async get(key: string): Promise<number | null> {
-        return await this.cache.get(key);
+        const value = await this.cache.get(key);
+        return value === null || value === undefined ? null : Number(value);
     }
 
     async set(key: string, value: number, ttl: number): Promise<void> {
@@ -73,7 +75,7 @@ class CacheStoreWrapper implements RateLimitStore {
 }
 
 export class RateLimitFeature implements Feature {
-    name = "rate-limit";
+    name = 'rate-limit';
     private log: KernelLogger = consoleLogger;
     /**
      * `store: "cache"` needs the cache feature initialized first; registered
@@ -81,10 +83,10 @@ export class RateLimitFeature implements Feature {
      * per-process memory store.
      */
     dependencies?: string[];
-    private config: Required<Omit<RateLimitConfig, "keyGenerator" | "skip" | "handler">> & {
-        keyGenerator?: RateLimitConfig["keyGenerator"];
-        skip?: RateLimitConfig["skip"];
-        handler?: RateLimitConfig["handler"];
+    private config: Required<Omit<RateLimitConfig, 'keyGenerator' | 'skip' | 'handler'>> & {
+        keyGenerator?: RateLimitConfig['keyGenerator'];
+        skip?: RateLimitConfig['skip'];
+        handler?: RateLimitConfig['handler'];
     };
     private store?: RateLimitStore;
     private cleanupInterval?: ReturnType<typeof setInterval>;
@@ -92,15 +94,15 @@ export class RateLimitFeature implements Feature {
     private warnedUnknownClient = false;
 
     constructor(config: RateLimitConfig = {}) {
-        if (config.store === "cache") this.dependencies = ["cache"];
+        if (config.store === 'cache') this.dependencies = ['cache'];
         this.config = {
             windowMs: config.windowMs || 15 * 60 * 1000,
             max: config.max || 100,
             standardHeaders: config.standardHeaders ?? true,
-            store: config.store || "memory",
+            store: config.store || 'memory',
             keyGenerator: config.keyGenerator,
             skip: config.skip,
-            handler: config.handler
+            handler: config.handler,
         };
     }
 
@@ -108,29 +110,29 @@ export class RateLimitFeature implements Feature {
         this.log = kernel.getLogger();
         this.trustProxy = kernel.getConfig().trustProxy;
 
-        if (this.config.store === "cache") {
-            const cacheFeature = kernel.getFeature("cache");
+        if (this.config.store === 'cache') {
+            const cacheFeature = kernel.getFeature('cache');
             if (cacheFeature?.client) {
                 this.store = new CacheStoreWrapper(cacheFeature.client);
             } else {
-                this.log.warn("Cache feature not available for rate-limit, falling back to memory store");
+                this.log.warn('Cache feature not available for rate-limit, falling back to memory store');
                 const mem = new MemoryStore();
                 this.store = mem;
                 this.cleanupInterval = setInterval(() => mem.cleanup(), 300000);
             }
         }
 
-        if (this.config.store === "memory") {
+        if (this.config.store === 'memory') {
             const mem = new MemoryStore();
             this.store = mem;
             this.cleanupInterval = setInterval(() => mem.cleanup(), 300000);
         }
 
         const app = kernel.getApp();
-        app.use("*", async (c: Context, next: Next) => {
+        app.use('*', async (c: Context, next: Next) => {
             await this.middleware(c, next);
         });
-        this.log.debug("Rate limit feature initialized");
+        this.log.debug('Rate limit feature initialized');
     }
 
     private async middleware(c: Context, next: Next) {
@@ -140,8 +142,8 @@ export class RateLimitFeature implements Feature {
         }
 
         let store = this.store;
-        if (!store && this.config.store === "cache") {
-            const cache = c.get("cache");
+        if (!store && this.config.store === 'cache') {
+            const cache = c.get('cache');
             if (cache) {
                 store = new CacheStoreWrapper(cache);
             } else {
@@ -164,13 +166,13 @@ export class RateLimitFeature implements Feature {
 
         if (count > this.config.max) {
             if (this.config.handler) return this.config.handler(c);
-            throw new HTTPException(429, { message: "Too many requests" });
+            throw new HTTPException(429, { message: 'Too many requests' });
         }
 
         if (this.config.standardHeaders) {
-            c.header("X-RateLimit-Limit", String(this.config.max));
-            c.header("X-RateLimit-Remaining", String(Math.max(0, this.config.max - count)));
-            c.header("X-RateLimit-Reset", String(Math.ceil((Date.now() + this.config.windowMs) / 1000)));
+            c.header('X-RateLimit-Limit', String(this.config.max));
+            c.header('X-RateLimit-Remaining', String(Math.max(0, this.config.max - count)));
+            c.header('X-RateLimit-Reset', String(Math.ceil((Date.now() + this.config.windowMs) / 1000)));
         }
 
         await next();
@@ -182,11 +184,11 @@ export class RateLimitFeature implements Feature {
         if (!this.warnedUnknownClient) {
             this.warnedUnknownClient = true;
             this.log.warn(
-                "rate-limit: client IP unavailable (not served by Bun.serve?); all such requests share one bucket. " +
-                    "Pass a keyGenerator to identify clients.",
+                'rate-limit: client IP unavailable (not served by Bun.serve?); all such requests share one bucket. ' +
+                    'Pass a keyGenerator to identify clients.',
             );
         }
-        return "unknown";
+        return 'unknown';
     }
 
     async shutdown() {

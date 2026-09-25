@@ -1,4 +1,4 @@
-import type { EmailAdapter, EmailMessage, TemplateData } from "./types";
+import type { EmailAdapter, EmailMessage, TemplateData } from './types';
 
 /**
  * In-memory email adapter used for tests and local development.
@@ -11,6 +11,10 @@ export class MockEmailAdapter implements EmailAdapter {
     }
 
     async sendTemplate(name: string, to: string | string[], data: TemplateData) {
-        return this.send({ to, subject: `Template: ${name}`, html: `Template ${name} with data: ${JSON.stringify(data)}` });
+        return this.send({
+            to,
+            subject: `Template: ${name}`,
+            html: `Template ${name} with data: ${JSON.stringify(data)}`,
+        });
     }
 }

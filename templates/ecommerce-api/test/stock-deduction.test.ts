@@ -42,12 +42,12 @@ describe('Ecommerce API - Stock Deduction', () => {
             name: 'Test Product',
             price: 100,
             stock: 10,
-            description: 'Test Description'
+            description: 'Test Description',
         });
 
         await OrderService.create({
             userId: 'user-1',
-            items: [{ productId: product.id, quantity: 2 }]
+            items: [{ productId: product.id, quantity: 2 }],
         });
 
         const updatedProduct = await ProductService.findById(product.id);
@@ -59,14 +59,14 @@ describe('Ecommerce API - Stock Deduction', () => {
             name: 'Limited Product',
             price: 50,
             stock: 1,
-            description: 'Limited'
+            description: 'Limited',
         });
 
         let error: any;
         try {
             await OrderService.create({
                 userId: 'user-2',
-                items: [{ productId: product.id, quantity: 2 }]
+                items: [{ productId: product.id, quantity: 2 }],
             });
         } catch (e) {
             error = e;
@@ -84,14 +84,24 @@ describe('Ecommerce API - Stock Deduction', () => {
         const other = await ProductService.create({ name: 'Gadget', price: 5, stock: 1, description: '' });
 
         // The same product twice (4 + 7 > 10), and a second product short of stock.
-        await expect(OrderService.create({
-            userId: 'u',
-            items: [{ productId: product.id, quantity: 4 }, { productId: product.id, quantity: 7 }],
-        })).rejects.toThrow(/Insufficient stock/);
-        await expect(OrderService.create({
-            userId: 'u',
-            items: [{ productId: product.id, quantity: 4 }, { productId: other.id, quantity: 2 }],
-        })).rejects.toThrow(/Insufficient stock/);
+        await expect(
+            OrderService.create({
+                userId: 'u',
+                items: [
+                    { productId: product.id, quantity: 4 },
+                    { productId: product.id, quantity: 7 },
+                ],
+            }),
+        ).rejects.toThrow(/Insufficient stock/);
+        await expect(
+            OrderService.create({
+                userId: 'u',
+                items: [
+                    { productId: product.id, quantity: 4 },
+                    { productId: other.id, quantity: 2 },
+                ],
+            }),
+        ).rejects.toThrow(/Insufficient stock/);
 
         // The first line's stock used to be taken anyway (the async callback's
         // transaction had already committed).

@@ -48,7 +48,7 @@ describe('OTel initialization', () => {
         const resources = await import(specifier);
         expect(resources.Resource).toBeUndefined();
 
-        const resource = createResource(resources, { 'service.name': 'svc' });
+        const resource = createResource(resources, { 'service.name': 'svc' }) as { attributes: Record<string, string> };
         expect(resource.attributes['service.name']).toBe('svc');
     });
 
@@ -56,6 +56,9 @@ describe('OTel initialization', () => {
         class Resource {
             constructor(public attributes: Record<string, string>) {}
         }
-        expect(createResource({ Resource }, { 'service.name': 'legacy' }).attributes).toEqual({ 'service.name': 'legacy' });
+        const resource = createResource({ Resource }, { 'service.name': 'legacy' }) as Resource;
+        expect(resource.attributes).toEqual({
+            'service.name': 'legacy',
+        });
     });
 });

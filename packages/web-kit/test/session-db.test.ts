@@ -1,19 +1,19 @@
-import { describe, it, expect } from "bun:test";
-import { Kernel } from "../src/kernel";
-import { SessionFeature } from "../src/features/session";
-import { DbFeature } from "../src/features/db";
+import { describe, it, expect } from 'bun:test';
+import { Kernel } from '../src/kernel';
+import { SessionFeature } from '../src/features/session';
+import { DbFeature } from '../src/features/db';
 
 // End-to-end exercise of the DB-backed session store across all three dialects.
 // sqlite runs locally (bun:sqlite, in-memory); postgres/mysql are gated behind a
 // real, credential-checked connection. Override servers with TEST_PG_URL /
 // TEST_MYSQL_URL (note: this machine's native PG on 5432 — use 5433 for the test
 // container).
-const PG_URL = process.env.TEST_PG_URL || "postgres://postgres:postgres@127.0.0.1:5432/postgres";
-const MYSQL_URL = process.env.TEST_MYSQL_URL || "mysql://root:mysql@127.0.0.1:3306/test";
+const PG_URL = process.env.TEST_PG_URL || 'postgres://postgres:postgres@127.0.0.1:5432/postgres';
+const MYSQL_URL = process.env.TEST_MYSQL_URL || 'mysql://root:mysql@127.0.0.1:3306/test';
 
 async function pgUsable(url: string): Promise<boolean> {
     try {
-        const postgres = (await import("postgres")).default;
+        const postgres = (await import('postgres')).default;
         const sql = postgres(url, { max: 1, connect_timeout: 2, idle_timeout: 1, onnotice: () => {} });
         try {
             await sql`SELECT 1`;
@@ -28,10 +28,10 @@ async function pgUsable(url: string): Promise<boolean> {
 
 async function mysqlUsable(url: string): Promise<boolean> {
     try {
-        const mysql = (await import("mysql2/promise")).default;
+        const mysql = (await import('mysql2/promise')).default;
         const conn = await mysql.createConnection(url);
         try {
-            await conn.query("SELECT 1");
+            await conn.query('SELECT 1');
             return true;
         } finally {
             await conn.end();
@@ -47,97 +47,99 @@ const mysqlUp = await mysqlUsable(MYSQL_URL);
 async function build(dbConfig: any) {
     const kernel = new Kernel();
     kernel.registerFeature(new DbFeature(dbConfig));
-    kernel.registerFeature(new SessionFeature({ store: "db", secret: "db-session-secret-0123456789abcdef0123456789abcdef" }));
+    kernel.registerFeature(
+        new SessionFeature({ store: 'db', secret: 'db-session-secret-0123456789abcdef0123456789abcdef' }),
+    );
     await kernel.initialize();
 
     const app = kernel.getApp();
-    app.get("/set", (c) => {
-        c.get("session").value = c.req.query("v") ?? "x";
+    app.get('/set', (c) => {
+        c.get('session').value = c.req.query('v') ?? 'x';
         return c.json({ ok: true });
     });
-    app.get("/get", (c) => c.json({ session: c.get("session") }));
+    app.get('/get', (c) => c.json({ session: c.get('session') }));
     // Logout by clearing the data instead of calling destroySession().
-    app.get("/clear", (c) => {
-        delete c.get("session").value;
+    app.get('/clear', (c) => {
+        delete c.get('session').value;
         return c.json({ ok: true });
     });
     // Deliberately does NOT clear the in-memory session — destroySession() alone
     // must prevent the post-response save block from re-persisting it.
-    app.get("/logout", async (c) => {
-        await c.get("destroySession")();
+    app.get('/logout', async (c) => {
+        await c.get('destroySession')();
         return c.json({ ok: true });
     });
     return kernel;
 }
 
 function cookieOf(res: Response): string {
-    return res.headers.get("Set-Cookie")!.split(";")[0];
+    return res.headers.get('Set-Cookie')!.split(';')[0];
 }
 
 function runSuite(enabled: boolean, label: string, dbConfig: any) {
     (enabled ? describe : describe.skip)(label, () => {
-        it("persists and restores a session across requests", async () => {
+        it('persists and restores a session across requests', async () => {
             const kernel = await build(dbConfig);
             const app = kernel.getApp();
 
-            const cookie = cookieOf(await app.request("/set?v=hello"));
-            const got = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
-            expect(got.session.value).toBe("hello");
+            const cookie = cookieOf(await app.request('/set?v=hello'));
+            const got = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
+            expect(got.session.value).toBe('hello');
 
             await kernel.shutdown();
         });
 
-        it("destroys a session", async () => {
+        it('destroys a session', async () => {
             const kernel = await build(dbConfig);
             const app = kernel.getApp();
 
-            const cookie = cookieOf(await app.request("/set?v=bye"));
-            await app.request("/logout", { headers: { Cookie: cookie } });
+            const cookie = cookieOf(await app.request('/set?v=bye'));
+            await app.request('/logout', { headers: { Cookie: cookie } });
 
-            const after = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
+            const after = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
             expect(after.session).toEqual({});
 
             await kernel.shutdown();
         });
 
-        it("forgets a session the handler emptied", async () => {
+        it('forgets a session the handler emptied', async () => {
             const kernel = await build(dbConfig);
             const app = kernel.getApp();
 
-            const cookie = cookieOf(await app.request("/set?v=gone"));
-            await app.request("/clear", { headers: { Cookie: cookie } });
+            const cookie = cookieOf(await app.request('/set?v=gone'));
+            await app.request('/clear', { headers: { Cookie: cookie } });
 
-            const after = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
+            const after = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
             expect(after.session).toEqual({});
 
             await kernel.shutdown();
         });
 
-        it("stores values with SQL metacharacters safely (no injection)", async () => {
+        it('stores values with SQL metacharacters safely (no injection)', async () => {
             const kernel = await build(dbConfig);
             const app = kernel.getApp();
 
             const evil = "'); DROP TABLE sessions;--";
             const cookie = cookieOf(await app.request(`/set?v=${encodeURIComponent(evil)}`));
-            const got = (await (await app.request("/get", { headers: { Cookie: cookie } })).json()) as any;
+            const got = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
             expect(got.session.value).toBe(evil);
 
             // The table must still exist and work afterwards.
-            const cookie2 = cookieOf(await app.request("/set?v=after"));
-            const got2 = (await (await app.request("/get", { headers: { Cookie: cookie2 } })).json()) as any;
-            expect(got2.session.value).toBe("after");
+            const cookie2 = cookieOf(await app.request('/set?v=after'));
+            const got2 = (await (await app.request('/get', { headers: { Cookie: cookie2 } })).json()) as any;
+            expect(got2.session.value).toBe('after');
 
             await kernel.shutdown();
         });
     });
 }
 
-runSuite(true, "DB session store — sqlite (local)", { adapter: "sqlite", connection: { database: ":memory:" } });
-runSuite(pgUp, "DB session store — postgres (requires Postgres)", {
-    adapter: "postgres",
+runSuite(true, 'DB session store — sqlite (local)', { adapter: 'sqlite', connection: { database: ':memory:' } });
+runSuite(pgUp, 'DB session store — postgres (requires Postgres)', {
+    adapter: 'postgres',
     connection: { connectionString: PG_URL },
 });
-runSuite(mysqlUp, "DB session store — mysql (requires MySQL)", {
-    adapter: "mysql",
+runSuite(mysqlUp, 'DB session store — mysql (requires MySQL)', {
+    adapter: 'mysql',
     connection: { connectionString: MYSQL_URL },
 });

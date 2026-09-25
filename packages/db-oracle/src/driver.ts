@@ -34,7 +34,11 @@ export class OracleDriver implements Driver {
      * @param timeoutMs Per-query timeout.
      * @param startTimeoutMs How long start() waits for the bridge to connect.
      */
-    constructor(bridgePath?: string, timeoutMs: number = DEFAULT_TIMEOUT_MS, startTimeoutMs: number = DEFAULT_START_TIMEOUT_MS) {
+    constructor(
+        bridgePath?: string,
+        timeoutMs: number = DEFAULT_TIMEOUT_MS,
+        startTimeoutMs: number = DEFAULT_START_TIMEOUT_MS,
+    ) {
         this.bridgePath = bridgePath || resolve(import.meta.dir, '../bridge/runner.js');
         this.timeoutMs = timeoutMs;
         this.startTimeoutMs = startTimeoutMs;
@@ -46,7 +50,8 @@ export class OracleDriver implements Driver {
         app.context.set('oracle', this);
     }
 
-    async start(app?: App) { // app optional to satisfy interface but we might need config from it
+    async start(app?: App) {
+        // app optional to satisfy interface but we might need config from it
         if (app) this.app = app;
 
         // Check env vars
@@ -79,8 +84,18 @@ export class OracleDriver implements Driver {
         const ready = new Promise<void>((res, rej) => {
             let settled = false;
             waiter = {
-                resolve: () => { if (!settled) { settled = true; res(); } },
-                reject: (err) => { if (!settled) { settled = true; rej(err); } },
+                resolve: () => {
+                    if (!settled) {
+                        settled = true;
+                        res();
+                    }
+                },
+                reject: (err) => {
+                    if (!settled) {
+                        settled = true;
+                        rej(err);
+                    }
+                },
             };
         });
         this.readStream(proc.stdout as ReadableStream, pending, waiter);
@@ -172,9 +187,7 @@ export class OracleDriver implements Driver {
                 stdin.flush();
             } else {
                 // No writable stdin: do not leave the request hanging in pending.
-                this.settle(pending, id, ({ reject: rej }) =>
-                    rej(new Error('Oracle bridge stdin is not writable')),
-                );
+                this.settle(pending, id, ({ reject: rej }) => rej(new Error('Oracle bridge stdin is not writable')));
             }
         });
     }
@@ -235,5 +248,12 @@ export class OracleDriver implements Driver {
         } catch (err) {
             this.log('error', { err, line }, 'Error parsing bridge message');
         }
+    }
+}
+
+// `app.context.get('oracle')` is the OracleDriver registered on the app.
+declare module '@iskra-bun/core' {
+    interface AppContextRegistry {
+        oracle: OracleDriver;
     }
 }

@@ -57,6 +57,19 @@ app.register(driver);
 await app.start();
 ```
 
+A route with a `schema` validates the request with it; wrap it in `defineRoute()` so the handler's `ctx.body` and `ctx.query` get their types from the schema (inside a plain `routes` list they are `unknown`):
+
+```typescript
+import { defineRoute } from '@iskra-bun/web-kit';
+
+defineRoute({
+    method: 'POST',
+    path: '/api/users',
+    schema: { body: z.object({ name: z.string() }) },
+    handler: async (ctx) => userService.create(ctx.body.name), // ctx.body.name: string
+});
+```
+
 It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets).
 
 ## Kernel
@@ -91,8 +104,7 @@ The Kernel and its features report startup, fallbacks and errors they handle thr
 | `CorsFeature` | Origin control (CORS) |
 | `CsrfFeature` | CSRF protection with tokens |
 | `RateLimitFeature` | Request rate limiting (memory or Redis) |
-| `ApiKeyFeature` | API key validation with cache and scopes |
-| `ValidationFeature` | Request validation with Zod |
+| `ApiKeyFeature` | API key validation with scopes |
 | `DbFeature` | Drizzle ORM integration |
 | `CacheFeature` | Cache with Redis or memory |
 | `SessionFeature` | Sessions (DB, cache, or memory) |
@@ -102,10 +114,26 @@ The Kernel and its features report startup, fallbacks and errors they handle thr
 | `LoggerFeature` | Request/response logging |
 | `ErrorHandlerFeature` | Centralized error handling |
 | `RequestIdFeature` | Request tracking with a unique ID |
-| `TracingFeature` | Observability |
+| `OtelTracingFeature` | OpenTelemetry tracing (`@hono/otel`) |
 | `UploadFeature` | File uploads |
 | `StorageFeature` | File storage (local) — powered by [`@iskra-bun/storage-kit`](/packages/storage-kit/) |
 | `EmailFeature` | Email sending (SMTP, SendGrid) — powered by [`@iskra-bun/mailer-kit`](/packages/mailer-kit/) |
+
+## Request validation
+
+Validation is a middleware, not a feature: `validate()` takes Zod schemas (v3 or v4), `validateJson()` JSON Schemas (AJV, with `ajv-formats` and `ajv-errors` messages). Either one answers 400 with the errors on invalid input; otherwise the handler reads the data from `c.get('validated')`, typed.
+
+```typescript
+import { validate, validateJson } from '@iskra-bun/web-kit';
+
+app.post('/users', validate({ body: z.object({ name: z.string() }) }), (c) => {
+    const { name } = c.get('validated').body; // string, inferred from the schema
+    return c.json({ name }, 201);
+});
+
+// A JSON Schema has no TypeScript type: name the validated shape.
+app.post('/orders', validateJson<CreateOrder>({ body: orderSchema }), (c) => c.json(c.get('validated').body));
+```
 
 ## DbFeature Schema Generic
 
@@ -232,6 +260,7 @@ new SessionFeature({
 });
 ```
 
+- `c.get('session')` is a `SessionData` object: its fields are `unknown` until you declare them (`declare module '@iskra-bun/web-kit' { interface SessionData { userId?: string } }`), then typed on every request.
 - To log out, empty the session (`delete c.get('session').userId`) or call `await c.get('destroySession')()`: either way the stored session and the cookie are removed.
 - After login, call `await c.get('regenerateSession')()` to issue a new ID and invalidate the old one (prevents session fixation).
 - A session destroyed by one request (logout, `regenerateSession`) is not re-created by another request that loaded it and finishes later. Each request works on its own copy of the session data, with the memory store too, so session data must be structured-cloneable (it already had to be JSON for the other stores).

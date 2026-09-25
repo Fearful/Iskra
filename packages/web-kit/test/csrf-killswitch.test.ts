@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, afterEach } from 'bun:test';
 
 // RED test for the MEDIUM "CSRF kill switch" finding
 // (src/types.ts:172 -> auth/index.ts:92 -> better-auth disableCSRFCheck).
@@ -11,8 +11,8 @@ import { describe, it, expect, afterEach } from "bun:test";
 // We intercept createBetterAuth (the only place the flag is consumed) to capture
 // the options the AuthFeature actually forwards.
 
-import { AuthFeature } from "../src/features/auth/index";
-import { Kernel } from "../src/kernel";
+import { AuthFeature } from '../src/features/auth/index';
+import { Kernel } from '../src/kernel';
 
 const captured: { disableCSRFCheck?: boolean }[] = [];
 
@@ -25,22 +25,22 @@ const fakeCreateAuth = ((options: any) => {
     // Minimal fake Auth instance — initialize() only registers middleware
     // and stores the handle; it never calls into it during construction.
     return {
-        handler: async () => new Response("ok"),
+        handler: async () => new Response('ok'),
         api: { getSession: async () => null },
     };
 }) as any;
 
 // A DbFeature stand-in: AuthFeature reads `.db` and `.adapter` off it.
 class FakeDbFeature {
-    name = "db";
+    name = 'db';
     db = {} as any;
-    adapter = "sqlite" as const;
+    adapter = 'sqlite' as const;
     async initialize() {}
 }
 
-const VALID_SECRET = "x".repeat(40); // satisfies auth-kit's >=32 char requirement
+const VALID_SECRET = 'x'.repeat(40); // satisfies auth-kit's >=32 char requirement
 
-describe("AuthFeature — CSRF kill-switch production guard", () => {
+describe('AuthFeature — CSRF kill-switch production guard', () => {
     const originalEnv = process.env.NODE_ENV;
 
     afterEach(() => {
@@ -48,14 +48,17 @@ describe("AuthFeature — CSRF kill-switch production guard", () => {
         captured.length = 0;
     });
 
-    it("ignores disableCSRFCheck in production (forwards false)", async () => {
-        process.env.NODE_ENV = "production";
+    it('ignores disableCSRFCheck in production (forwards false)', async () => {
+        process.env.NODE_ENV = 'production';
 
         const kernel = new Kernel();
         kernel.registerFeature(new FakeDbFeature() as any);
         kernel.registerFeature(
             // baseURL is required in production.
-            new AuthFeature({ secret: VALID_SECRET, baseURL: "https://app.example.com", disableCSRFCheck: true } as any, fakeCreateAuth),
+            new AuthFeature(
+                { secret: VALID_SECRET, baseURL: 'https://app.example.com', disableCSRFCheck: true } as any,
+                fakeCreateAuth,
+            ),
         );
         await kernel.initialize();
 
@@ -66,8 +69,8 @@ describe("AuthFeature — CSRF kill-switch production guard", () => {
         await kernel.shutdown();
     });
 
-    it("honors disableCSRFCheck outside production", async () => {
-        process.env.NODE_ENV = "development";
+    it('honors disableCSRFCheck outside production', async () => {
+        process.env.NODE_ENV = 'development';
 
         const kernel = new Kernel();
         kernel.registerFeature(new FakeDbFeature() as any);

@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 
 const app = new App({
     name: 'PythonDataProcessor',
-    processes: config.processes
+    processes: config.processes,
 });
 
 const pm = new ProcessManager();
@@ -14,11 +14,14 @@ app.register(pm);
 
 // ─── Request-Response IPC ────────────────────────────────────────────────────
 
-const pendingRequests = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (reason: unknown) => void;
-    timeout: ReturnType<typeof setTimeout>;
-}>();
+const pendingRequests = new Map<
+    string,
+    {
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+        timeout: ReturnType<typeof setTimeout>;
+    }
+>();
 
 function sendToProcess(processName: string, data: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
     return new Promise((resolve, reject) => {
@@ -35,9 +38,23 @@ function sendToProcess(processName: string, data: Record<string, unknown>, timeo
     });
 }
 
+/** What processor.py prints: replies carry the requestId they answer. */
+interface ProcessReply {
+    requestId?: string;
+    type?: string;
+    msg?: string;
+    data?: unknown;
+}
+
+// Any JSON line the script prints arrives here: check its shape before use.
+function asReply(message: unknown): ProcessReply {
+    return typeof message === 'object' && message !== null ? (message as ProcessReply) : {};
+}
+
 // Listen for messages from Python and resolve pending requests
 app.on('process:message', (ctx) => {
-    const { name, message } = ctx.payload;
+    const { name } = ctx.payload;
+    const message = asReply(ctx.payload.message);
 
     if (message.requestId && pendingRequests.has(message.requestId)) {
         const pending = pendingRequests.get(message.requestId)!;
@@ -79,10 +96,12 @@ router.get('/health', (c) => {
     return c.json({ status: 'ok', pendingRequests: pendingRequests.size });
 });
 
-app.register(new WebPlugin({
-    port: config.web.port,
-    router: router
-}));
+app.register(
+    new WebPlugin({
+        port: config.web.port,
+        router: router,
+    }),
+);
 
 async function main() {
     await app.start();

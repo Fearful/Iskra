@@ -124,7 +124,10 @@ describe('Cache — remember() / wrap()', () => {
 
     it('does NOT call the fallback on a subsequent hit', async () => {
         let calls = 0;
-        const fallback = async () => { calls++; return 'value'; };
+        const fallback = async () => {
+            calls++;
+            return 'value';
+        };
 
         await cache.remember('r2', 60, fallback);
         await cache.remember('r2', 60, fallback);
@@ -153,8 +156,14 @@ describe('Cache — remember() / wrap()', () => {
 
     it('wrap() is an alias for remember()', async () => {
         let calls = 0;
-        const v1 = await cache.wrap('w', 60, async () => { calls++; return 'a'; });
-        const v2 = await cache.wrap('w', 60, async () => { calls++; return 'b'; });
+        const v1 = await cache.wrap('w', 60, async () => {
+            calls++;
+            return 'a';
+        });
+        const v2 = await cache.wrap('w', 60, async () => {
+            calls++;
+            return 'b';
+        });
 
         expect(v1).toBe('a');
         expect(v2).toBe('a'); // returns cached

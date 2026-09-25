@@ -12,9 +12,9 @@ describe('App Core', () => {
         const app = new App({ name: 'TestApp' });
         const mockDriver: Driver = {
             name: 'MockDriver',
-            init: mock(() => { }),
-            start: mock(async () => { }),
-            stop: mock(async () => { })
+            init: mock(() => {}),
+            start: mock(async () => {}),
+            stop: mock(async () => {}),
         };
 
         app.register(mockDriver);
@@ -37,7 +37,7 @@ describe('App Core', () => {
         app.emit('test.event', 'hello');
 
         // Wait for event loop
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise((r) => setTimeout(r, 10));
         expect(handler).toHaveBeenCalled();
     });
 });

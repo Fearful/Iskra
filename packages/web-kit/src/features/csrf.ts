@@ -1,12 +1,12 @@
-import type { Feature, CsrfConfig } from "../types";
-import type { Kernel } from "../kernel";
-import type { Context, Next } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { getCookie, setCookie } from "hono/cookie";
-import { createHmac, timingSafeEqual, randomUUID } from "crypto";
-import { consoleLogger, type KernelLogger } from "../logging";
+import type { Feature, CsrfConfig } from '../types';
+import type { Kernel } from '../kernel';
+import type { Context, Next } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { getCookie, setCookie } from 'hono/cookie';
+import { createHmac, timingSafeEqual, randomUUID } from 'crypto';
+import { consoleLogger, type KernelLogger } from '../logging';
 
-declare module "hono" {
+declare module 'hono' {
     interface ContextVariableMap {
         csrfToken: string;
         /** Checks the request's header/body token against the cookie token (used by requireCsrf). */
@@ -34,14 +34,12 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function signCsrfToken(random: string, secret: string): string {
-    const signature = createHmac("sha256", secret)
-        .update(random)
-        .digest("base64url");
+    const signature = createHmac('sha256', secret).update(random).digest('base64url');
     return `${random}.${signature}`;
 }
 
 function verifyCsrfToken(token: string, secret: string): boolean {
-    const lastDot = token.lastIndexOf(".");
+    const lastDot = token.lastIndexOf('.');
     if (lastDot === -1) return false;
 
     const random = token.substring(0, lastDot);
@@ -50,34 +48,34 @@ function verifyCsrfToken(token: string, secret: string): boolean {
 }
 
 export class CsrfFeature implements Feature {
-    name = "csrf";
+    name = 'csrf';
     private log: KernelLogger = consoleLogger;
     private config: Required<CsrfConfig>;
 
     constructor(config: CsrfConfig) {
-        if (!config.secret) throw new Error("CSRF secret is required");
+        if (!config.secret) throw new Error('CSRF secret is required');
         this.config = {
             secret: config.secret,
-            cookieName: config.cookieName || "_csrf",
-            headerName: config.headerName || "X-CSRF-Token",
-            ignoreMethods: config.ignoreMethods || ["GET", "HEAD", "OPTIONS"],
+            cookieName: config.cookieName || '_csrf',
+            headerName: config.headerName || 'X-CSRF-Token',
+            ignoreMethods: config.ignoreMethods || ['GET', 'HEAD', 'OPTIONS'],
             cookieOptions: {
                 httpOnly: true,
                 secure: true,
-                sameSite: "Strict",
+                sameSite: 'Strict',
                 maxAge: 86400,
-                ...config.cookieOptions
-            }
+                ...config.cookieOptions,
+            },
         } as Required<CsrfConfig>;
     }
 
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         const app = kernel.getApp();
-        app.use("*", async (c: Context, next: Next) => {
+        app.use('*', async (c: Context, next: Next) => {
             await this.middleware(c, next);
         });
-        this.log.debug("CSRF feature initialized");
+        this.log.debug('CSRF feature initialized');
     }
 
     private async middleware(c: Context, next: Next) {
@@ -85,19 +83,19 @@ export class CsrfFeature implements Feature {
         let token = getCookie(c, this.config.cookieName);
 
         if (!token) {
-            token = signCsrfToken(randomUUID().replace(/-/g, ""), this.config.secret);
+            token = signCsrfToken(randomUUID().replace(/-/g, ''), this.config.secret);
             setCookie(c, this.config.cookieName, token, {
                 httpOnly: this.config.cookieOptions.httpOnly,
                 secure: this.config.cookieOptions.secure,
-                sameSite: this.config.cookieOptions.sameSite as any,
+                sameSite: this.config.cookieOptions.sameSite,
                 maxAge: this.config.cookieOptions.maxAge,
-                path: "/"
+                path: '/',
             });
         }
 
-        c.set("csrfToken", token);
+        c.set('csrfToken', token);
         const cookieToken = token;
-        c.set("verifyCsrf", () => this.validateToken(c, cookieToken));
+        c.set('verifyCsrf', () => this.validateToken(c, cookieToken));
 
         if (this.config.ignoreMethods.includes(method)) {
             await next();
@@ -106,7 +104,7 @@ export class CsrfFeature implements Feature {
 
         const isValid = await this.validateToken(c, token);
         if (!isValid) {
-            throw new HTTPException(403, { message: "Invalid CSRF token" });
+            throw new HTTPException(403, { message: 'Invalid CSRF token' });
         }
 
         await next();
@@ -122,8 +120,8 @@ export class CsrfFeature implements Feature {
         if (headerToken && constantTimeEqual(headerToken, expectedToken)) return true;
 
         try {
-            const contentType = c.req.header("content-type");
-            if (contentType?.includes("application/x-www-form-urlencoded")) {
+            const contentType = c.req.header('content-type');
+            if (contentType?.includes('application/x-www-form-urlencoded')) {
                 const body = await c.req.parseBody();
                 const bodyToken = body._csrf || body[this.config.cookieName];
                 if (bodyToken && constantTimeEqual(String(bodyToken), expectedToken)) return true;
@@ -131,8 +129,8 @@ export class CsrfFeature implements Feature {
         } catch (error) {
             // A malformed/unparseable body just means no valid body token is
             // present; fall through to rejection. Surface detail at debug only.
-            const logger = c.get("logger");
-            if (logger?.debug) logger.debug("CSRF body token parse failed", { error });
+            const logger = c.get('logger');
+            if (logger?.debug) logger.debug('CSRF body token parse failed', { error });
         }
 
         return false;
@@ -148,8 +146,8 @@ export function requireCsrf() {
     return async (c: Context, next: Next) => {
         // Previously this only checked that c.get("csrfToken") existed, which the
         // middleware always sets, so it guarded nothing.
-        const verify = c.get("verifyCsrf");
-        if (!verify || !(await verify())) throw new HTTPException(403, { message: "Invalid CSRF token" });
+        const verify = c.get('verifyCsrf');
+        if (!verify || !(await verify())) throw new HTTPException(403, { message: 'Invalid CSRF token' });
         await next();
     };
 }

@@ -10,19 +10,19 @@
     ],
     "scripts": {
         "test": "bun test",
-        "ci": "bun run lint && bun run typecheck && bun test && bun run build",
+        "ci": "bun run lint && bun run format:check && bun run typecheck && bun test && bun run build",
         "build": "bun run scripts/build-packages.ts",
         "version": "changeset version && bun run packages/create-iskra/scripts/sync.ts",
         "release": "bun run build && bun run scripts/pin-workspace-deps.ts && changeset publish",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc --noEmit && bun run scripts/typecheck-templates.ts",
         "contract:server": "bun run sdks/contract/server.ts",
         "smoke:templates": "bun run scripts/smoke-templates.ts",
         "test:sdk:python": "cd sdks/python/iskra-client && python -m pytest",
         "test:sdk:java": "cd sdks/java/iskra-client && mvn -q -B test",
         "lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
         "lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts'",
-        "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'",
-        "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts'"
+        "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts' 'scripts/**/*.ts'",
+        "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/test/**/*.ts' 'templates/*/src/**/*.ts' 'templates/*/test/**/*.ts' 'sdks/contract/**/*.ts' 'scripts/**/*.ts'"
     },
     "overrides": {
         "hono": "^4.12.34",

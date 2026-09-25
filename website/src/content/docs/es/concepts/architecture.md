@@ -73,19 +73,19 @@ interface Feature {
 
 ## Inyeccion de Dependencias
 
-Iskra usa un `Map<string, any>` simple como contenedor de DI a traves de `app.context`:
+Iskra usa `app.context`, un `Map` cuyas claves se tipan con `AppContextRegistry` (ver [Core](/es/packages/core/)), como contenedor de DI:
 
 ```typescript
 // Un driver se registra en el contexto
 app.context.set('db', dbDriver);
 
-// Otro componente lo consume
+// Otro componente lo consume, tipado: DbDriver | undefined
 const db = app.context.get('db');
 ```
 
 ## Sistema de Eventos
 
-La comunicacion entre componentes se hace via el event bus (basado en mitt):
+La comunicacion entre componentes se hace via el event bus (basado en mitt). Los payloads estan tipados para los eventos declarados en `AppEvents`:
 
 ```typescript
 // Escuchar

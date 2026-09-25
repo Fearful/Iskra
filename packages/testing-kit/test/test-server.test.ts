@@ -15,8 +15,12 @@ describe('createTestServer headers', () => {
     const client = createTestServer(handler);
 
     it('keeps headers passed as a Headers instance or as tuples with a JSON body', async () => {
-        const fromHeaders = await (await client.post('/x', { a: 1 }, { headers: new Headers({ authorization: 'Bearer T' }) })).json();
-        const fromTuples = await (await client.put('/x', { a: 1 }, { headers: [['authorization', 'Bearer T']] })).json();
+        const fromHeaders = await (
+            await client.post('/x', { a: 1 }, { headers: new Headers({ authorization: 'Bearer T' }) })
+        ).json();
+        const fromTuples = await (
+            await client.put('/x', { a: 1 }, { headers: [['authorization', 'Bearer T']] })
+        ).json();
         // Spread into an object literal, a Headers lost its entries and tuples broke the request.
         expect(fromHeaders).toEqual({ auth: 'Bearer T', contentType: 'application/json' });
         expect(fromTuples).toEqual({ auth: 'Bearer T', contentType: 'application/json' });

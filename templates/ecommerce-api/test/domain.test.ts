@@ -1,11 +1,10 @@
-
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { ProductService } from "../src/domain/products/product.service";
-import { OrderService } from "../src/domain/orders/order.service";
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { ProductService } from '../src/domain/products/product.service';
+import { OrderService } from '../src/domain/orders/order.service';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Database } from 'bun:sqlite';
 
-describe("Ecommerce Domain Logic", () => {
+describe('Ecommerce Domain Logic', () => {
     let db: any;
     let client: any;
 
@@ -52,12 +51,12 @@ describe("Ecommerce Domain Logic", () => {
         client.close();
     });
 
-    it("should create a product and decrease stock", async () => {
+    it('should create a product and decrease stock', async () => {
         const product = await ProductService.create({
-            name: "Test Product",
+            name: 'Test Product',
             price: 100,
             stock: 10,
-            description: "Test Desc"
+            description: 'Test Desc',
         });
 
         expect(product).toBeDefined();
@@ -70,16 +69,16 @@ describe("Ecommerce Domain Logic", () => {
         expect(updated?.stock).toBe(8);
     });
 
-    it("should create an order and update product stock", async () => {
-        const p1 = await ProductService.create({ name: "P1", price: 50, stock: 5 });
-        const p2 = await ProductService.create({ name: "P2", price: 30, stock: 10 });
+    it('should create an order and update product stock', async () => {
+        const p1 = await ProductService.create({ name: 'P1', price: 50, stock: 5 });
+        const p2 = await ProductService.create({ name: 'P2', price: 30, stock: 10 });
 
         const order = await OrderService.create({
-            userId: "user-123",
+            userId: 'user-123',
             items: [
                 { productId: p1.id, quantity: 2 },
-                { productId: p2.id, quantity: 1 }
-            ]
+                { productId: p2.id, quantity: 1 },
+            ],
         });
 
         expect(order).toBeDefined();
@@ -92,22 +91,22 @@ describe("Ecommerce Domain Logic", () => {
         expect(updatedP2?.stock).toBe(9); // 10 - 1
     });
 
-    it("should fail to create order if insufficient stock", async () => {
-        const p1 = await ProductService.create({ name: "P1", price: 50, stock: 1 });
+    it('should fail to create order if insufficient stock', async () => {
+        const p1 = await ProductService.create({ name: 'P1', price: 50, stock: 1 });
 
         // Expect promise to reject
         let error: any;
         try {
             await OrderService.create({
-                userId: "user-123",
-                items: [{ productId: p1.id, quantity: 2 }]
+                userId: 'user-123',
+                items: [{ productId: p1.id, quantity: 2 }],
             });
         } catch (e) {
             error = e;
         }
 
         expect(error).toBeDefined();
-        expect(error.message).toContain("Insufficient stock");
+        expect(error.message).toContain('Insufficient stock');
 
         // Stock should remain unchanged (transaction rolled back? logic throws before decreasing actually)
         // My implementation in OrderService checks first, then decreases.

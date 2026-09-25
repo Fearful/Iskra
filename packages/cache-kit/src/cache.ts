@@ -42,7 +42,7 @@ function parseSafely(raw: string): unknown {
         if ((DANGEROUS_KEYS as readonly string[]).includes(key)) {
             throw new PollutionError(
                 `cache-kit: refusing to deserialize value containing the ` +
-                `unsafe key "${key}" (prototype-pollution risk).`
+                    `unsafe key "${key}" (prototype-pollution risk).`,
             );
         }
         return value;
@@ -113,8 +113,7 @@ export class Cache {
         } catch (error) {
             if (error instanceof PollutionError) throw error;
             throw new Error(
-                `cache-kit: failed to deserialize value for key "${key}". ` +
-                'The stored value is not valid JSON.'
+                `cache-kit: failed to deserialize value for key "${key}". ` + 'The stored value is not valid JSON.',
             );
         }
     }
@@ -132,7 +131,9 @@ export class Cache {
         const serialized = JSON.stringify(value);
         const effectiveTtl = ttl ?? this.defaultTtl;
         if (effectiveTtl !== undefined && effectiveTtl !== 0 && !(effectiveTtl > 0 && Number.isFinite(effectiveTtl))) {
-            throw new RangeError(`cache-kit: invalid TTL ${String(effectiveTtl)}: expected a positive number of seconds`);
+            throw new RangeError(
+                `cache-kit: invalid TTL ${String(effectiveTtl)}: expected a positive number of seconds`,
+            );
         }
 
         await this.adapter.set(this.prefixKey(key), serialized, effectiveTtl);
@@ -173,9 +174,9 @@ export class Cache {
             const namespace = this.prefix.replace(/:$/, '');
             throw new Error(
                 `cache-kit: clear() resets the entire shared backing store and ` +
-                `cannot be called on the namespaced cache "${namespace}". ` +
-                'Delete individual keys with delete(), invalidate a group with ' +
-                'invalidateTag(), or call clear() on the root cache to reset everything.'
+                    `cannot be called on the namespaced cache "${namespace}". ` +
+                    'Delete individual keys with delete(), invalidate a group with ' +
+                    'invalidateTag(), or call clear() on the root cache to reset everything.',
             );
         }
         await this.adapter.disconnect();
@@ -236,10 +237,7 @@ export class Cache {
             keys = [];
         }
 
-        await Promise.all([
-            ...keys.map((k) => this.adapter.del(this.prefixKey(k))),
-            this.adapter.del(indexKey),
-        ]);
+        await Promise.all([...keys.map((k) => this.adapter.del(this.prefixKey(k))), this.adapter.del(indexKey)]);
     }
 
     // -------------------------------------------------------------------------
@@ -287,7 +285,7 @@ export class Cache {
             tags.map((tag) => {
                 const indexKey = this.tagIndexKey(tag);
                 return withLock(this.adapter, indexKey, () => this.addToIndex(indexKey, key));
-            })
+            }),
         );
     }
 

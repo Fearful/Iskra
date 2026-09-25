@@ -76,7 +76,9 @@ describe.if(posix)('process groups', () => {
             },
         });
         let maxed = false;
-        app.events.on('process:max-restarts', () => { maxed = true; });
+        app.events.on('process:max-restarts', () => {
+            maxed = true;
+        });
         await app.start();
 
         expect(await waitFor(() => maxed, 5000)).toBe(true);
@@ -101,7 +103,11 @@ await app.stop();
 `,
         );
         const started = Date.now();
-        const child = Bun.spawn([process.execPath, script], { cwd: import.meta.dir, stdout: 'ignore', stderr: 'inherit' });
+        const child = Bun.spawn([process.execPath, script], {
+            cwd: import.meta.dir,
+            stdout: 'ignore',
+            stderr: 'inherit',
+        });
         expect(await child.exited).toBe(0);
         // A leftover deadline timer used to hold the process for 2 × 5 s.
         expect(Date.now() - started).toBeLessThan(4000);
@@ -111,14 +117,18 @@ await app.stop();
 describe.if(posix)('send()', () => {
     it('logs a broken pipe instead of an unhandled rejection', async () => {
         const unhandled: unknown[] = [];
-        const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+        const onUnhandled = (reason: unknown) => {
+            unhandled.push(reason);
+        };
         process.on('unhandledRejection', onUnhandled);
         try {
             const { app, pm } = makeManager({
                 closed: { command: 'sh', args: ['-c', 'exec 0<&-; sleep 3'], mode: 'stdio' },
             });
             const errors: string[] = [];
-            (app.logger as any).error = (_obj: unknown, msg?: string) => { errors.push(String(msg)); };
+            (app.logger as any).error = (_obj: unknown, msg?: string) => {
+                errors.push(String(msg));
+            };
             await app.start();
             await Bun.sleep(200);
 

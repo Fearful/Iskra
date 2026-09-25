@@ -1,9 +1,9 @@
-import { BaseStorageAdapter } from "../base";
-import type { StorageConfig, StorageFile, PutOptions } from "../base";
-import type { S3Client } from "@aws-sdk/client-s3";
+import { BaseStorageAdapter } from '../base';
+import type { StorageConfig, StorageFile, PutOptions } from '../base';
+import type { S3Client } from '@aws-sdk/client-s3';
 
-type S3Sdk = typeof import("@aws-sdk/client-s3");
-type Presigner = typeof import("@aws-sdk/s3-request-presigner");
+type S3Sdk = typeof import('@aws-sdk/client-s3');
+type Presigner = typeof import('@aws-sdk/s3-request-presigner');
 
 /**
  * The AWS SDK is loaded when the first S3 adapter is created, not when this
@@ -15,7 +15,7 @@ let sdk: S3Sdk | undefined;
 function loadSdk(): S3Sdk {
     // Synchronous on purpose: the constructor builds the client.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return (sdk ??= require("@aws-sdk/client-s3") as S3Sdk);
+    return (sdk ??= require('@aws-sdk/client-s3') as S3Sdk);
 }
 
 /** An SDK error for a missing object: its `name`, or a bare 404 (HEAD has no error body). */
@@ -34,17 +34,15 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         const conn = config.connection || {};
 
         if (conn.endpoint && /^http:\/\//i.test(conn.endpoint.trim()) && conn.useSSL !== false) {
-            throw new Error(
-                "Refusing plaintext S3 endpoint; set useSSL:false to override"
-            );
+            throw new Error('Refusing plaintext S3 endpoint; set useSSL:false to override');
         }
 
-        this.bucket = conn.bucket || "iskra-storage";
+        this.bucket = conn.bucket || 'iskra-storage';
 
         this.sdk = loadSdk();
         this.client = new this.sdk.S3Client({
             endpoint: conn.endpoint,
-            region: conn.region || "us-east-1",
+            region: conn.region || 'us-east-1',
             credentials:
                 conn.accessKey && conn.secretKey
                     ? { accessKeyId: conn.accessKey, secretAccessKey: conn.secretKey }
@@ -58,7 +56,9 @@ export class S3StorageAdapter extends BaseStorageAdapter {
             await this.client.send(new this.sdk.HeadBucketCommand({ Bucket: this.bucket }));
             this.connected = true;
         } catch (err) {
-            throw new Error(`Failed to connect to S3 bucket "${this.bucket}": ${err instanceof Error ? err.message : String(err)}`);
+            throw new Error(
+                `Failed to connect to S3 bucket "${this.bucket}": ${err instanceof Error ? err.message : String(err)}`,
+            );
         }
     }
 
@@ -67,11 +67,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         this.connected = false;
     }
 
-    async put(
-        path: string,
-        data: Uint8Array | Buffer | ReadableStream,
-        options?: PutOptions
-    ): Promise<StorageFile> {
+    async put(path: string, data: Uint8Array | Buffer | ReadableStream, options?: PutOptions): Promise<StorageFile> {
         this.ensureConnected();
         const key = this.sanitizePath(path);
 
@@ -90,11 +86,11 @@ export class S3StorageAdapter extends BaseStorageAdapter {
                 Body: body,
                 ContentType: options?.contentType || this.getMimeType(key),
                 Metadata: options?.metadata,
-            })
+            }),
         );
 
         return {
-            name: key.split("/").pop() || key,
+            name: key.split('/').pop() || key,
             path: key,
             size: body.length,
             mimeType: options?.contentType || this.getMimeType(key),
@@ -107,14 +103,12 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         const key = this.sanitizePath(path);
 
         try {
-            const response = await this.client.send(
-                new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key })
-            );
+            const response = await this.client.send(new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key }));
 
             if (!response.Body) return null;
             return new Uint8Array(await response.Body.transformToByteArray());
         } catch (err) {
-            if (isMissing(err, "NoSuchKey")) {
+            if (isMissing(err, 'NoSuchKey')) {
                 return null;
             }
             throw err;
@@ -126,13 +120,11 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         const key = this.sanitizePath(path);
 
         try {
-            const response = await this.client.send(
-                new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key })
-            );
+            const response = await this.client.send(new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key }));
 
             if (!response.Body) return null;
 
-            if (typeof response.Body.transformToWebStream === "function") {
+            if (typeof response.Body.transformToWebStream === 'function') {
                 return response.Body.transformToWebStream() as ReadableStream;
             }
 
@@ -145,7 +137,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
                 },
             });
         } catch (err) {
-            if (isMissing(err, "NoSuchKey")) {
+            if (isMissing(err, 'NoSuchKey')) {
                 return null;
             }
             throw err;
@@ -167,7 +159,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
             await this.client.send(new this.sdk.HeadObjectCommand({ Bucket: this.bucket, Key: key }));
             return true;
         } catch (err) {
-            if (isMissing(err, "NotFound")) {
+            if (isMissing(err, 'NotFound')) {
                 return false;
             }
             throw err;
@@ -180,7 +172,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         let continuationToken: string | undefined;
         // A folder, as with the local adapter: "acme" must not also match
         // "acme-internal/" (sanitizePath drops the trailing slash).
-        const folder = prefix ? this.sanitizePath(prefix) : "";
+        const folder = prefix ? this.sanitizePath(prefix) : '';
 
         do {
             const response = await this.client.send(
@@ -188,14 +180,14 @@ export class S3StorageAdapter extends BaseStorageAdapter {
                     Bucket: this.bucket,
                     Prefix: folder ? `${folder}/` : undefined,
                     ContinuationToken: continuationToken,
-                })
+                }),
             );
 
             if (response.Contents) {
                 for (const obj of response.Contents) {
                     if (!obj.Key) continue;
                     files.push({
-                        name: obj.Key.split("/").pop() || obj.Key,
+                        name: obj.Key.split('/').pop() || obj.Key,
                         path: obj.Key,
                         size: obj.Size || 0,
                         mimeType: this.getMimeType(obj.Key),
@@ -216,7 +208,7 @@ export class S3StorageAdapter extends BaseStorageAdapter {
 
         const command = new this.sdk.GetObjectCommand({ Bucket: this.bucket, Key: key });
         // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded on first use, like the SDK
-        const { getSignedUrl } = require("@aws-sdk/s3-request-presigner") as Presigner;
+        const { getSignedUrl } = require('@aws-sdk/s3-request-presigner') as Presigner;
         return await getSignedUrl(this.client, command, { expiresIn });
     }
 
@@ -230,22 +222,22 @@ export class S3StorageAdapter extends BaseStorageAdapter {
                 Bucket: this.bucket,
                 // URL-encoded, as S3 requires: "100%25 done.txt" or "café.txt"
                 // otherwise copy the wrong object or fail.
-                CopySource: `${this.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+                CopySource: `${this.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
                 Key: destKey,
-            })
+            }),
         );
     }
 
     async isDirectory(path: string): Promise<boolean> {
         this.ensureConnected();
-        const prefix = this.sanitizePath(path).replace(/\/?$/, "/");
+        const prefix = this.sanitizePath(path).replace(/\/?$/, '/');
 
         const response = await this.client.send(
             new this.sdk.ListObjectsV2Command({
                 Bucket: this.bucket,
                 Prefix: prefix,
                 MaxKeys: 1,
-            })
+            }),
         );
 
         return (response.Contents?.length || 0) > 0;

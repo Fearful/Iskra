@@ -25,7 +25,16 @@ function stubApp() {
     };
 }
 
-function fakeFailedJob(over: Partial<{ id: string; name: string; data: unknown; attemptsMade: number; attempts: number; failedReason: string }>) {
+function fakeFailedJob(
+    over: Partial<{
+        id: string;
+        name: string;
+        data: unknown;
+        attemptsMade: number;
+        attempts: number;
+        failedReason: string;
+    }>,
+) {
     return {
         id: over.id ?? 'job-1',
         name: over.name ?? 'send.email',
