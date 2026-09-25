@@ -14,6 +14,8 @@ El `secret` de auth/web debe tener al menos **32 caracteres**. `createBetterAuth
 // tira: "auth secret must be at least 32 characters; received 8"
 ```
 
+En producción (`NODE_ENV=production`) también rechaza un secreto que sigue siendo un valor de ejemplo, uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder` (con cualquier mayúscula, con o sin `-`, `_`, `.` o espacios). Un secreto así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base: cualquiera podría falsificar una sesión. Los secretos de `SessionFeature` y `CsrfFeature` también necesitan 32 caracteres.
+
 Siempre traé los secretos del entorno, nunca los hardcodees:
 
 ```typescript
@@ -42,12 +44,19 @@ El feature de CSRF usa una cookie firmada con HMAC en patrón double-submit (pat
 import { CsrfFeature } from '@iskra-bun/web-kit';
 
 new CsrfFeature({
-    secret: process.env.CSRF_SECRET, // requerido, o tira error
-    // cookieName por defecto "_csrf", headerName por defecto "X-CSRF-Token"
+    secret: process.env.CSRF_SECRET, // requerido, >= 32 caracteres, o tira error
+    trustedOrigins: ['https://admin.example.com'], // otros orígenes cuyas páginas pueden hacer POST
+    // cookieName por defecto "__Host-csrf" ("_csrf" si no es Secure), headerName por defecto "X-CSRF-Token"
 });
 ```
 
-Las cookies usan por defecto `httpOnly`, `secure`, `sameSite: 'Strict'`. Hay un kill-switch `disableCSRFCheck` para desarrollo local, pero se **ignora en producción** — incluso si una config lo trae habilitado, se neutraliza cuando `NODE_ENV === 'production'`:
+El token solo no dice quién lo mandó: un subdominio hermano puede setear cookies para el dominio padre, así que podía plantar un token que conoce y mandarlo junto con la sesión de la víctima, y `SameSite` no frena una request del mismo sitio. Por eso:
+
+- Una request que modifica estado desde otro origen se rechaza: un `Origin` que no es el de la app ni está en `trustedOrigins` recibe 403, igual que una request sin `Origin` cuyo `Sec-Fetch-Site` es `cross-site`.
+- La cookie es `__Host-csrf` mientras sea Secure (el default), un nombre que solo el propio host de la app puede setear.
+- Con `SessionFeature`, el token se firma junto con el ID de la sesión almacenada, y `regenerateSession()` emite uno nuevo, así que un token de otra sesión no sirve.
+
+Las cookies usan por defecto `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` tiene un kill-switch `disableCSRFCheck` (para el chequeo propio de better-auth) para desarrollo local, pero se **ignora en producción** — incluso si una config lo trae habilitado, se neutraliza cuando `NODE_ENV === 'production'`:
 
 ```typescript
 const disableCSRFCheck = process.env.NODE_ENV !== 'production'
@@ -118,6 +127,10 @@ Los kits, drivers, plugins y features web corren con acceso total a la app, así
 `new App()` sin configuración lee `app.config.*` del directorio de trabajo (y `.env`). Ya no lee archivos `.apprc` ni descarga capas `extends` desde `github:`, `gitlab:` o `https://` (las rutas locales en `extends` siguen funcionando). Para un CLI o binario de escritorio que corre en directorios que no controlás, pasá la configuración a `new App({ ... })`.
 
 ## Hardening HTTP
+
+Los rate limits cuentan requests por IP del cliente: la dirección del socket o, con `new Kernel({ trustProxy: n })`, la que los proxies ponen en `clientIpHeader` (`X-Forwarded-For` por defecto, `X-Real-IP` si tu proxy completa ese). Solo se lee ese header, así que el cliente no puede elegir cuál cuenta; los clientes IPv6 cuentan por /64, y los contadores en memoria tienen un tope y se barren.
+
+`CorsFeature` con `credentials: true` necesita la lista de orígenes permitidos: un `origin` comodín hace que `initialize()` tire un error, en vez de mandar `Access-Control-Allow-Origin: *` (que los navegadores rechazan con credenciales) y tentar a las apps a reflejar cualquier origen.
 
 El endpoint de health oculta los detalles internos por defecto. `includeDetails` es `false` por defecto, así que las listas de features, los chequeos de DB y los errores crudos (que pueden incluir connection strings) nunca se serializan al cliente salvo que lo habilites explícitamente:
 

@@ -30,6 +30,14 @@ createBetterAuth({ db, adapterType: 'postgres', secret: '' });        // throws
 createBetterAuth({ db, adapterType: 'postgres', secret: 'short' });   // throws
 ```
 
+In production (`NODE_ENV=production`) it also throws for a secret that is still a sample value: one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder`, compared without case, `-`, `_`, `.` or spaces (so `changeme` and `CHANGE_ME` count too). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone who knows it can forge a session for any user. The error names the matching word, never the secret:
+
+```typescript
+// NODE_ENV=production
+createBetterAuth({ db, adapterType: 'postgres', secret: 'dev-secret-change-me-min-32-characters-long' });
+// throws: auth secret looks like a placeholder (it contains "change-me"); ...
+```
+
 Always supply the secret from an environment variable; never hardcode it:
 
 ```typescript
@@ -134,6 +142,7 @@ On MySQL, `verification.value` is `text`: it holds the OAuth state, longer than 
 ## Environment Variables
 
 ```bash
-# Must be at least 32 characters; use a random, secret value
-AUTH_SECRET=replace-with-32-or-more-random-characters
+# At least 32 random characters, e.g. the output of: openssl rand -base64 32
+# (in production a sample value such as "change-me…" is refused)
+AUTH_SECRET=
 ```
