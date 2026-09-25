@@ -22,11 +22,11 @@ App mínima con un servidor web y un CRUD de usuarios. Un buen primer proyecto.
 `cd templates/starter-app && bun start`
 
 ### ecommerce-api
-Backend de e-commerce con catálogo de productos, gestión de órdenes, persistencia en DB y cache.
+Backend de e-commerce con catálogo de productos, gestión de órdenes, persistencia en DB y cache. Crear productos y órdenes exige API keys por usuario (`API_KEYS`, rol admin o customer); el catálogo es público.
 `cd templates/ecommerce-api && bun start`
 
 ### cms-starter
-CMS con API REST sobre SQLite: flujo draft/publish, versionado de contenido, validación de slugs (Zod) vía Drizzle ORM.
+CMS con API REST sobre SQLite: flujo draft/publish, versionado de contenido, validación de slugs (Zod) vía Drizzle ORM. Editar y leer borradores o el historial exige una API key de editor (`API_KEYS`); el público solo lee lo publicado.
 `cd templates/cms-starter && bun start`
 
 ### db-starter
@@ -40,11 +40,11 @@ Plataforma de formularios con arquitectura de microservicios: formularios pre-re
 ## Tiempo real
 
 ### chat-app
-Chat en tiempo real sobre WebSocket con salas, presencia de usuarios, historial paginado respaldado por KV store y autenticación en el handshake.
-`cd templates/chat-app && bun start` · cliente: `bun run client`
+Chat en tiempo real sobre WebSocket con salas, presencia de usuarios, historial paginado respaldado por KV store y autenticación en el handshake con tokens firmados por el servidor que vencen.
+`cd templates/chat-app && bun start` · cliente: `CHAT_TOKEN=$(bun run --silent token ana) bun run client`
 
 ### realtime-feed
-Feed social que combina una API HTTP con un stream WebSocket en tiempo real.
+Feed social que combina una API HTTP con un stream WebSocket en tiempo real. Publicar exige una API key de autor (`API_KEYS`) y tiene un límite por autor.
 `cd templates/realtime-feed && bun start`
 
 ## Trabajo en background
