@@ -22,8 +22,16 @@ async function example4_BuiltInRoutes() {
         new UploadFeature({
             projectName: "media",
             exposeRoutes: true, // Enable built-in routes
-            // Required with exposeRoutes. With AuthFeature, e.g. only signed-in users:
-            // authorize: (c) => Boolean(c.get("user")),
+            // Required with exposeRoutes. With AuthFeature, scope each user to
+            // their own folder: `Boolean(c.get("user"))` alone would let every
+            // signed-in user read and delete every file.
+            // authorize: (c, _action, target) => {
+            //     const user = c.get("user");
+            //     if (!user) return false;
+            //     if (!target) return true; // upload, before the body is read
+            //     const own = `users/${user.id}`;
+            //     return target.subfolder === own || target.subfolder?.startsWith(`${own}/`) === true;
+            // },
             authorize: () => true, // public on purpose (demo)
             // routePrefix: "/media", // Custom prefix
             // maxFileSize: 10 * 1024 * 1024, // 10MB
