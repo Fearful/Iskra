@@ -469,6 +469,16 @@ Proteccion via `CsrfFeature` de Iskra. El formulario pre-renderizado obtiene un 
 
 Verificacion invisible sin interaccion del usuario. Cada envio incluye un token que se verifica contra la API de Google. forms-api lo rechaza si Google no lo valida, si fue emitido para otra accion que `submit` (la que pide el formulario), si viene de un hostname fuera de `RECAPTCHA_HOSTNAMES` (cuando esta definida) o si el score es menor a 0.5 (configurable); un error al consultar a Google tambien lo rechaza. El score se guarda con la respuesta para analisis posterior.
 
+### Content-Security-Policy
+
+forms-api sirve cada formulario con una CSP restrictiva (`FORM_PAGE_CSP` en
+`static.routes.ts`): scripts y estilos solo del propio origen (ninguno inline), mas los
+origenes que Google documenta para reCAPTCHA v3 (`www.google.com/recaptcha/`,
+`www.gstatic.com/recaptcha/` y su iframe), conexiones solo a forms-api y a reCAPTCHA, y
+`frame-ancestors 'none'` (ademas de `X-Frame-Options: DENY`): ningun sitio puede
+enmarcar el formulario. Si cambias `html-template.ts` o `form-runtime.ts` para cargar algo
+mas (un script inline, otra fuente, imagenes externas), actualiza esa politica.
+
 ### Rate limiting
 
 `RateLimitFeature` en forms-api: 60 requests por minuto por IP. Evita abuso y scraping.

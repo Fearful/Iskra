@@ -55,6 +55,17 @@ describe('buildFormBundle', () => {
             expect(script).toBeDefined();
             expect(existsSync(join(out, script!.replace('/formularios/demo/encuesta/', '')))).toBe(true);
             expect(html).toMatch(/href="\/formularios\/demo\/encuesta\/assets\/[^"]+\.css"/);
+
+            // forms-api serves the page under a CSP without 'unsafe-inline':
+            // no inline script or style, and scripts only from the page's
+            // origin or reCAPTCHA.
+            expect(html).not.toMatch(/<script(?![^>]*\ssrc=)[^>]*>/);
+            expect(html).not.toMatch(/<style|\sstyle=/);
+            const sources = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);
+            expect(sources).toHaveLength(2);
+            for (const source of sources) {
+                expect(source).toMatch(/^(\/formularios\/|https:\/\/www\.google\.com\/recaptcha\/)/);
+            }
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
