@@ -14,10 +14,10 @@
         "@iskra-bun/core": "workspace:*",
         "@iskra-bun/desktop-kit": "workspace:*",
         "@tauri-apps/api": "^2.0.0",
-        "@tauri-apps/plugin-dialog": "^2.0.0",
+        "@tauri-apps/plugin-dialog": "^2.7.3",
         "zod": "^3.24.1"
     },
     "devDependencies": {
-        "@tauri-apps/cli": "^2.0.0"
+        "@tauri-apps/cli": "^2.11.5"
     }
 }
