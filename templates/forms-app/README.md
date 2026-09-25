@@ -143,8 +143,13 @@ El admin-api no permite registrarse publicamente: todas sus rutas requieren sesi
 cd services/admin-api
 set -a; . ../../.env; set +a  # DB_PASSWORD
 DATABASE_URL="postgresql://forms:$DB_PASSWORD@localhost:5432/forms_app" \
-  bun run create-admin admin@example.com 'una-contrasena-larga'
+  bun run create-admin admin@example.com --name 'Ada Lovelace'
 ```
+
+El script pide la contrasena dos veces, sin mostrarla. No la acepta como argumento: los
+argumentos de un proceso los ve cualquier usuario con `ps` y quedan en el historial del
+shell. Sin terminal (un script, CI) la lee de la variable `ADMIN_PASSWORD` o de la primera
+linea de stdin (`bun run create-admin admin@example.com < archivo-con-la-contrasena`).
 
 Despues inicia sesion en http://localhost/admin/login.
 
