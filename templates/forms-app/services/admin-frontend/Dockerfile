@@ -18,7 +18,8 @@ WORKDIR /build/templates/forms-app/services/admin-frontend
 RUN bun run build
 
 # ─── Stage 2: Serve with nginx ───────────────────────────────────────────────
-FROM nginx:alpine
+# nginx's stable branch, not whatever :alpine points to at build time.
+FROM nginx:1.30-alpine
 
 # The app is built with base /admin/ (assets at /admin/assets/...).
 COPY --from=builder /build/templates/forms-app/services/admin-frontend/dist /usr/share/nginx/html/admin

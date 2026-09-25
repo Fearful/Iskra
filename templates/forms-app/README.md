@@ -573,7 +573,7 @@ Cada servicio tiene su propio Dockerfile:
 | Servicio | Imagen base runtime | Nota |
 |----------|-------------------|------|
 | admin-api | UBI9 minimal | Binary compilado con `bun build --compile` |
-| admin-frontend | nginx:alpine | Build de Vite → archivos estaticos servidos por nginx |
+| admin-frontend | nginx:1.30-alpine | Build de Vite → archivos estaticos servidos por nginx |
 | form-manager | oven/bun:1.3.14 | Necesita Vite en runtime, no se puede compilar a binario |
 | cron | UBI9 minimal | Binary compilado |
 | forms-api | UBI9 minimal | Binary compilado + volumen para archivos estaticos |
