@@ -124,7 +124,8 @@ export class CsrfFeature implements Feature {
         const method = c.req.method.toUpperCase();
         // The stored session the token must be bound to, if any.
         const sessionId = c.get('sessionPersisted') ? c.get('sessionId') : undefined;
-        let token = getCookie(c, this.config.cookieName);
+        const cookieToken = getCookie(c, this.config.cookieName);
+        let token = cookieToken;
 
         // A token for another session (or none), e.g. the anonymous one from
         // before login, is replaced; an unsafe request carrying it fails below.
@@ -132,10 +133,18 @@ export class CsrfFeature implements Feature {
             token = newCsrfToken(this.config.secret, sessionId);
             this.setTokenCookie(c, token);
         }
+        // Except an unbound one sent from the app's own pages: the page that
+        // stored the session (a login without regenerateSession(), a cart)
+        // was rendered with one, and its form would fail. Binding stops tokens
+        // planted by another site, and those cannot be sent from there.
+        const unbound =
+            sessionId && cookieToken && cookieToken !== token && verifyCsrfToken(cookieToken, this.config.secret)
+                ? cookieToken
+                : undefined;
 
         c.set('csrfToken', token);
-        const cookieToken = token;
-        c.set('verifyCsrf', () => this.validateToken(c, cookieToken));
+        const expectedToken = token;
+        c.set('verifyCsrf', () => this.validateToken(c, expectedToken, unbound));
 
         // A new session ID (login) gets a new token bound to it.
         const regenerate = c.get('regenerateSession');
@@ -153,7 +162,7 @@ export class CsrfFeature implements Feature {
             return;
         }
 
-        const isValid = await this.validateToken(c, token);
+        const isValid = await this.validateToken(c, token, unbound);
         if (!isValid) {
             throw new HTTPException(403, { message: 'Invalid CSRF token' });
         }
@@ -161,35 +170,47 @@ export class CsrfFeature implements Feature {
         await next();
     }
 
-    /**
-     * Whether the browser says the request comes from the app's own pages or a
-     * trusted origin. The token alone could not tell: a sibling subdomain can
-     * plant a cookie with a token it knows and submit it, and SameSite does not
-     * stop it (same site). Requests without these headers (other clients) are
-     * left to the token.
-     */
-    private originAllowed(c: Context): boolean {
-        const site = c.req.header('sec-fetch-site');
+    /** Whether the browser says the request comes from the app's own pages or a trusted origin. */
+    private fromTrustedPage(c: Context): boolean {
         // The browser's own verdict holds even when a proxy in front (TLS,
         // another port) makes the URL the app sees differ from the page's.
-        if (site === 'same-origin') return true;
+        if (c.req.header('sec-fetch-site') === 'same-origin') return true;
         const origin = c.req.header('origin');
-        if (origin) return origin === new URL(c.req.url).origin || this.trustedOrigins.has(origin);
-        return site !== 'cross-site';
+        return !!origin && (origin === new URL(c.req.url).origin || this.trustedOrigins.has(origin));
     }
 
-    private async validateToken(c: Context, expectedToken: string): Promise<boolean> {
+    /**
+     * Whether the request may come from where it does. The token alone could
+     * not tell: a sibling subdomain can plant a cookie with a token it knows
+     * and submit it, and SameSite does not stop it (same site). Requests
+     * without `Origin` or `Sec-Fetch-Site` (other clients) are left to the token.
+     */
+    private originAllowed(c: Context): boolean {
+        if (this.fromTrustedPage(c)) return true;
+        if (c.req.header('origin')) return false;
+        return c.req.header('sec-fetch-site') !== 'cross-site';
+    }
+
+    /**
+     * Checks the origin, then the header or body token against the cookie's:
+     * `expectedToken`, or `unbound` (see the middleware) when the browser says
+     * the request comes from the app's own pages.
+     */
+    private async validateToken(c: Context, expectedToken: string, unbound?: string): Promise<boolean> {
         if (!this.originAllowed(c)) return false;
 
+        const accepted = unbound && this.fromTrustedPage(c) ? [expectedToken, unbound] : [expectedToken];
+        const matches = (candidate: string) => accepted.some((token) => constantTimeEqual(candidate, token));
+
         const headerToken = c.req.header(this.config.headerName);
-        if (headerToken && constantTimeEqual(headerToken, expectedToken)) return true;
+        if (headerToken && matches(headerToken)) return true;
 
         try {
             const contentType = c.req.header('content-type');
             if (contentType?.includes('application/x-www-form-urlencoded')) {
                 const body = await c.req.parseBody();
                 const bodyToken = body._csrf || body[this.config.cookieName];
-                if (bodyToken && constantTimeEqual(String(bodyToken), expectedToken)) return true;
+                if (bodyToken && matches(String(bodyToken))) return true;
             }
         } catch (error) {
             // A malformed/unparseable body just means no valid body token is

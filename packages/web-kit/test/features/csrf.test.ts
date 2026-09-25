@@ -334,6 +334,33 @@ describe('CsrfFeature with SessionFeature', () => {
         expect(res.status).toBe(200);
     });
 
+    it("accepts the unbound token of the page that stored the session, from the app's own pages", async () => {
+        // The page that stored the session (here a login without
+        // regenerateSession(), or a cart) was rendered with an unbound token,
+        // and its next form got 403.
+        const app = await appWithSessionAndCsrf();
+        const anonymous = await app.request('/safe');
+        const { token } = (await anonymous.json()) as { token: string };
+        const login = await app.request('/login', {
+            method: 'POST',
+            headers: { cookie: cookiesFromResponse(anonymous), 'X-CSRF-Token': token },
+        });
+        expect(login.status).toBe(200);
+        const cookie = `${cookiesFromResponse(login)}; ${cookiesFromResponse(anonymous)}`;
+        const post = (headers: Record<string, string>) =>
+            app.request('/mutate', { method: 'POST', headers: { cookie, 'X-CSRF-Token': token, ...headers } });
+
+        const sameOrigin = await post({ 'sec-fetch-site': 'same-origin' });
+        expect(sameOrigin.status).toBe(200);
+        // ...and replaced by a token bound to the session.
+        expect(cookiesFromResponse(sameOrigin)).toMatch(/^_csrf=/);
+        expect((await post({ origin: 'http://localhost' })).status).toBe(200);
+
+        // Not from anywhere else, nor without the browser saying where from.
+        expect((await post({ origin: 'https://evil.example.com', 'sec-fetch-site': 'same-site' })).status).toBe(403);
+        expect((await post({})).status).toBe(403);
+    });
+
     it("rejects a token planted in a logged-in user's cookie, anonymous or another session's", async () => {
         // Regression: tokens were valid for anyone, so an attacker able to set
         // the cookie (a sibling subdomain) submitted a token of their own
