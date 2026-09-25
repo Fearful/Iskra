@@ -12,7 +12,9 @@ describe("cron's calls to form-manager", () => {
 
     it('send the internal API token', async () => {
         // form-manager's /internal API requires it: it used to answer anyone.
-        const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'));
+        const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+            (async (_input: string | URL | Request, _init?: RequestInit) => new Response('{}')) as typeof fetch,
+        );
         const logSpy = spyOn(console, 'log').mockImplementation(() => {});
         spies.push(fetchSpy, logSpy);
         SchedulerService.setDb(fakeDb([{ id: 'form-1', title: 'F' }]));
