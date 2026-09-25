@@ -25,12 +25,14 @@ export default {
 };
 ```
 
-The logger redacts sensitive fields automatically. Keys matching `password`, `pass`, `apiKey`, `apiSecret`, `token`, `authToken`, `secret`, `config.env`, and any `*.data` are replaced with `[REDACTED]` before anything is written:
+The logger redacts sensitive fields automatically, at any depth. Keys such as `password`, `pass`, `apiKey`, `apiSecret`, `token`, `authToken`, `accessToken`, `secret`, `clientSecret`, `privateKey`, `authorization`, `cookie`, `setCookie` and `sessionId`, and keys ending in `password`, `secret`, `token`, `apiKey`, `secretKey`, `privateKey` or `accessKey`, are replaced with `[REDACTED]` before anything is written, as are `config.env` and any `*.data`. Keys are compared without case, `-` or `_`, so `api_key`, `X-API-Key` and `DB_PASSWORD` match too:
 
 ```typescript
-app.logger.info({ password: 'hunter2', token: 'abc' }, 'login');
-// → { password: '[REDACTED]', token: '[REDACTED]' }
+app.logger.info({ password: 'hunter2', headers: { 'x-api-key': 'abc' } }, 'login');
+// → { password: '[REDACTED]', headers: { 'x-api-key': '[REDACTED]' } }
 ```
+
+The same applies to the bindings of child loggers and to the fields of logged errors (an HTTP client's `config.headers.Authorization`, say). In messages, and in error messages and stacks, the password of a `scheme://user:password@host` URL and secret-looking query parameters (`?authToken=`, `&X-Amz-Signature=`) are masked.
 
 ## CSRF protection
 
@@ -69,7 +71,7 @@ new SocketDriver({
 });
 ```
 
-`maxPayloadLength` bounds frame size and the per-connection rate limit drops connections that exceed their message budget, protecting against floods.
+`maxPayloadLength` bounds frame size and the per-connection rate limit drops the frames over a connection's message budget, protecting against floods (it logs one warning per window, not one per frame). The hooks are only called with string rooms and topics: a handler that passes a client's value on cannot slip `["global"]` past a deny-list such as `topic !== 'global'`.
 
 ## Email
 
@@ -108,6 +110,12 @@ new S3Adapter({
     connection: { endpoint: 'https://s3.example.com' /* useSSL defaults on */ },
 });
 ```
+
+## Plugins and configuration
+
+Kits, drivers, plugins and web features run with full access to the app, so the Kernel keeps their composition from weakening it: a second feature with a name already registered (a helper called `csrf`, a second `RateLimitFeature`) is refused instead of silently replacing the first, and routes added before `initialize()`, or by a feature in `initialize()` instead of `routes()`, make `initialize()` fail instead of running without the security headers and the other features' middleware.
+
+`new App()` without a config reads `app.config.*` from the working directory (and `.env`). It no longer reads `.apprc` files, and it does not download `extends` layers from `github:`, `gitlab:` or `https://` sources (local `extends` paths still work). For a CLI or desktop binary that runs in directories you don't control, pass the config to `new App({ ... })`.
 
 ## HTTP hardening
 
