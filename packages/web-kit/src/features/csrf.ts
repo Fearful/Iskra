@@ -4,6 +4,7 @@ import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { getCookie, setCookie } from "hono/cookie";
 import { createHmac, timingSafeEqual, randomUUID } from "crypto";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 declare module "hono" {
     interface ContextVariableMap {
@@ -50,6 +51,7 @@ function verifyCsrfToken(token: string, secret: string): boolean {
 
 export class CsrfFeature implements Feature {
     name = "csrf";
+    private log: KernelLogger = consoleLogger;
     private config: Required<CsrfConfig>;
 
     constructor(config: CsrfConfig) {
@@ -70,11 +72,12 @@ export class CsrfFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
         app.use("*", async (c: Context, next: Next) => {
             await this.middleware(c, next);
         });
-        console.log("✅ CSRF feature initialized");
+        this.log.debug("CSRF feature initialized");
     }
 
     private async middleware(c: Context, next: Next) {

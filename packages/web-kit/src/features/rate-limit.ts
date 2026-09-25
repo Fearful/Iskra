@@ -3,6 +3,7 @@ import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { getClientIp, type TrustProxy } from "../client-ip";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 interface RateLimitStore {
     get(key: string): Promise<number | null>;
@@ -73,6 +74,7 @@ class CacheStoreWrapper implements RateLimitStore {
 
 export class RateLimitFeature implements Feature {
     name = "rate-limit";
+    private log: KernelLogger = consoleLogger;
     /**
      * `store: "cache"` needs the cache feature initialized first; registered
      * after this one, it was not, and limits silently fell back to a
@@ -103,14 +105,15 @@ export class RateLimitFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.trustProxy = kernel.getConfig().trustProxy;
 
         if (this.config.store === "cache") {
-            const cacheFeature = kernel.getFeature("cache") as any;
+            const cacheFeature = kernel.getFeature("cache");
             if (cacheFeature?.client) {
                 this.store = new CacheStoreWrapper(cacheFeature.client);
             } else {
-                console.warn("⚠️ Cache feature not available for rate-limit, falling back to memory store");
+                this.log.warn("Cache feature not available for rate-limit, falling back to memory store");
                 const mem = new MemoryStore();
                 this.store = mem;
                 this.cleanupInterval = setInterval(() => mem.cleanup(), 300000);
@@ -127,7 +130,7 @@ export class RateLimitFeature implements Feature {
         app.use("*", async (c: Context, next: Next) => {
             await this.middleware(c, next);
         });
-        console.log("✅ Rate limit feature initialized");
+        this.log.debug("Rate limit feature initialized");
     }
 
     private async middleware(c: Context, next: Next) {
@@ -178,8 +181,8 @@ export class RateLimitFeature implements Feature {
         if (ip) return ip;
         if (!this.warnedUnknownClient) {
             this.warnedUnknownClient = true;
-            console.warn(
-                "⚠️ rate-limit: client IP unavailable (not served by Bun.serve?); all such requests share one bucket. " +
+            this.log.warn(
+                "rate-limit: client IP unavailable (not served by Bun.serve?); all such requests share one bucket. " +
                     "Pass a keyGenerator to identify clients.",
             );
         }

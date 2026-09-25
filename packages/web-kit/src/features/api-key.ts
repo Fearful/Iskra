@@ -2,6 +2,7 @@ import type { Feature, ApiKeyConfig, ApiKeyMetadata, ApiKeyValidationResult } fr
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 // Resolved config: scalar/array fields are always populated by the constructor
 // defaults, while the genuinely optional callbacks stay optional. This replaces
@@ -49,7 +50,6 @@ export class ApiKeyStore {
 
             this.staticKeysMap.set(staticKey.key, metadata);
         }
-        console.log(`✅ Loaded ${this.staticKeysMap.size} static API keys`);
     }
 
     private generateId(_key: string): string {
@@ -125,6 +125,7 @@ declare module "hono" {
 
 export class ApiKeyFeature implements Feature {
     name = "apiKey";
+    private log: KernelLogger = consoleLogger;
     private store?: ApiKeyStore;
     private config: ResolvedApiKeyConfig;
 
@@ -150,6 +151,7 @@ export class ApiKeyFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.store = new ApiKeyStore(this.config, kernel);
         const app = kernel.getApp();
 
@@ -203,7 +205,7 @@ export class ApiKeyFeature implements Feature {
             await next();
         });
 
-        console.log("✅ API Key feature initialized");
+        this.log.debug(`API Key feature initialized (${this.config.staticKeys?.length ?? 0} static keys)`);
     }
 
     private shouldSkipPath(path: string): boolean {

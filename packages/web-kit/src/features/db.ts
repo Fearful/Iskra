@@ -7,6 +7,7 @@ import { drizzle as drizzleBunSqlite, type BunSQLiteDatabase } from 'drizzle-orm
 import postgres from 'postgres';
 import mysql from 'mysql2/promise';
 import { Database } from 'bun:sqlite';
+import { consoleLogger, type KernelLogger } from "../logging";
 
 /**
  * The Drizzle database handle a {@link DbFeature} exposes, parameterized by the
@@ -28,17 +29,19 @@ declare module "hono" {
 
 export class DbFeature<TSchema extends Record<string, unknown> = Record<string, never>> implements Feature {
     name = "db";
+    private log: KernelLogger = consoleLogger;
     private client: any;
     public db!: WebKitDrizzleDb<TSchema>;
-    public readonly adapter: string;
+    public readonly adapter: DbConfig["adapter"];
 
     constructor(private config: DbConfig) {
         this.adapter = config.adapter;
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const config = this.config;
-        console.log(`⚙️ Initializing DB driver: ${config.adapter}`);
+        this.log.debug(`Initializing DB driver: ${config.adapter}`);
 
         try {
             switch (config.adapter) {
@@ -79,12 +82,12 @@ export class DbFeature<TSchema extends Record<string, unknown> = Record<string, 
                 default:
                     throw new Error(`Unsupported DB adapter: ${config.adapter}`);
             }
-            console.log('✅ DB connected successfully.');
+            this.log.debug('DB connected');
         } catch (error) {
             // Log only the message — the full error/config object can embed the
             // connection string (host, user, password) and must not be logged.
             const message = error instanceof Error ? error.message : String(error);
-            console.error(`❌ Failed to connect to DB: ${message}`);
+            this.log.error(`Failed to connect to DB: ${message}`);
             throw error;
         }
 

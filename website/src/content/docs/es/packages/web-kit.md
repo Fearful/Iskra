@@ -77,6 +77,9 @@ Defaults del servidor, configurables en `new Kernel({ ... })`:
 | `maxRequestBodySize` | 16 MiB | Tamano maximo del body; por encima Bun responde 413 |
 | `idleTimeout` | 10 s (Bun) | Segundos que una conexion puede quedar inactiva |
 | `shutdownGraceMs` | 5000 | Cuanto espera `shutdown()` a los requests en curso antes de cerrar las conexiones |
+| `logger` | la consola | Donde loguean el Kernel y sus features (ver abajo); `false` para nada |
+
+El Kernel y sus features reportan el arranque, los fallbacks y los errores que manejan a traves de un logger: un objeto con `debug`, `info`, `warn` y `error(message, details?)`. `WebPlugin` le pasa el logger del App salvo que definas `logger`, asi estos mensajes comparten el formato y el nivel de la app (la linea de arranque de cada feature es `debug`). Una feature propia lo obtiene con `kernel.getLogger()` en `initialize()`. `fromStructuredLogger(pinoLogger)` adapta un logger estilo pino.
 
 `shutdown()` deja de aceptar conexiones, espera los requests en curso (hasta `shutdownGraceMs`) y apaga las features en orden inverso de dependencias; si alguna falla, sigue con las demas y al final tira un `AggregateError`.
 

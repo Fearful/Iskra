@@ -2,6 +2,7 @@ import type { Feature, PermissionsConfig, Role } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 declare module "hono" {
     interface ContextVariableMap {
@@ -21,6 +22,7 @@ const DEFAULT_ROLES: Record<string, Role> = {
 
 export class PermissionsFeature implements Feature {
     name = "permissions";
+    private log: KernelLogger = consoleLogger;
     dependencies = ["auth"];
     private config: Required<PermissionsConfig>;
     private roles: Map<string, Role> = new Map();
@@ -38,11 +40,12 @@ export class PermissionsFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
         app.use("*", async (c: Context, next: Next) => {
             await this.permissionsMiddleware(c, next, kernel);
         });
-        console.log("✅ Permissions feature initialized");
+        this.log.debug("Permissions feature initialized");
     }
 
     private async permissionsMiddleware(c: Context, next: Next, _kernel: Kernel) {

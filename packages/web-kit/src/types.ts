@@ -1,4 +1,5 @@
 import type { TrustProxy } from "./client-ip";
+import type { KernelLogger } from "./logging";
 import type { Kernel } from "./kernel";
 
 export type { Kernel };
@@ -26,6 +27,12 @@ export interface KernelConfig {
      * by default the socket address is used. See `getClientIp`.
      */
     trustProxy?: TrustProxy;
+    /**
+     * Where the Kernel and its features log (startup, fallbacks, errors they
+     * handle). Default: the console. `false`: nothing. WebPlugin passes the
+     * App's logger unless one is given here.
+     */
+    logger?: KernelLogger | false;
 }
 
 export interface SecurityHeadersConfig {

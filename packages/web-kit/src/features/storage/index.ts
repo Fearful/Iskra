@@ -3,6 +3,7 @@ import type { Kernel } from "../../kernel";
 import type { StorageConfig } from "@iskra-bun/storage-kit";
 import { BaseStorageAdapter, createStorageAdapter } from "@iskra-bun/storage-kit";
 import type { Context, Next } from "hono";
+import { consoleLogger, type KernelLogger } from "../../logging";
 
 export { BaseStorageAdapter, LocalStorageAdapter } from "@iskra-bun/storage-kit";
 export type { StorageConfig, StorageFile } from "@iskra-bun/storage-kit";
@@ -15,11 +16,13 @@ declare module "hono" {
 
 export class StorageFeature implements Feature {
     name = "storage";
+    private log: KernelLogger = consoleLogger;
     private adapter?: BaseStorageAdapter;
 
     constructor(private config: StorageConfig) { }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.adapter = await createStorageAdapter(this.config);
         await this.adapter.connect();
 
@@ -29,7 +32,7 @@ export class StorageFeature implements Feature {
             await next();
         });
 
-        console.log(`✅ StorageFeature initialized - ${this.config.adapter}`);
+        this.log.debug(`StorageFeature initialized (${this.config.adapter})`);
     }
 
     async shutdown(): Promise<void> {

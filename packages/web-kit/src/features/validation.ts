@@ -3,6 +3,8 @@ import type { Kernel } from "../kernel";
 import type { Context, Next, Hono, Handler } from "hono";
 import { z } from "zod";
 import { ErrorCodes, errorResponse } from "../responses";
+import { consoleLogger, type KernelLogger } from "../logging";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 // Extend Hono Context to include valid() method
 declare module "hono" {
@@ -24,11 +26,13 @@ export interface ValidationSchema {
 
 export interface ValidationOptions {
     logErrors?: boolean;
+    /** Where errors are logged (default: the console). */
+    logger?: KernelLogger;
     status?: number;
 }
 
 function createValidationMiddleware(schema: ValidationSchema, options: ValidationOptions = {}) {
-    const { logErrors = true, status = 400 } = options;
+    const { logErrors = true, status = 400, logger = consoleLogger } = options;
 
     return async (c: Context, next: Next) => {
         try {
@@ -37,7 +41,7 @@ function createValidationMiddleware(schema: ValidationSchema, options: Validatio
             if (schema.params) {
                 const parsed = schema.params.safeParse(c.req.param());
                 if (!parsed.success) {
-                    return c.json(errorResponse("Invalid route params", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as any);
+                    return c.json(errorResponse("Invalid route params", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as ContentfulStatusCode);
                 }
                 validated.params = parsed.data;
             }
@@ -45,7 +49,7 @@ function createValidationMiddleware(schema: ValidationSchema, options: Validatio
             if (schema.query) {
                 const parsed = schema.query.safeParse(c.req.query());
                 if (!parsed.success) {
-                    return c.json(errorResponse("Invalid query params", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as any);
+                    return c.json(errorResponse("Invalid query params", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as ContentfulStatusCode);
                 }
                 validated.query = parsed.data;
             }
@@ -61,7 +65,7 @@ function createValidationMiddleware(schema: ValidationSchema, options: Validatio
 
                 const parsed = schema.body.safeParse(data);
                 if (!parsed.success) {
-                    return c.json(errorResponse("Invalid body", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as any);
+                    return c.json(errorResponse("Invalid body", ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()), status as ContentfulStatusCode);
                 }
                 validated.body = parsed.data;
             }
@@ -71,7 +75,7 @@ function createValidationMiddleware(schema: ValidationSchema, options: Validatio
 
             await next();
         } catch (err) {
-            if (logErrors) console.error("Validation error:", err);
+            if (logErrors) logger.error("Validation error", err);
             return c.json(errorResponse("Validation middleware failed", ErrorCodes.INTERNAL_ERROR), 500);
         }
     };
@@ -91,14 +95,16 @@ function extendHonoWithValidation(app: Hono) {
 
 export class ValidationFeature implements Feature {
     name = "validation";
+    private log: KernelLogger = consoleLogger;
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
         extendHonoWithValidation(app);
 
         // Add context helper if not already present via middleware factory logic
         // The middleware factory adds .valid() to the SPECIFIC request context
-        console.log("✅ Validation feature initialized");
+        this.log.debug("Validation feature initialized");
     }
 }
 

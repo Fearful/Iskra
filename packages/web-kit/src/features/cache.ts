@@ -2,6 +2,7 @@ import type { Feature, CacheConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
 import Redis from "ioredis";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 // Standard Cache Interface
 export interface CacheAdapter {
@@ -132,12 +133,14 @@ declare module "hono" {
 
 export class CacheFeature implements Feature {
     name = "cache";
+    private log: KernelLogger = consoleLogger;
     public client!: CacheAdapter;
 
     constructor(private config: CacheConfig = { adapter: "memory" }) { }
 
     async initialize(kernel: Kernel): Promise<void> {
-        console.log(`⚙️ Initializing Cache: ${this.config.adapter}`);
+        this.log = kernel.getLogger();
+        this.log.debug(`Initializing Cache: ${this.config.adapter}`);
 
         if (this.config.adapter === "redis") {
             const conn = this.config.connection || {};
@@ -149,7 +152,7 @@ export class CacheFeature implements Feature {
                     db: conn.db || 0
                 });
             } catch {
-                console.warn("⚠️ Redis connection failed, falling back to memory cache");
+                this.log.warn("Redis connection failed, falling back to memory cache");
                 this.client = new MemoryAdapter();
             }
         } else {
@@ -162,7 +165,7 @@ export class CacheFeature implements Feature {
             await next();
         });
 
-        console.log('✅ Cache initialized.');
+        this.log.debug('Cache initialized');
     }
 
     async shutdown(): Promise<void> {

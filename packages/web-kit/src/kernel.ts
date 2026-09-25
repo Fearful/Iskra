@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Context, Next } from "hono";
 import type { Feature, KernelConfig, SecurityHeadersConfig } from "./types";
+import { consoleLogger, silentLogger, type KernelLogger } from "./logging";
+import type { FeatureRegistry } from "./feature-registry";
 
 /**
  * Core microkernel orchestrator that manages features, dependencies, and application lifecycle.
@@ -11,6 +13,7 @@ export class Kernel {
     private config: KernelConfig;
     private features: Map<string, Feature> = new Map();
     private initialized = false;
+    private logger: KernelLogger;
 
     constructor(config: KernelConfig = {}) {
         this.config = {
@@ -21,6 +24,7 @@ export class Kernel {
             maxRequestBodySize: 16 * 1024 * 1024,
             ...config,
         };
+        this.logger = config.logger === false ? silentLogger : (config.logger ?? consoleLogger);
         this.app = new Hono();
 
         // Add default error handler for HTTPException
@@ -35,7 +39,7 @@ export class Kernel {
                 );
             }
 
-            console.error("Unhandled error:", err);
+            this.logger.error("Unhandled error", err);
             return c.json(
                 { message: "Internal Server Error" },
                 500,
@@ -48,7 +52,7 @@ export class Kernel {
             throw new Error("Kernel already initialized");
         }
 
-        console.log("🚀 Initializing Web-Kit Kernel...");
+        this.logger.debug("Initializing Web-Kit Kernel");
 
         this.validateFeatureDependencies();
         await this.validatePeerDependencies();
@@ -61,7 +65,7 @@ export class Kernel {
         // features registered after it.
         const orderedFeatures = this.sortFeaturesByDependencies();
         for (const feature of orderedFeatures) {
-            console.log(`⚙️  Initializing feature: ${feature.name}`);
+            this.logger.debug(`Initializing feature: ${feature.name}`);
             await feature.initialize(this);
         }
         for (const feature of orderedFeatures) {
@@ -69,7 +73,7 @@ export class Kernel {
         }
 
         this.initialized = true;
-        console.log("✅ Web-Kit Kernel initialized");
+        this.logger.info(`Web-Kit Kernel initialized (${orderedFeatures.map((f) => f.name).join(", ") || "no features"})`);
     }
 
     private applySecurityHeaders(): void {
@@ -141,7 +145,6 @@ export class Kernel {
         }
 
         this.features.set(feature.name, feature);
-        console.log(`📦 Registered feature: ${feature.name}`);
     }
 
     private validateFeatureDependencies(): void {
@@ -167,9 +170,7 @@ export class Kernel {
                 try {
                     await import(dep);
                 } catch {
-                    console.warn(
-                        `⚠️  Warning: Feature '${featureName}' requires peer dependency: ${dep}`,
-                    );
+                    this.logger.warn(`Feature '${featureName}' requires peer dependency: ${dep}`);
                 }
             }
         }
@@ -215,8 +216,25 @@ export class Kernel {
         return this.config;
     }
 
-    getFeature<T extends Feature>(name: string): T | undefined {
-        return this.features.get(name) as T;
+    /** The logger features should use (see `KernelConfig.logger`). */
+    getLogger(): KernelLogger {
+        return this.logger;
+    }
+
+    /** Replaces the logger; only before initialize() (WebPlugin passes the App's). */
+    setLogger(logger: KernelLogger): void {
+        if (this.initialized) throw new Error("Cannot change the logger after initialization");
+        this.logger = logger;
+    }
+
+    /**
+     * A registered feature. Built-in names (and names added to FeatureRegistry)
+     * return their feature's type; any other name takes the type as `T`.
+     */
+    getFeature<K extends keyof FeatureRegistry>(name: K): FeatureRegistry[K] | undefined;
+    getFeature<T extends Feature = Feature>(name: string): T | undefined;
+    getFeature(name: string): Feature | undefined {
+        return this.features.get(name);
     }
 
     private server: any;
@@ -229,9 +247,7 @@ export class Kernel {
         // Iskra uses Bun, so we can use Bun.serve
         // Hono handles this automatically if using the right adapter or just passing app.fetch to Bun.serve
         // But let's assume standard Bun usage from the user
-        console.log(
-            `🌐 Server running at http://${this.config.hostname}:${this.config.port}`,
-        );
+        this.logger.info(`Server running at http://${this.config.hostname}:${this.config.port}`);
 
         if (typeof Bun !== "undefined") {
             this.server = Bun.serve({
@@ -242,7 +258,7 @@ export class Kernel {
                 fetch: this.app.fetch,
             });
         } else {
-            console.warn("Not running in Bun, start() might strictly need an adapter.");
+            this.logger.warn("Not running in Bun, start() might strictly need an adapter.");
         }
     }
 
@@ -253,7 +269,7 @@ export class Kernel {
      * failures are rethrown together at the end.
      */
     async shutdown(): Promise<void> {
-        console.log("🛑 Shutting down...");
+        this.logger.info("Shutting down");
 
         if (this.server) {
             const server = this.server;
@@ -271,7 +287,7 @@ export class Kernel {
             ]);
             clearTimeout(timer);
             if (!drained) {
-                console.warn(`⚠️ Open connections did not drain within ${graceMs}ms; closing them`);
+                this.logger.warn(`Open connections did not drain within ${graceMs}ms; closing them`);
                 // Not awaited: the listener closes immediately, but in that same
                 // Bun 1.1 case the returned promise never settles either.
                 Promise.resolve(server.stop(true)).catch(() => {});
@@ -284,13 +300,13 @@ export class Kernel {
             try {
                 await feature.shutdown();
             } catch (err) {
-                console.error(`Feature "${feature.name}" failed to shut down:`, err);
+                this.logger.error(`Feature "${feature.name}" failed to shut down`, err);
                 errors.push(err);
             }
         }
         if (errors.length > 0) {
             throw new AggregateError(errors, `${errors.length} feature(s) failed to shut down`);
         }
-        console.log("👋 Server shut down gracefully");
+        this.logger.info("Server shut down gracefully");
     }
 }
