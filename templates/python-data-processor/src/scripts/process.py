@@ -1,4 +1,3 @@
-
 import sys
 import json
 import time
@@ -13,11 +12,16 @@ def process_data(data):
         "timestamp": time.time()
     }
 
-def main():
-    print(json.dumps({"type": "status", "msg": "Python processor started"}))
+def reply(response):
+    print(json.dumps(response))
     sys.stdout.flush()
 
+def main():
+    # El servidor no manda pedidos hasta ver esta linea (ver src/processor.ts).
+    reply({"type": "status", "msg": "Python processor started"})
+
     for line in sys.stdin:
+        request_id = None
         try:
             line = line.strip()
             if not line:
@@ -25,24 +29,25 @@ def main():
 
             data = json.loads(line)
             request_id = data.pop("requestId", None)
-            result = process_data(data)
+            deadline = data.pop("deadline", None)
 
-            response = {"type": "result", "data": result}
+            # Un pedido que ya vencio no se procesa: el cliente HTTP ya recibio
+            # un 504 y el trabajo solo demoraria a los que siguen en la cola.
+            if isinstance(deadline, (int, float)) and time.time() * 1000 > deadline:
+                reply({"type": "error", "msg": "expired", "requestId": request_id})
+                continue
+
+            response = {"type": "result", "data": process_data(data)}
             if request_id:
                 response["requestId"] = request_id
-
-            print(json.dumps(response))
-            sys.stdout.flush()
+            reply(response)
         except Exception as e:
+            # Con el requestId el servidor contesta el pedido en el acto (antes
+            # se perdia y el pedido esperaba el timeout).
             error_response = {"type": "error", "msg": str(e)}
-            # Try to include requestId in error response too
-            try:
-                if 'data' in dir() and isinstance(data, dict) and 'requestId' in data:
-                    error_response["requestId"] = data["requestId"]
-            except:
-                pass
-            print(json.dumps(error_response))
-            sys.stdout.flush()
+            if request_id:
+                error_response["requestId"] = request_id
+            reply(error_response)
 
 if __name__ == "__main__":
     main()

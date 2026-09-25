@@ -5,6 +5,13 @@ import { config } from './app.config.ts';
 import { content, contentVersions } from './db/schema.ts';
 import { ContentService } from './domain/content/content.service.ts';
 import { createContentRouter } from './interfaces/http/router.ts';
+import { createApiKeyFeature, parseApiKeys } from './auth.ts';
+
+// Claves de los editores (ver src/auth.ts). Una entrada invalida corta el arranque.
+const apiKeys = parseApiKeys(process.env.API_KEYS);
+if (apiKeys.length === 0) {
+    console.warn('[cms-starter] API_KEYS está vacío: se lee el contenido publicado, pero editar responde 401.');
+}
 
 const app = new App({
     name: 'CMSStarter',
@@ -23,6 +30,7 @@ app.register(
     new WebPlugin({
         port: config.web.port,
         router: createContentRouter(contentService),
+        features: [createApiKeyFeature(apiKeys)],
     }),
 );
 

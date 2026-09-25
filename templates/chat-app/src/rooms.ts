@@ -6,6 +6,10 @@
  *   room:<room>:members   → string[]        (usernames presentes en la sala)
  *   rooms:index           → string[]        (todas las salas conocidas)
  *
+ * Todo esta acotado, porque lo alimentan los clientes: nombres de sala
+ * validados, a lo sumo MAX_ROOMS salas y MAX_HISTORY mensajes por sala (cada
+ * mensaje nuevo reescribe el historial entero).
+ *
  * Cada clave se lee y reescribe entera, así que las escrituras a una misma
  * clave se serializan dentro del proceso (antes, dos mensajes simultáneos
  * leían el mismo historial y uno pisaba al otro). Con varias instancias
@@ -31,7 +35,16 @@ export interface Page<T> {
 }
 
 const ROOMS_INDEX = 'rooms:index';
-const MAX_HISTORY = 500;
+export const MAX_HISTORY = 200;
+/** Salas que se pueden crear en total. El indice se copia entero con cada sala nueva. */
+export const MAX_ROOMS = 100;
+
+/** Nombres de sala: cortos y sin caracteres raros (antes valia cualquier texto de hasta 16 KiB). */
+const ROOM_NAME = /^[a-z0-9_-]{1,64}$/;
+
+export function isValidRoomName(room: unknown): room is string {
+    return typeof room === 'string' && ROOM_NAME.test(room);
+}
 
 const messagesKey = (room: string) => `room:${room}:messages`;
 const membersKey = (room: string) => `room:${room}:members`;
@@ -57,13 +70,18 @@ function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     return result;
 }
 
-/** Crea (si hace falta) la sala y la registra en el indice global. */
-export async function ensureRoom(kv: KVManager, room: string): Promise<void> {
-    await withLock(ROOMS_INDEX, async () => {
-        const index: string[] = (await kv.get(ROOMS_INDEX)) ?? [];
-        if (!index.includes(room)) {
-            await kv.set(ROOMS_INDEX, unique([...index, room]));
-        }
+/**
+ * Registra la sala en el indice global si hace falta. Devuelve false, sin
+ * crearla, si es nueva y ya hay `maxRooms` salas. Los nombres invalidos que
+ * hubiera guardado una version anterior no cuentan y se descartan.
+ */
+export async function ensureRoom(kv: KVManager, room: string, maxRooms = MAX_ROOMS): Promise<boolean> {
+    return withLock(ROOMS_INDEX, async () => {
+        const index = ((await kv.get<string[]>(ROOMS_INDEX)) ?? []).filter(isValidRoomName);
+        if (index.includes(room)) return true;
+        if (index.length >= maxRooms) return false;
+        await kv.set(ROOMS_INDEX, unique([...index, room]));
+        return true;
     });
 }
 
@@ -71,9 +89,8 @@ export async function listRooms(kv: KVManager): Promise<string[]> {
     return (await kv.get(ROOMS_INDEX)) ?? [];
 }
 
-/** Agrega un usuario a la presencia de la sala. Devuelve la lista actualizada. */
+/** Agrega un usuario a la presencia de la sala (ya registrada con ensureRoom). Devuelve la lista actualizada. */
 export async function addMember(kv: KVManager, room: string, username: string): Promise<string[]> {
-    await ensureRoom(kv, room);
     return withLock(membersKey(room), async () => {
         const members: string[] = (await kv.get(membersKey(room))) ?? [];
         const next = unique([...members, username]);
@@ -96,13 +113,12 @@ export async function listMembers(kv: KVManager, room: string): Promise<string[]
     return (await kv.get(membersKey(room))) ?? [];
 }
 
-/** Persiste un mensaje en la sala, recortando el historial a MAX_HISTORY. */
+/** Persiste un mensaje en la sala (ya registrada), recortando el historial a MAX_HISTORY. */
 export async function appendMessage(
     kv: KVManager,
     room: string,
     msg: Omit<ChatMessage, 'id' | 'time' | 'seq'>,
 ): Promise<ChatMessage> {
-    await ensureRoom(kv, room);
     return withLock(messagesKey(room), async () => {
         const history: ChatMessage[] = (await kv.get(messagesKey(room))) ?? [];
         const last = history[history.length - 1];

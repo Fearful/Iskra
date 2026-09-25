@@ -21,6 +21,9 @@ export interface DeadLetter {
  * Es una queue normal de BullMQ con su propio nombre. No reintenta: los jobs
  * caen aca para inspeccion manual o reproceso. El handler `dead-letter` solo
  * registra el fallo; reemplazalo por persistencia (DB, alerta, etc.) segun tu caso.
+ *
+ * Redis conserva los ultimos `config.dlq.keep` dead letters: sin tope, la DLQ
+ * crecia para siempre, con los payloads originales adentro.
  */
 export function createDlq(app: App): WorkerManager {
     const dlq = new WorkerManager({
@@ -29,15 +32,18 @@ export function createDlq(app: App): WorkerManager {
         queueName: config.dlq.queueName,
         defaultJobOptions: {
             attempts: 1,
-            removeOnComplete: false, // se conservan para inspeccion
-            removeOnFail: false,
+            // Se conservan para inspeccion, pero acotados.
+            removeOnComplete: config.dlq.keep,
+            removeOnFail: config.dlq.keep,
         },
     });
 
     dlq.register('dead-letter', async (job) => {
         const dl = job.data as DeadLetter;
+        // Sin `dl.data`: el payload queda en la DLQ, no en los logs.
         app.logger.error(
             {
+                jobId: job.id,
                 originalJob: dl.originalJob,
                 attemptsMade: dl.attemptsMade,
                 error: dl.error,

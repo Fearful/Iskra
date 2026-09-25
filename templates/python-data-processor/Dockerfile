@@ -21,15 +21,19 @@ ENV NODE_ENV=production
 RUN bun build templates/python-data-processor/src/main.ts --compile --outfile=/build/app
 
 # ─── Stage 2: Runtime (UBI9 Minimal + Python) ────────────────────────────────
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# A fixed release (Red Hat still rebuilds the 9.8 tag with security fixes):
+# with :latest any rebuild could move to another release. Bump it on purpose.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
 
 # Python runs the process-kit sidecar (the only package this image installs).
 RUN microdnf install -y python3 && microdnf clean all
 
 WORKDIR /app
-COPY --from=builder --chown=1001:0 /build/app /app/app
+# Root-owned and read-only (0555): copied with --chown=1001:0, the user the
+# app runs as could overwrite its own code, so a compromise could persist.
+COPY --from=builder --chmod=0555 /build/app /app/app
 # The sidecar is spawned as `python3 src/scripts/process.py` from /app.
-COPY --chown=1001:0 templates/python-data-processor/src/scripts/ /app/src/scripts/
+COPY --chmod=0555 templates/python-data-processor/src/scripts/ /app/src/scripts/
 
 ENV NODE_ENV=production
 

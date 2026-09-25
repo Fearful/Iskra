@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -17,6 +18,8 @@ from iskra_client import (
 # back to Iskra on each request with IskraClient.with_session().
 SESSION_COOKIE = "iskra_session"
 COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
+
+log = logging.getLogger("iskra-example")
 
 
 # ── Iskra client ─────────────────────────────────────────────────────────
@@ -67,7 +70,10 @@ def _start_session(response: Response, session: Session) -> dict:
 
 
 def _server_error(e: IskraException) -> HTTPException:
-    return HTTPException(status_code=502, detail={"error": "Error del servicio Iskra", "detail": str(e)})
+    # The detail (Iskra's message, a connection error with host and port) goes
+    # to the log: anonymous callers only learn that the service failed.
+    log.warning("Iskra request failed (status %s, code %s): %s", e.status_code, e.error_code, e)
+    return HTTPException(status_code=502, detail={"error": "Error del servicio Iskra"})
 
 
 # ── Auth routes ──────────────────────────────────────────────────────────
@@ -123,10 +129,14 @@ async def get_session(iskra_session: Optional[str] = Cookie(None)):
 
 @app.get("/auth/health")
 async def health():
+    # Public route: only up or down. The full payload (every check, with its
+    # messages and details) stays in the log.
     try:
         status = await iskra.health.async_check()
-    except IskraException:
-        raise HTTPException(status_code=503, detail={"error": "Iskra no disponible"})
+    except IskraException as e:
+        log.warning("Iskra health check failed: %s", e)
+        raise HTTPException(status_code=503, detail={"status": "error"})
     if status.get("status") != "ok":
-        raise HTTPException(status_code=503, detail=status)
-    return status
+        log.warning("Iskra is unhealthy: %s", status)
+        raise HTTPException(status_code=503, detail={"status": "error"})
+    return {"status": "ok"}

@@ -130,11 +130,21 @@ iskra.auth().signOut(session);
   requires for cookie-authenticated POSTs. If the service's AuthFeature `baseURL`
   is a different (public) URL, set `origin` in the client or add the base URL to
   `trustedOrigins`.
-- The AuthFeature limits auth routes to 20 requests per 15 minutes per IP. A
-  backend signing all its users in from one IP should raise it with
-  `rateLimit: { max, windowMs }` (or `rateLimit: false` and limit on its side).
+- The AuthFeature limits auth attempts (sign-in, sign-up...) to 20 per 15
+  minutes per IP. A backend makes them all from its own IP, so that limit throttles
+  all its users together: raise it with `rateLimit: { max, windowMs }` and limit
+  per user in the backend (by client IP or email), which the SDKs do not do.
+  `rateLimit: false` leaves password guessing unthrottled: use it only when the
+  backend already has such a limit.
 - The storage client calls UploadFeature's routes, which usually require a
-  signed-in user: use it on `with_session(...)` / `withSession(...)`.
+  signed-in user: use it on `with_session(...)` / `withSession(...)`. Every user
+  shares the project's files, so an `authorize` that only checks for a session lets
+  anyone list, download and delete everyone's files: scope each user to a folder
+  of their own in `authorize` (e.g. require the subfolder to be `users/<user.id>`;
+  the SDK READMEs show it).
+- `timeout` bounds each request as a whole (connecting, sending, headers and body),
+  not each read, so a server trickling bytes cannot hold a call open; the Python SDK
+  also stops reading a response body past `max_response_bytes` (10 MiB by default).
 
 Both SDKs are tested against a real Iskra service,
 [`sdks/contract/server.ts`](https://github.com/fearful/iskra/tree/main/sdks/contract/server.ts),

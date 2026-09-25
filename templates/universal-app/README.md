@@ -66,6 +66,10 @@ Cada plataforma traduce sus eventos nativos a la logica compartida:
 | Escritorio | `src/platforms/desktop.ts` | `desktop:new-note` | Crea una nota desde (p. ej.) un menu de Tauri |
 | Movil | `src/platforms/mobile.ts` | `mobile:deeplink` | Crea una nota desde un deep link `miapp://note?title=...` |
 
+Cualquier app o pagina web puede abrir un deep link de la app, asi que `parseNoteDeepLink`
+acepta solo `miapp://note?title=...` (esquema, host y ruta exactos, sin credenciales ni
+puerto, titulo de 1 a 200 caracteres) e ignora cualquier otro link.
+
 ```typescript
 // El driver de cada plataforma se registra solo en su rama
 import { DesktopDriver } from '@iskra-bun/desktop-kit';

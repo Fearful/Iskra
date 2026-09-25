@@ -124,6 +124,17 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
             exposeRoutes: true,
             routePrefix: UPLOAD_PREFIX,
             maxFileSize: 1024 * 1024,
+            // Any signed-in user may use any folder: the SDK suites upload to
+            // arbitrary subfolders. Do not copy this into an app, where it lets
+            // every user list, download and delete everyone's files; scope each
+            // user to a folder of their own instead (as the SDK READMEs show):
+            //   authorize: (c, action) => {
+            //       const user = c.get('user');
+            //       const folder = action === 'upload' || action === 'list'
+            //           ? c.req.query('subfolder')
+            //           : c.req.path.slice(`${UPLOAD_PREFIX}/`.length).split('/').slice(0, -1).join('/');
+            //       return !!user && folder === `users/${user.id}`;
+            //   },
             authorize: (c) => Boolean(c.get('user')),
         }),
     );
