@@ -28,12 +28,21 @@ const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git']);
 
 export const VERSIONS_FILE = join(PACKAGE_DIR, 'src', 'versions.ts');
 
-function listFiles(dir: string, base = dir): string[] {
+export function listFiles(dir: string, base = dir): string[] {
     if (!existsSync(dir)) return [];
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         if (SKIPPED_DIRS.has(entry.name)) return [];
         const path = join(dir, entry.name);
-        return entry.isDirectory() ? listFiles(path, base) : [relative(base, path)];
+        if (entry.isDirectory()) return listFiles(path, base);
+        // readFileSync follows a symlink: one to /proc/self/environ or to a
+        // file outside the template was copied into the published package,
+        // by a release job that has the npm and GitHub tokens in its env.
+        if (!entry.isFile()) {
+            throw new Error(
+                `${relative(base, path)} in ${dir} is not a regular file; templates cannot contain symlinks`,
+            );
+        }
+        return [relative(base, path)];
     });
 }
 

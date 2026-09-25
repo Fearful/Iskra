@@ -63,3 +63,57 @@ describe('RedisAdapter', () => {
         expect(JSON.stringify(error)).not.toContain('s3cret');
     });
 });
+
+describe('RedisAdapter errors', () => {
+    // A server that refuses every login, as Redis does after a password rotation.
+    function refusingServer() {
+        return Bun.listen({
+            hostname: '127.0.0.1',
+            port: 0,
+            socket: {
+                data(socket) {
+                    socket.write('-WRONGPASS invalid username-password pair or user is disabled.\r\n');
+                },
+            },
+        });
+    }
+
+    it("keeps AUTH's password out of the logged connection error and the start error", async () => {
+        const server = refusingServer();
+        const warnings: unknown[] = [];
+        const app = new App({
+            name: 'KvWrongPassword',
+            logger: { level: 'silent' },
+            kv: {
+                driver: 'redis',
+                connection: {
+                    url: `redis://:Stale-Prod-Passw0rd@127.0.0.1:${server.port}`,
+                    maxRetriesPerRequest: 0,
+                    retryStrategy: () => null,
+                },
+            },
+        } as any);
+        (app.logger as any).warn = (obj: unknown) => warnings.push(obj);
+        app.register(new KVManager());
+
+        try {
+            const error = await app.start().then(
+                () => undefined,
+                (e: unknown) => e as Error,
+            );
+            expect(error).toBeInstanceOf(Error);
+
+            // ioredis attached `command: { name: 'auth', args: [password] }`.
+            const logged = warnings.map((w) => (w as { err?: any }).err).filter(Boolean);
+            expect(logged.length).toBeGreaterThan(0);
+            expect(logged[0].message).toContain('WRONGPASS');
+            expect(logged[0].command).toEqual({ name: 'auth' });
+            for (const err of [...logged, error?.cause]) {
+                expect(JSON.stringify(err)).not.toContain('Stale-Prod-Passw0rd');
+                expect((err as any)?.command?.args).toBeUndefined();
+            }
+        } finally {
+            server.stop(true);
+        }
+    });
+});

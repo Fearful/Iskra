@@ -68,6 +68,8 @@ for line in sys.stdin:
     sys.stdout.flush()
 ```
 
+The protocol is one message per line. `processManager.send(name, data)` JSON-encodes an object; a string is written as is, so one with a line break is refused (the child would read it as several messages). A stdout line longer than 1 MiB is emitted truncated as a `process:log`, and the rest of it is dropped rather than read as a message. The child inherits the app's environment (`env` adds to it), secrets included; the arguments are logged only at `debug` level.
+
 ## Events
 
 The ProcessManager emits these events on the App bus:

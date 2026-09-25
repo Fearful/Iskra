@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { scaffold } from '../src/scaffold.ts';
 import { ISKRA_VERSIONS } from '../src/versions.ts';
-import { BUNDLED_TEMPLATES, planSync } from '../scripts/sync.ts';
+import { BUNDLED_TEMPLATES, listFiles, planSync } from '../scripts/sync.ts';
 
 const templatesRoot = join(import.meta.dir, '..', 'templates');
 const outRoot = mkdtempSync(join(tmpdir(), 'create-iskra-bundled-'));
@@ -70,4 +70,16 @@ describe('bundled templates', () => {
             expect(missing).toEqual([]);
         });
     }
+});
+
+describe('sync.ts listFiles', () => {
+    test('refuses a symlink instead of copying what it points to into the package', () => {
+        const dir = mkdtempSync(join(outRoot, 'symlink-'));
+        mkdirSync(join(dir, 'src'));
+        writeFileSync(join(dir, 'src', 'main.ts'), 'export {};');
+        expect(listFiles(dir)).toEqual([join('src', 'main.ts')]);
+
+        symlinkSync('/proc/self/environ', join(dir, 'NOTICE'));
+        expect(() => listFiles(dir)).toThrow('NOTICE');
+    });
 });

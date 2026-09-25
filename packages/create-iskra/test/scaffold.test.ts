@@ -170,6 +170,23 @@ describe('scaffold', () => {
         expect(isEmptyDir(join(targetDir, 'dist'))).toBe(true);
     });
 
+    test('refuses a template name that is not one of the templates', () => {
+        // A sibling of the templates root, reachable with "../".
+        const outside = join(templatesRoot, '..', `outside-${Date.now()}`);
+        mkdirSync(join(outside, 'secrets'), { recursive: true });
+        writeFileSync(join(outside, 'package.json'), '{"name":"outside"}');
+        try {
+            const targetDir = join(outRoot, 'traversal');
+            const template = join('..', outside.split(/[\\/]/).pop()!);
+            expect(() => scaffold({ template, targetDir, projectName: 'traversal', templatesRoot })).toThrow(
+                /no existe/,
+            );
+            expect(isEmptyDir(targetDir)).toBe(true);
+        } finally {
+            rmSync(outside, { recursive: true, force: true });
+        }
+    });
+
     test('refuses to overwrite a non-empty existing directory', () => {
         const targetDir = join(outRoot, 'occupied');
         mkdirSync(targetDir, { recursive: true });
