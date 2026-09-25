@@ -26,7 +26,7 @@ new Cache(adapter?, options?)
 
 | Parámetro | Tipo | Descripción |
 |-----------|------|-------------|
-| `adapter` | `KVAdapter` | Cualquier adaptador de kv-kit (MemoryAdapter, RedisAdapter, KVManager). Opcional — por defecto usa MemoryAdapter. |
+| `adapter` | `KVAdapter` | Un `KVManager` de kv-kit (driver de memoria o Redis), o cualquier `KVAdapter`. Opcional — por defecto usa un adaptador en memoria. |
 | `options.namespace` | `string` | Prefijo global que se añade a cada clave en esta instancia. |
 | `options.defaultTtl` | `number` | TTL por defecto en segundos cuando se llama a `set()` sin uno explícito. |
 
@@ -47,18 +47,29 @@ const exists = await cache.has('user:1');
 // Eliminar
 await cache.delete('user:1');
 
-// Vacía todo el backing store (solo en la cache raíz — ver advertencia abajo)
+// Elimina todas las entradas de esta cache (su namespace y los que cuelgan de él)
 await cache.clear();
 ```
 
-> **Advertencia — `clear()` reinicia todo el store, no es por namespace.** Recicla
-> el adaptador (`disconnect()`/`connect()`), borrando **todas** las claves del
-> backing store compartido por esta cache y cualquier otra `Cache` construida sobre
-> el mismo adaptador — en todos los namespaces. Para evitar que una sub-cache con
-> namespace vacíe silenciosamente a sus hermanas, `clear()` **lanza un error** cuando
-> hay un prefijo de namespace; solo es válido en una `Cache` raíz. Para limpiar un
-> único namespace, elimina claves individualmente con `delete()` o invalida un grupo
-> con `invalidateTag()`.
+`clear()` ejecuta el `clear()` del adaptador con el namespace de la cache: una
+cache con namespace borra solo sus entradas e índices de etiquetas, y una cache raíz
+todas las claves del adaptador. Nunca recicla la conexión (antes hacía
+`disconnect()`/`connect()` del adaptador compartido: en Redis no borraba nada, y una
+reconexión fallida dejaba el adaptador muerto). Sobre un `KVManager` borra el
+namespace del manager con `SCAN` + `DEL`; una cache raíz sobre un `KVManager` de
+Redis sin namespace vaciaría toda la base, así que lanza un error salvo que el
+manager tenga `flushDb: true`. Un adaptador sin `clear()` hace que lance un error.
+
+Un valor con una clave `__proto__`, `constructor` o `prototype` (a cualquier
+profundidad) nunca se devuelve: `set()` no guarda nada (y borra el valor anterior
+de la clave), y `get()` trata uno escrito por otro como un miss y lo borra, así que
+`remember()` vuelve a llamar al fallback. Antes se guardaba y luego cada lectura
+lanzaba un error hasta que vencía su TTL.
+
+Las claves y los namespaces no pueden contener `__cache_tag__:` ni `__cache_tags__:`
+al principio o después de un `:`: ahí viven los índices de etiquetas, y una clave
+como `__cache_tag__:perms` permitía reescribir el índice, así que
+`invalidateTag('perms')` borraba lo que listara. Esas claves lanzan un error.
 
 ## Cache-Aside: remember() / wrap()
 
@@ -102,21 +113,22 @@ await cache.invalidateTag('featured');
 // banner eliminado
 ```
 
-Cada etiqueta guarda un índice de sus claves en el almacenamiento. Sus actualizaciones se serializan dentro de un proceso, pero instancias que comparten un Redis todavía pueden pisarse, así que una clave etiquetada en el mismo momento en otra instancia puede sobrevivir a un `invalidateTag()`. El índice no tiene TTL: solo lo borra `invalidateTag()`, así que una etiqueta que nunca se invalida crece con cada clave que la usa.
+Cada etiqueta guarda un índice de sus claves en el almacenamiento, que vive lo que
+la entrada más duradera que contiene:
 
-## Uso con RedisAdapter (producción)
+- Con un `KVManager` (cualquier driver) o el adaptador por defecto, es el set con
+  expiración de kv-kit (`sadd`/`sdrain`; un sorted set en Redis): etiquetar una
+  clave es un solo paso atómico sea cual sea el tamaño del índice, las claves
+  vencidas se quitan de él, e instancias que comparten Redis no pueden pisarse.
+- Con un adaptador sin esos métodos, es una lista JSON que se reescribe bajo un
+  lock por proceso (así que instancias que comparten un store todavía pueden
+  pisarse): las claves vencidas se quitan en cada escritura, y pasadas las 10.000
+  entradas se eliminan las más antiguas junto con sus datos.
 
-```typescript
-import { RedisAdapter } from '@iskra-bun/kv-kit';
-import { Cache } from '@iskra-bun/cache-kit';
+Los índices escritos antes de esta versión (una lista JSON por etiqueta) se siguen
+leyendo y borrando en `invalidateTag()`.
 
-const adapter = new RedisAdapter({ url: process.env.REDIS_URL });
-adapter.connect();
-
-const cache = new Cache(adapter, { namespace: 'myapp' });
-```
-
-## Uso con KVManager
+## Uso con KVManager (producción)
 
 ```typescript
 import { App } from '@iskra-bun/core';
@@ -128,9 +140,10 @@ const app = new App({
     kv: { driver: 'redis', connection: { url: process.env.REDIS_URL } },
 });
 
-const kv = new KVManager();
+// Un namespace para las claves de la cache: clear() borra entonces solo cache:*.
+const kv = new KVManager({ namespace: 'cache' });
 app.register(kv);
 await app.start();
 
-const cache = new Cache(kv, { namespace: 'myapp', defaultTtl: 300 });
+const cache = new Cache(kv, { defaultTtl: 300 });
 ```
