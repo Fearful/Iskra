@@ -1,5 +1,6 @@
 import { IskraError, ErrorCodes, type ErrorCode } from '@iskra-bun/core';
 import { HTTPException } from 'hono/http-exception';
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 // ─── HTTP Errors ─────────────────────────────────────────────────────────────
 
@@ -13,7 +14,7 @@ export class HttpError extends IskraError {
     }
 
     toHTTPException(): HTTPException {
-        return new HTTPException(this.status as any, { message: this.message, cause: this });
+        return new HTTPException(this.status as ContentfulStatusCode, { message: this.message, cause: this });
     }
 }
 

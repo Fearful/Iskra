@@ -1,9 +1,11 @@
 import type { Feature, CorsConfig } from "../types";
 import type { Kernel } from "../kernel";
 import { cors } from "hono/cors";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 export class CorsFeature implements Feature {
     name = "cors";
+    private log: KernelLogger = consoleLogger;
 
     constructor(private config: CorsConfig = {}) {
         if (!this.config.origin) {
@@ -15,6 +17,7 @@ export class CorsFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
 
         const honoConfig: any = { ...this.config };
@@ -28,6 +31,6 @@ export class CorsFeature implements Feature {
         }
 
         app.use("*", cors(honoConfig));
-        console.log("✅ CORS feature initialized");
+        this.log.debug("CORS feature initialized");
     }
 }

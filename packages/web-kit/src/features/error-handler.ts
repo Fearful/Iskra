@@ -4,9 +4,12 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { IskraError } from '@iskra-bun/core';
 import { HttpError, ValidationError } from '../errors';
+import { consoleLogger, type KernelLogger } from "../logging";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 export class ErrorHandlerFeature implements Feature {
     name = "error-handler";
+    private log: KernelLogger = consoleLogger;
 
     private config: ErrorHandlerConfig;
 
@@ -21,20 +24,21 @@ export class ErrorHandlerFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
 
         app.onError((err, c) => {
             return this.handleError(err, c);
         });
 
-        console.log("✅ Error handler feature initialized");
+        this.log.debug("Error handler feature initialized");
     }
 
     private handleError(err: Error | HTTPException, c: Context): Response {
         if (this.config.logger) {
             this.config.logger(err as Error, c);
         } else {
-            console.error("Error:", err);
+            this.log.error("Unhandled error", err);
         }
 
         // Iskra HttpError — convertir a HTTPException para mantener compatibilidad con Hono
@@ -65,7 +69,7 @@ export class ErrorHandlerFeature implements Feature {
             const requestId = c.get("requestId");
             if (requestId) response.requestId = requestId;
 
-            return c.json(response, status as any);
+            return c.json(response, status as ContentfulStatusCode);
         }
 
         // IskraError genérico (no-HTTP) — devolver como 500

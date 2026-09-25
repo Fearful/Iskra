@@ -1,6 +1,7 @@
 import type { Feature } from "../types";
 import type { Kernel } from "../kernel";
 import { httpInstrumentationMiddleware } from "@hono/otel";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 export interface OtelTracingConfig {
     serviceName: string;
@@ -16,6 +17,7 @@ export interface OtelTracingConfig {
 
 export class OtelTracingFeature implements Feature {
     name = "otel-tracing";
+    private log: KernelLogger = consoleLogger;
     private config: OtelTracingConfig;
 
     constructor(config: OtelTracingConfig) {
@@ -26,6 +28,7 @@ export class OtelTracingFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
 
         const instrumentationConfig: any = {
@@ -44,6 +47,6 @@ export class OtelTracingFeature implements Feature {
         // Register Otel middleware
         app.use("*", httpInstrumentationMiddleware(instrumentationConfig));
 
-        console.log("✅ OpenTelemetry tracing feature initialized");
+        this.log.debug("OpenTelemetry tracing feature initialized");
     }
 }

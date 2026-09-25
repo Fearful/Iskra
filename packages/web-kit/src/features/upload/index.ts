@@ -2,7 +2,7 @@ import type { Feature, UploadAction, UploadConfig } from "../../types";
 import type { Kernel } from "../../kernel";
 import type { Hono, Context, Next } from "hono";
 import { UploadHelper, safeBasename } from "./helper";
-import type { StorageFeature } from "../storage";
+import { consoleLogger, type KernelLogger } from "../../logging";
 
 // Room for multipart boundaries and part headers on top of the file itself.
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
@@ -49,6 +49,7 @@ declare module "hono" {
 
 export class UploadFeature implements Feature {
     name = "upload";
+    private log: KernelLogger = consoleLogger;
     dependencies = ["storage"];
     private helper?: UploadHelper;
     private config: Required<Omit<UploadConfig, "authorize">> & Pick<UploadConfig, "authorize">;
@@ -73,7 +74,8 @@ export class UploadFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
-        const storageFeature = kernel.getFeature("storage") as unknown as StorageFeature;
+        this.log = kernel.getLogger();
+        const storageFeature = kernel.getFeature("storage");
         if (!storageFeature) throw new Error("Upload feature requires storage feature");
         const storage = storageFeature.getAdapter();
         if (!storage) throw new Error("Storage adapter not ready");
@@ -98,7 +100,7 @@ export class UploadFeature implements Feature {
             await next();
         });
 
-        console.log(`✅ Upload feature initialized: ${this.config.projectName}`);
+        this.log.debug(`Upload feature initialized: ${this.config.projectName}`);
     }
 
     routes(app: Hono) {
@@ -113,7 +115,7 @@ export class UploadFeature implements Feature {
         // Internal errors are logged, never echoed: storage errors can carry
         // paths, bucket names or credentials hints.
         const fail = (c: Context, action: UploadAction, e: unknown) => {
-            console.error(`[upload] ${action} failed:`, e);
+            this.log.error(`[upload] ${action} failed`, e);
             return c.json({ error: `${action[0].toUpperCase()}${action.slice(1)} failed` }, 500);
         };
 

@@ -1,6 +1,7 @@
 import type { Feature, RequestIdConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 // Extend Hono's context with requestId
 declare module "hono" {
@@ -11,6 +12,7 @@ declare module "hono" {
 
 export class RequestIdFeature implements Feature {
     name = "request-id";
+    private log: KernelLogger = consoleLogger;
 
     private config: Required<RequestIdConfig>;
 
@@ -22,6 +24,7 @@ export class RequestIdFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
 
         app.use("*", async (c: Context, next: Next) => {
@@ -36,7 +39,7 @@ export class RequestIdFeature implements Feature {
             c.res.headers.set(this.config.headerName, requestId);
         });
 
-        console.log("✅ Request ID feature initialized");
+        this.log.debug("Request ID feature initialized");
     }
 
     private defaultGenerator(): string {

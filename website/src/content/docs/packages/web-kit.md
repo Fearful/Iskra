@@ -77,6 +77,9 @@ Server defaults, configurable in `new Kernel({ ... })`:
 | `maxRequestBodySize` | 16 MiB | Largest request body; Bun answers 413 above it |
 | `idleTimeout` | 10 s (Bun) | Seconds a connection may stay idle |
 | `shutdownGraceMs` | 5000 | How long `shutdown()` waits for in-flight requests before closing connections |
+| `logger` | the console | Where the Kernel and its features log (see below); `false` for nothing |
+
+The Kernel and its features report startup, fallbacks and errors they handle through one logger: an object with `debug`, `info`, `warn` and `error(message, details?)`. `WebPlugin` passes the App's logger unless you set `logger`, so these messages share the app's format and level (each feature's startup line is `debug`). A feature you write gets it with `kernel.getLogger()` in `initialize()`. `fromStructuredLogger(pinoLogger)` adapts a pino-style logger.
 
 `shutdown()` stops accepting connections, waits for in-flight requests (up to `shutdownGraceMs`) and shuts features down in reverse dependency order; if one fails it continues with the rest and throws an `AggregateError` at the end.
 

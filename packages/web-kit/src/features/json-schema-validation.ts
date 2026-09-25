@@ -6,6 +6,8 @@ import addErrors from "ajv-errors";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 import { ErrorCodes, errorResponse } from "../responses";
+import { consoleLogger, type KernelLogger } from "../logging";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 // ─── Module Augmentation ────────────────────────────────────────────────────
 
@@ -28,6 +30,8 @@ export interface JsonValidationSchema {
 
 export interface JsonValidationOptions {
     logErrors?: boolean;
+    /** Where errors are logged (default: the console). */
+    logger?: KernelLogger;
     status?: number;
     allErrors?: boolean;
     coerceTypes?: boolean;
@@ -94,7 +98,7 @@ export function createJsonSchemaValidationMiddleware(
     schema: JsonValidationSchema,
     options: JsonValidationOptions = {},
 ) {
-    const { logErrors = true, status = 400 } = options;
+    const { logErrors = true, status = 400, logger = consoleLogger } = options;
     const ajv = createAjvInstance(options);
 
     const validators = {
@@ -112,7 +116,7 @@ export function createJsonSchemaValidationMiddleware(
                 const valid = validators.params(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.params.errors);
-                    return c.json(errorResponse("Invalid route params", ErrorCodes.VALIDATION_ERROR, details), status as any);
+                    return c.json(errorResponse("Invalid route params", ErrorCodes.VALIDATION_ERROR, details), status as ContentfulStatusCode);
                 }
                 validated.params = data;
             }
@@ -122,7 +126,7 @@ export function createJsonSchemaValidationMiddleware(
                 const valid = validators.query(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.query.errors);
-                    return c.json(errorResponse("Invalid query params", ErrorCodes.VALIDATION_ERROR, details), status as any);
+                    return c.json(errorResponse("Invalid query params", ErrorCodes.VALIDATION_ERROR, details), status as ContentfulStatusCode);
                 }
                 validated.query = data;
             }
@@ -139,7 +143,7 @@ export function createJsonSchemaValidationMiddleware(
                 const valid = validators.body(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.body.errors);
-                    return c.json(errorResponse("Invalid body", ErrorCodes.VALIDATION_ERROR, details), status as any);
+                    return c.json(errorResponse("Invalid body", ErrorCodes.VALIDATION_ERROR, details), status as ContentfulStatusCode);
                 }
                 validated.body = data;
             }
@@ -147,7 +151,7 @@ export function createJsonSchemaValidationMiddleware(
             (c as any).valid = () => validated;
             await next();
         } catch (err) {
-            if (logErrors) console.error("JSON Schema validation error:", err);
+            if (logErrors) logger.error("JSON Schema validation error", err);
             return c.json(errorResponse("Validation middleware failed", ErrorCodes.INTERNAL_ERROR), 500);
         }
     };
@@ -175,11 +179,13 @@ function extendHonoWithJsonSchemaValidation(app: Hono) {
 
 export class JsonSchemaValidationFeature implements Feature {
     name = "json-schema-validation";
+    private log: KernelLogger = consoleLogger;
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
         extendHonoWithJsonSchemaValidation(app);
-        console.log("✅ JSON Schema validation feature initialized");
+        this.log.debug("JSON Schema validation feature initialized");
     }
 }
 

@@ -61,8 +61,8 @@ describe("API Features", () => {
         expect(upload).toBeDefined();
 
         // Testing direct upload usage via helper
-        // @ts-expect-error - helper is not on the public Feature type
-        const helper = upload.helper;
+        // helper is private: reached directly to test the upload path.
+        const helper = (upload as any).helper;
         const res = await helper.upload("test.txt", "content");
         expect(res.path).toBe("test-project/test.txt");
     });

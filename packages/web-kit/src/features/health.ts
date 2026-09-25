@@ -1,6 +1,7 @@
 import type { Feature, HealthCheckConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Hono } from "hono";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 /** Rejects if `promise` does not settle within `ms` (a stuck probe must not hang /health). */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -13,6 +14,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 export class HealthCheckFeature implements Feature {
     name = "health";
+    private log: KernelLogger = consoleLogger;
 
     private kernel?: Kernel;
     private config: Required<Omit<HealthCheckConfig, "checks" | "readinessChecks">> & {
@@ -38,8 +40,9 @@ export class HealthCheckFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.kernel = kernel;
-        console.log("✅ Health check feature initialized");
+        this.log.debug("Health check feature initialized");
     }
 
     routes(app: Hono): void {
@@ -60,8 +63,8 @@ export class HealthCheckFeature implements Feature {
         const dbProbe = this.dbProbe(c);
         if (dbProbe) checks.db = await this.probe("db", dbProbe);
 
-        const cache = this.kernel?.getFeature<any>("cache")?.client;
-        if (cache && typeof cache.exists === "function") {
+        const cache = this.kernel?.getFeature("cache")?.client;
+        if (cache) {
             checks.cache = await this.probe("cache", () => cache.exists("__health_check__"));
         }
 
@@ -72,7 +75,7 @@ export class HealthCheckFeature implements Feature {
             } catch (error) {
                 // Log the detail server-side; never serialize the raw error
                 // (it may embed connection strings or other secrets) to the client.
-                console.error(`Health custom check "${name}" failed:`, error);
+                this.log.error(`Health custom check "${name}" failed`, error);
                 customChecks[name] = { status: "error" };
             }
         }
@@ -103,11 +106,13 @@ export class HealthCheckFeature implements Feature {
      * function, so the old `db.query("SELECT 1")` probe never ran.
      */
     private dbProbe(c: Context): (() => Promise<unknown>) | null {
-        const feature = this.kernel?.getFeature<any>("db");
+        const feature = this.kernel?.getFeature("db");
         if (!feature) return null;
         if (typeof feature.ping === "function") return () => feature.ping();
-        const instance = c.get("db" as any) as any;
-        if (instance && typeof instance.query === "function") return () => instance.query("SELECT 1");
+        // A "db" feature of another shape may expose a query() function instead.
+        const instance: unknown = c.get("db");
+        const query = (instance as { query?: unknown } | undefined)?.query;
+        if (typeof query === "function") return () => query.call(instance, "SELECT 1");
         return null;
     }
 
@@ -118,7 +123,7 @@ export class HealthCheckFeature implements Feature {
         } catch (e) {
             // Log server-side; return only a generic status so DB/cache error
             // strings (which can carry connection details) never reach the client.
-            console.error(`Health feature check "${name}" failed:`, e);
+            this.log.error(`Health feature check "${name}" failed`, e);
             return { status: "error" };
         }
     }

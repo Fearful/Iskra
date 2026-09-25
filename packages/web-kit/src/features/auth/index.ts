@@ -4,9 +4,8 @@ import { HTTPException } from "hono/http-exception";
 import { getClientIp } from "../../client-ip";
 import { type Auth, createBetterAuth } from "@iskra-bun/auth-kit";
 import { z } from "@hono/zod-openapi";
-import type { DbFeature } from "../db";
-import type { OpenAPIFeature } from "../openapi";
 import type { User } from "@iskra-bun/auth-kit";
+import { consoleLogger, type KernelLogger } from "../../logging";
 
 declare module "hono" {
     interface ContextVariableMap {
@@ -95,6 +94,7 @@ function assertBaseURLMatchesBasePath(baseURL: string | undefined, basePath: str
 
 export class AuthFeature implements Feature {
     name = "auth";
+    private log: KernelLogger = consoleLogger;
     dependencies = ["db"];
 
     private auth: Auth | undefined;
@@ -125,8 +125,9 @@ export class AuthFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.kernel = kernel;
-        const dbFeature = kernel.getFeature("db") as unknown as DbFeature;
+        const dbFeature = kernel.getFeature("db");
         if (!dbFeature) {
             throw new Error("AuthFeature requires DbFeature");
         }
@@ -190,7 +191,7 @@ export class AuthFeature implements Feature {
             await next();
         });
 
-        console.log("✅ Auth feature initialized (better-auth)");
+        this.log.debug("Auth feature initialized (better-auth)");
     }
 
     // ─── Auth-route rate limiting ────────────────────────────────────────────
@@ -246,7 +247,7 @@ export class AuthFeature implements Feature {
         }
 
         const base = this.config.basePath!;
-        const openapi = this.kernel?.getFeature("openapi") as OpenAPIFeature | undefined;
+        const openapi = this.kernel?.getFeature("openapi");
 
         // Register explicit OpenAPI-documented routes
         if (openapi) {
@@ -359,7 +360,7 @@ export class AuthFeature implements Feature {
 
 export function requireAuth(kernel: Kernel) {
     return async (c: Context, next: Next) => {
-        const authFeature = kernel.getFeature("auth") as AuthFeature;
+        const authFeature = kernel.getFeature("auth");
         if (!authFeature) throw new HTTPException(500, { message: "Auth not initialized" });
 
         const auth = authFeature.getAuth();

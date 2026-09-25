@@ -1,6 +1,7 @@
 import type { Feature, LoggerConfig } from "../types";
 import type { Kernel } from "../kernel";
 import type { Context, Next } from "hono";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 declare module "hono" {
     interface ContextVariableMap {
@@ -12,7 +13,9 @@ declare module "hono" {
 const LEVELS = ["trace", "debug", "info", "warning", "error", "fatal"] as const;
 type Level = (typeof LEVELS)[number];
 
-// Simple Logger implementation to avoid heavy dependency unless necessary
+// Simple Logger implementation to avoid heavy dependency unless necessary.
+// Writing to the console with [LEVEL] prefixes is what this feature is for.
+/* eslint-disable no-console */
 class SimpleLogger {
     constructor(private config: LoggerConfig) { }
 
@@ -36,9 +39,11 @@ class SimpleLogger {
         return LEVELS.indexOf(level) >= LEVELS.indexOf(min);
     }
 }
+/* eslint-enable no-console */
 
 export class LoggerFeature implements Feature {
     name = "logger";
+    private log: KernelLogger = consoleLogger;
 
     private config: LoggerConfig;
     private logger: SimpleLogger;
@@ -49,6 +54,7 @@ export class LoggerFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         const app = kernel.getApp();
 
         app.use("*", async (c: Context, next: Next) => {
@@ -71,6 +77,6 @@ export class LoggerFeature implements Feature {
             });
         }
 
-        console.log("✅ Logger feature initialized");
+        this.log.debug("Logger feature initialized");
     }
 }

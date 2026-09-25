@@ -3,9 +3,11 @@ import type { Kernel } from "../kernel";
 import type { Context, Handler, Hono } from "hono";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { ErrorCodes, errorResponse } from "../responses";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 export class OpenAPIFeature implements Feature {
     name = "openapi";
+    private log: KernelLogger = consoleLogger;
     private app?: OpenAPIHono;
     private config: OpenAPIConfig;
     private kernel?: Kernel;
@@ -19,11 +21,12 @@ export class OpenAPIFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
+        this.log = kernel.getLogger();
         this.kernel = kernel;
         this.app = this.newApp();
 
         this.processQueuedRoutes();
-        console.log("✅ OpenAPIFeature initialized");
+        this.log.debug("OpenAPIFeature initialized");
     }
 
     addRoute(route: any, handler: Handler) {

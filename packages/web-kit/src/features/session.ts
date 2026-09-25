@@ -7,6 +7,7 @@ import { sql, eq } from "drizzle-orm";
 import { pgTable, text as pgText, bigint as pgBigint } from "drizzle-orm/pg-core";
 import { mysqlTable, varchar as myVarchar, text as myText, bigint as myBigint } from "drizzle-orm/mysql-core";
 import { sqliteTable, text as sqliteText, integer as sqliteInteger } from "drizzle-orm/sqlite-core";
+import { consoleLogger, type KernelLogger } from "../logging";
 
 // ─── Session Store Interface ─────────────────────────────────────────────────
 
@@ -118,7 +119,11 @@ class DbSessionStore implements SessionStore {
     private dialect: SessionDialect;
     private table: (typeof sessionTables)[SessionDialect];
 
-    constructor(private db: any, dialect: SessionDialect = "sqlite") {
+    constructor(
+        private db: any,
+        dialect: SessionDialect = "sqlite",
+        private log: KernelLogger = consoleLogger,
+    ) {
         this.dialect = sessionTables[dialect] ? dialect : "sqlite";
         this.table = sessionTables[this.dialect];
     }
@@ -145,7 +150,7 @@ class DbSessionStore implements SessionStore {
             this.initialized = true;
         } catch (err) {
             this.retryAt = Date.now() + 5000;
-            console.error("[session] Failed to ensure sessions table:", err);
+            this.log.error("[session] Failed to ensure sessions table", err);
         }
     }
 
@@ -167,7 +172,7 @@ class DbSessionStore implements SessionStore {
             }
             return JSON.parse(row.data);
         } catch (err) {
-            console.error("[session] Failed to read session:", err);
+            this.log.error("[session] Failed to read session", err);
             return null;
         }
     }
@@ -182,7 +187,7 @@ class DbSessionStore implements SessionStore {
             await this.db.delete(this.table).where(eq(this.table.id, id));
             await this.db.insert(this.table).values(row);
         } catch (err) {
-            console.error("[session] Failed to write session:", err);
+            this.log.error("[session] Failed to write session", err);
         }
     }
 
@@ -190,7 +195,7 @@ class DbSessionStore implements SessionStore {
         try {
             await this.db.delete(this.table).where(eq(this.table.id, id));
         } catch (err) {
-            console.error("[session] Failed to destroy session:", err);
+            this.log.error("[session] Failed to destroy session", err);
         }
     }
 }
@@ -263,7 +268,8 @@ export class SessionFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
-        console.log(`⚙️ Initializing Session: store=${this.config.store}`);
+        const log = kernel.getLogger();
+        log.debug(`Initializing Session: store=${this.config.store}`);
         // Cookies are Secure by default in production (override with cookieOptions.secure).
         this.secureDefault = (kernel.getConfig().environment ?? process.env.NODE_ENV) === "production";
 
@@ -272,9 +278,9 @@ export class SessionFeature implements Feature {
                 this.store = new MemorySessionStore();
                 break;
             case "cache": {
-                const cacheFeature = kernel.getFeature("cache") as any;
+                const cacheFeature = kernel.getFeature("cache");
                 if (!cacheFeature?.client) {
-                    console.warn("⚠️ Cache feature not available, falling back to memory session store");
+                    log.warn("Cache feature not available, falling back to memory session store");
                     this.store = new MemorySessionStore();
                 } else {
                     this.store = new CacheSessionStore(cacheFeature.client);
@@ -282,12 +288,12 @@ export class SessionFeature implements Feature {
                 break;
             }
             case "db": {
-                const dbFeature = kernel.getFeature("db") as any;
+                const dbFeature = kernel.getFeature("db");
                 if (!dbFeature?.db) {
-                    console.warn("⚠️ DB feature not available, falling back to memory session store");
+                    log.warn("DB feature not available, falling back to memory session store");
                     this.store = new MemorySessionStore();
                 } else {
-                    this.store = new DbSessionStore(dbFeature.db, dbFeature.adapter);
+                    this.store = new DbSessionStore(dbFeature.db, dbFeature.adapter, log);
                 }
                 break;
             }
@@ -372,7 +378,7 @@ export class SessionFeature implements Feature {
             }
         });
 
-        console.log("✅ Session initialized");
+        log.debug("Session initialized");
     }
 
     async shutdown(): Promise<void> {
