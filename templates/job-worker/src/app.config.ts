@@ -18,6 +18,8 @@ export const AppConfigSchema = z.object({
     dlq: z.object({
         /** Nombre de la dead-letter queue donde caen los jobs agotados */
         queueName: z.string().default('iskra-jobs-dlq'),
+        /** Dead letters que se conservan en Redis (los mas nuevos); antes, todos para siempre */
+        keep: z.number().int().positive().default(1000),
     }),
     http: z.object({
         /** Puerto del endpoint de health/monitoring */
@@ -27,10 +29,19 @@ export const AppConfigSchema = z.object({
         url: z.string().default('redis://localhost:6379'),
     }),
     /** Si es true, encola jobs de demostracion periodicamente */
-    demo: z.boolean().default(true),
+    demo: z.boolean(),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+/**
+ * DEMO=false los apaga y cualquier otro valor los prende; sin DEMO, solo corren
+ * fuera de produccion (antes el Dockerfile, que no define DEMO, encolaba jobs de
+ * ejemplo en produccion).
+ */
+export function demoEnabled(value: string | undefined, production: boolean): boolean {
+    return value ? value !== 'false' : !production;
+}
 
 export const config: AppConfig = AppConfigSchema.parse({
     worker: {
@@ -44,6 +55,7 @@ export const config: AppConfig = AppConfigSchema.parse({
     },
     dlq: {
         queueName: process.env.DLQ_NAME,
+        keep: process.env.DLQ_KEEP ? Number(process.env.DLQ_KEEP) : undefined,
     },
     http: {
         port: process.env.HTTP_PORT ? Number(process.env.HTTP_PORT) : undefined,
@@ -51,5 +63,5 @@ export const config: AppConfig = AppConfigSchema.parse({
     redis: {
         url: process.env.REDIS_URL,
     },
-    demo: process.env.DEMO ? process.env.DEMO !== 'false' : undefined,
+    demo: demoEnabled(process.env.DEMO, process.env.NODE_ENV === 'production'),
 });

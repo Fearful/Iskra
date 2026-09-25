@@ -46,9 +46,10 @@ Copia `.env.example` a `.env`:
 | `BACKOFF_TYPE` | `fixed` o `exponential` | `exponential` |
 | `BACKOFF_DELAY` | Delay base del backoff (ms) | `1000` |
 | `DLQ_NAME` | Nombre de la dead-letter queue | `iskra-jobs-dlq` |
+| `DLQ_KEEP` | Dead letters que se conservan en Redis (los mas nuevos) | `1000` |
 | `HTTP_PORT` | Puerto del endpoint de health/monitoring | `8080` |
 | `REDIS_URL` | URL de conexion a Redis | `redis://localhost:6379` |
-| `DEMO` | Encolar jobs de ejemplo (`false` para desactivar) | `true` |
+| `DEMO` | Encolar jobs de ejemplo (`false` para desactivar) | `true`, salvo con `NODE_ENV=production` (la imagen Docker) |
 
 ## Retry y backoff
 
@@ -56,7 +57,9 @@ Los reintentos los maneja BullMQ via `defaultJobOptions` del `WorkerManager`. Po
 
 ## Dead-letter queue (DLQ)
 
-Cuando un job agota todos sus reintentos, en lugar de perderse se mueve a una **segunda queue** (`iskra-jobs-dlq`). Ahi queda con su payload original, el numero de intentos y el error, listo para inspeccion o reproceso manual.
+Cuando un job agota todos sus reintentos, en lugar de perderse se mueve a una **segunda queue** (`iskra-jobs-dlq`). Ahi queda con su payload original, el numero de intentos y el error, listo para inspeccion o reproceso manual. Redis conserva los ultimos `DLQ_KEEP` (1000 por defecto): sin tope, la DLQ crecia para siempre con los payloads adentro.
+
+Los logs de los handlers llevan el id del job, nunca `job.data`: los payloads suelen traer datos personales o secretos (emails, tokens de reseteo). Si necesitas un dato del payload en un log, agrega solo ese campo.
 
 La logica vive en `src/dlq.ts` (`createDlq` + `moveToDlq`) y se conecta a los handlers desde `src/jobs.ts`. El handler `dead-letter` solo loguea; reemplazalo por persistencia en DB o una alerta segun tu caso.
 
