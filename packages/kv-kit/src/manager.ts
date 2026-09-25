@@ -10,6 +10,11 @@ export interface KVManagerOptions {
      * Defaults to `""` (no prefix) to preserve existing behavior.
      */
     namespace?: string;
+    /**
+     * Lets `clear()` without a `namespace` empty the whole Redis database
+     * (FLUSHDB). Only for a database no other app or service writes to.
+     */
+    flushDb?: boolean;
 }
 
 export class KVManager implements Driver, KVAdapter {
@@ -18,11 +23,13 @@ export class KVManager implements Driver, KVAdapter {
     private app: App | null = null;
     private adapter: KVAdapter;
     private readonly prefix: string;
+    private readonly flushDb: boolean;
 
     constructor(options: KVManagerOptions = {}) {
         // Default to memory until configured
         this.adapter = new MemoryAdapter();
         this.prefix = options.namespace ? `${options.namespace}:` : '';
+        this.flushDb = options.flushDb ?? false;
     }
 
     init(app: App) {
@@ -35,6 +42,7 @@ export class KVManager implements Driver, KVAdapter {
             app.logger.info('Initializing KV with Redis');
             this.adapter = new RedisAdapter(config.connection ?? {}, {
                 onError: (err) => app.logger.warn({ err }, 'KV Redis connection error'),
+                flushDb: this.flushDb,
             });
         } else if (!config?.driver || config.driver === 'memory') {
             app.logger.info('Initializing KV with Memory');
@@ -136,6 +144,32 @@ export class KVManager implements Driver, KVAdapter {
 
         await Promise.all(prefixed.map((k) => this.adapter.del(k)));
     }
+
+    /**
+     * Deletes every key under `prefix` in this manager's namespace (the whole
+     * namespace without one). With the redis driver and no namespace, only
+     * `flushDb: true` lets it empty the database.
+     */
+    async clear(prefix = ''): Promise<void> {
+        if (!this.adapter.clear) throw unsupported(this.adapter, 'clear');
+        await this.adapter.clear(this.prefixed(prefix));
+    }
+
+    /** See {@link KVAdapter.sadd}: the member is kept as is, only `key` is namespaced. */
+    async sadd(key: string, member: string, ttl?: number): Promise<void> {
+        if (!this.adapter.sadd) throw unsupported(this.adapter, 'sadd');
+        await this.adapter.sadd(this.prefixed(key), member, ttl);
+    }
+
+    async sdrain(key: string): Promise<string[]> {
+        if (!this.adapter.sdrain) throw unsupported(this.adapter, 'sdrain');
+        return this.adapter.sdrain(this.prefixed(key));
+    }
+}
+
+/** Both built-in adapters have the optional methods; an injected one may not. */
+function unsupported(adapter: KVAdapter, method: string): Error {
+    return new Error(`The "${adapter.id}" KV adapter does not support ${method}()`);
 }
 
 // `app.context.get('kv')` is the KVManager registered on the app.
