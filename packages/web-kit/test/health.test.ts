@@ -83,7 +83,7 @@ describe('Health Check Feature', () => {
 
     it('responds to readiness and liveness probes', async () => {
         const kernel = new Kernel();
-        kernel.registerFeature(new HealthCheckFeature());
+        kernel.registerFeature(new HealthCheckFeature({ includeDetails: true }));
         await kernel.initialize();
         const app = kernel.getApp();
 
@@ -111,7 +111,7 @@ describe('Health Check Feature', () => {
     });
 
     it('readiness: returns 200 when all registered checks pass', async () => {
-        const feature = new HealthCheckFeature();
+        const feature = new HealthCheckFeature({ includeDetails: true });
         feature.addReadinessCheck('db', async () => true);
         feature.addReadinessCheck('cache', async () => true);
 
@@ -131,6 +131,7 @@ describe('Health Check Feature', () => {
 
     it('readiness: returns 503 and names failing checks when any check returns false', async () => {
         const feature = new HealthCheckFeature({
+            includeDetails: true,
             readinessChecks: {
                 db: async () => true,
                 cache: async () => false,
@@ -153,7 +154,7 @@ describe('Health Check Feature', () => {
     });
 
     it('readiness: returns 503 (not 500) when a check throws', async () => {
-        const feature = new HealthCheckFeature();
+        const feature = new HealthCheckFeature({ includeDetails: true });
         feature.addReadinessCheck('broken', async () => {
             throw new Error('connection refused');
         });

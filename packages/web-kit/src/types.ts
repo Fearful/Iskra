@@ -322,6 +322,25 @@ export interface OpenAPIConfig {
     securitySchemes?: NonNullable<
         NonNullable<ReturnType<OpenAPIHono['getOpenAPIDocument']>['components']>['securitySchemes']
     >;
+    /**
+     * Serve `/openapi.json` and the `/docs` page (default true). `false`
+     * serves neither; the routes added with `addRoute()` work the same.
+     */
+    docs?: boolean;
+    /**
+     * Whether a request may read `/openapi.json` and `/docs`: `false` answers
+     * 403, a Response is sent as it is (a 401 asking for Basic auth, say).
+     * These routes come before middleware added to the app after
+     * `initialize()`, so an auth middleware there does not cover them.
+     */
+    authorize?: (c: Context) => boolean | Response | Promise<boolean | Response>;
+    /**
+     * The Scalar API reference script `/docs` loads. Default: a pinned
+     * @scalar/api-reference release from jsDelivr, with its SRI hash. Give
+     * another `src` with its `integrity` (`sha384-…`) to update it or serve
+     * it from your own origin; `false` serves `/openapi.json` without the page.
+     */
+    scalar?: false | { src: string; integrity: string };
 }
 
 export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
