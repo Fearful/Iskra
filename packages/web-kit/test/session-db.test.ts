@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Kernel } from '../src/kernel';
 import { SessionFeature } from '../src/features/session';
 import { DbFeature } from '../src/features/db';
+import type { Feature } from '../src/types';
 
 // End-to-end exercise of the DB-backed session store across all three dialects.
 // sqlite runs locally (bun:sqlite, in-memory); postgres/mysql are gated behind a
@@ -89,6 +92,18 @@ function runSuite(enabled: boolean, label: string, dbConfig: any) {
             await kernel.shutdown();
         });
 
+        it('saves changes to an existing session', async () => {
+            const kernel = await build(dbConfig);
+            const app = kernel.getApp();
+
+            const cookie = cookieOf(await app.request('/set?v=first'));
+            await app.request('/set?v=second', { headers: { Cookie: cookie } });
+            const got = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
+            expect(got.session.value).toBe('second');
+
+            await kernel.shutdown();
+        });
+
         it('destroys a session', async () => {
             const kernel = await build(dbConfig);
             const app = kernel.getApp();
@@ -135,6 +150,47 @@ function runSuite(enabled: boolean, label: string, dbConfig: any) {
 }
 
 runSuite(true, 'DB session store — sqlite (local)', { adapter: 'sqlite', connection: { database: ':memory:' } });
+
+describe('DB session store — concurrent logout', () => {
+    it('a save does not re-create a session deleted just before its write', async () => {
+        // Regression: the save checked the row (SELECT) and then upserted it
+        // (DELETE + INSERT), so a logout committed in between was undone.
+        const sqlite = new Database(':memory:');
+        let beforeWrite: (() => void) | undefined;
+        const db = drizzle(sqlite, {
+            logger: {
+                // Called right before each statement runs.
+                logQuery(query) {
+                    if (!beforeWrite || !/^(update|insert|delete)\b/i.test(query)) return;
+                    const run = beforeWrite;
+                    beforeWrite = undefined;
+                    run();
+                },
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature({ name: 'db', db, adapter: 'sqlite', async initialize() {} } as Feature);
+        kernel.registerFeature(
+            new SessionFeature({ store: 'db', secret: 'db-session-secret-0123456789abcdef0123456789abcdef' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/set', (c) => {
+            c.get('session').value = c.req.query('v') ?? 'x';
+            return c.json({ ok: true });
+        });
+        app.get('/get', (c) => c.json({ session: c.get('session') }));
+
+        const cookie = cookieOf(await app.request('/set?v=logged-in'));
+        // Another request's logout commits while this save is under way.
+        beforeWrite = () => sqlite.run('DELETE FROM sessions');
+        await app.request('/set?v=still-here', { headers: { Cookie: cookie } });
+
+        const after = (await (await app.request('/get', { headers: { Cookie: cookie } })).json()) as any;
+        expect(after.session).toEqual({});
+        await kernel.shutdown();
+    });
+});
 runSuite(pgUp, 'DB session store — postgres (requires Postgres)', {
     adapter: 'postgres',
     connection: { connectionString: PG_URL },

@@ -3,7 +3,7 @@ import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and, gte } from 'drizzle-orm';
 import { pgTable, text as pgText, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { mysqlTable, varchar as myVarchar, text as myText, bigint as myBigint } from 'drizzle-orm/mysql-core';
 import { sqliteTable, text as sqliteText, integer as sqliteInteger } from 'drizzle-orm/sqlite-core';
@@ -35,6 +35,11 @@ export interface SessionData {
 interface SessionStore {
     get(id: string): Promise<SessionData | null>;
     set(id: string, data: SessionData, ttl: number): Promise<void>;
+    /**
+     * Saves a session only if it still exists, checked and written in one
+     * step; false (nothing written) when it is gone.
+     */
+    update(id: string, data: SessionData, ttl: number): Promise<boolean>;
     destroy(id: string): Promise<void>;
 }
 
@@ -70,6 +75,13 @@ class MemorySessionStore implements SessionStore {
         this.store.set(id, { data: structuredClone(data), expiresAt: Date.now() + ttl * 1000 });
     }
 
+    async update(id: string, data: SessionData, ttl: number) {
+        const entry = this.store.get(id);
+        if (!entry || Date.now() > entry.expiresAt) return false;
+        this.store.set(id, { data: structuredClone(data), expiresAt: Date.now() + ttl * 1000 });
+        return true;
+    }
+
     async destroy(id: string) {
         this.store.delete(id);
     }
@@ -100,6 +112,17 @@ class CacheSessionStore implements SessionStore {
 
     async set(id: string, data: SessionData, ttl: number) {
         await this.cache.set(`session:${id}`, structuredClone(data), ttl);
+    }
+
+    async update(id: string, data: SessionData, ttl: number) {
+        // One command on Redis (SET ... XX): a destroy() can no longer land
+        // between a check and the write.
+        if (this.cache.setIfExists) return this.cache.setIfExists(`session:${id}`, structuredClone(data), ttl);
+
+        // Fallback for custom adapters: not atomic.
+        if (!(await this.get(id))) return false;
+        await this.set(id, data, ttl);
+        return true;
     }
 
     async destroy(id: string) {
@@ -146,12 +169,14 @@ interface SessionRow {
     expiresAt: number;
 }
 
-/** The four table operations DbSessionStore needs, typed for one dialect. */
+/** The table operations DbSessionStore needs, typed for one dialect. */
 interface SessionTable {
     create(): Promise<unknown>;
     find(id: string): Promise<SessionRow | undefined>;
     remove(id: string): Promise<unknown>;
     insert(row: SessionRow): Promise<unknown>;
+    /** Rewrites the row if it exists and has not expired; whether it did. */
+    update(row: SessionRow): Promise<boolean>;
 }
 
 /**
@@ -170,6 +195,14 @@ function sessionTableFor(db: WebKitDrizzleDb<Record<string, unknown>>, dialect: 
                 find: async (id) => (await pg.select().from(t).where(eq(t.id, id)).limit(1))[0],
                 remove: (id) => pg.delete(t).where(eq(t.id, id)),
                 insert: (row) => pg.insert(t).values(row),
+                update: async ({ id, data, expiresAt }) =>
+                    (
+                        await pg
+                            .update(t)
+                            .set({ data, expiresAt })
+                            .where(and(eq(t.id, id), gte(t.expiresAt, Date.now())))
+                            .returning({ id: t.id })
+                    ).length > 0,
             };
         }
         case 'mysql': {
@@ -180,6 +213,14 @@ function sessionTableFor(db: WebKitDrizzleDb<Record<string, unknown>>, dialect: 
                 find: async (id) => (await my.select().from(t).where(eq(t.id, id)).limit(1))[0],
                 remove: (id) => my.delete(t).where(eq(t.id, id)),
                 insert: (row) => my.insert(t).values(row),
+                // No RETURNING in MySQL; mysql2 reports matched rows (FOUND_ROWS).
+                update: async ({ id, data, expiresAt }) => {
+                    const [result] = await my
+                        .update(t)
+                        .set({ data, expiresAt })
+                        .where(and(eq(t.id, id), gte(t.expiresAt, Date.now())));
+                    return result.affectedRows > 0;
+                },
             };
         }
         case 'sqlite': {
@@ -190,6 +231,14 @@ function sessionTableFor(db: WebKitDrizzleDb<Record<string, unknown>>, dialect: 
                 find: async (id) => (await lite.select().from(t).where(eq(t.id, id)).limit(1))[0],
                 remove: async (id) => lite.delete(t).where(eq(t.id, id)),
                 insert: async (row) => lite.insert(t).values(row),
+                update: async ({ id, data, expiresAt }) =>
+                    (
+                        await lite
+                            .update(t)
+                            .set({ data, expiresAt })
+                            .where(and(eq(t.id, id), gte(t.expiresAt, Date.now())))
+                            .returning({ id: t.id })
+                    ).length > 0,
             };
         }
     }
@@ -255,6 +304,18 @@ class DbSessionStore implements SessionStore {
             await this.table.insert(row);
         } catch (err) {
             this.log.error('[session] Failed to write session', err);
+        }
+    }
+
+    async update(id: string, data: SessionData, ttl: number) {
+        await this.ensureTable();
+        try {
+            // An UPDATE, not the upsert: a row another request deleted
+            // meanwhile stays deleted.
+            return await this.table.update({ id, data: JSON.stringify(data), expiresAt: Date.now() + ttl * 1000 });
+        } catch (err) {
+            this.log.error('[session] Failed to write session', err);
+            return false;
         }
     }
 
@@ -426,8 +487,13 @@ export class SessionFeature implements Feature {
                 // gone: re-saving it undid the logout, or revived the ID an
                 // attacker fixed before the victim logged in. The cookie is left
                 // alone, since the other request may have just set a new one.
-                if (persisted && !(await this.store!.get(sessionId))) return;
-                await this.store!.set(sessionId, currentSession, this.ttl);
+                // update() checks and writes in one step: a get() then a set()
+                // let a destroy() on Redis or a database land in between.
+                if (persisted) {
+                    if (!(await this.store!.update(sessionId, currentSession, this.ttl))) return;
+                } else {
+                    await this.store!.set(sessionId, currentSession, this.ttl);
+                }
                 const signed = signValue(sessionId, this.config.secret);
                 setCookie(c, this.cookieName, signed, {
                     ...cookieOptions,

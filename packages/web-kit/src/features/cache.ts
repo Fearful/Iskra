@@ -13,6 +13,13 @@ export interface CacheAdapter {
     get(key: string): Promise<unknown>;
     /** `ttl` in seconds. */
     set(key: string, value: unknown, ttl?: number): Promise<void>;
+    /**
+     * Like set(), but only if the key exists (and has not expired), checked
+     * and written atomically (Redis: `SET ... XX`); whether it was written.
+     * Used by the cache session store, so a save cannot re-create a session
+     * that another request deleted.
+     */
+    setIfExists?(key: string, value: unknown, ttl?: number): Promise<boolean>;
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
     increment?(key: string): Promise<number>;
@@ -83,6 +90,12 @@ class MemoryAdapter implements CacheAdapter {
         this.put(key, { value, expires });
     }
 
+    async setIfExists(key: string, value: unknown, ttl?: number) {
+        if (!this.live(key)) return false;
+        this.put(key, { value, expires: ttl ? Date.now() + ttl * 1000 : null });
+        return true;
+    }
+
     async delete(key: string) {
         this.store.delete(key);
     }
@@ -151,6 +164,14 @@ class RedisAdapter implements CacheAdapter {
         } else {
             await this.client.set(key, stringValue);
         }
+    }
+
+    async setIfExists(key: string, value: unknown, ttl?: number) {
+        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        const result = ttl
+            ? await this.client.set(key, stringValue, 'EX', ttl, 'XX')
+            : await this.client.set(key, stringValue, 'XX');
+        return result === 'OK';
     }
 
     async delete(key: string) {
