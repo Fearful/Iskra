@@ -1,13 +1,35 @@
 import { MemoryAdapter } from './memory-adapter';
 import type { KVAdapter, CacheOptions, SetOptions } from './types';
 
-/** Internal prefix used for the tag→keys index stored in the KV adapter. */
-const TAG_INDEX_PREFIX = '__cache_tag__:';
+/** A tag's index as an expiring set, with adapters that have `sadd`/`sdrain`. */
+const TAG_SET_PREFIX = '__cache_tags__:';
+
+/** A tag's index as a JSON list: with other adapters, and every index written before 0.x. */
+const TAG_LIST_PREFIX = '__cache_tag__:';
+
+/**
+ * Data keys and namespaces may not reach the tag indexes: a key such as
+ * `__cache_tag__:perms` overwrote the index, and invalidateTag('perms') then
+ * deleted whatever keys it listed.
+ */
+const RESERVED = /(?:^|:)__cache_tags?__:/;
+
+/** Longest JSON tag index: beyond it, the oldest entries are deleted along with their data. */
+const MAX_TAG_LIST = 10_000;
+
+/** Keys deleted per call when a tag is invalidated. */
+const DELETE_BATCH = 1000;
 
 /** Keys that enable prototype-pollution when an object is later deep-merged. */
 const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
 
+/** One of them as a key in JSON.stringify's output, which escapes none of their characters. */
+const DANGEROUS_KEY_TEXT = /"(?:__proto__|constructor|prototype)":/;
+
 class PollutionError extends Error {}
+
+/** A JSON tag index entry: the key and its expiry (ms since the epoch, 0 for none). */
+type TagEntry = [key: string, expiresAt: number];
 
 /** Pending tag-index updates per adapter (shared by its namespaced caches) and key. */
 const indexLocks = new WeakMap<object, Map<string, Promise<unknown>>>();
@@ -49,6 +71,36 @@ function parseSafely(raw: string): unknown {
     });
 }
 
+/** Whether get() would refuse this serialized value (see parseSafely). */
+function isPolluted(serialized: string | undefined): boolean {
+    if (serialized === undefined || !DANGEROUS_KEY_TEXT.test(serialized)) return false;
+    try {
+        parseSafely(serialized);
+        return false;
+    } catch (error) {
+        return error instanceof PollutionError;
+    }
+}
+
+/** A JSON tag index; before 0.x its entries were bare keys, with no expiry. */
+function parseTagList(raw: unknown): TagEntry[] {
+    if (typeof raw !== 'string') return [];
+    let list: unknown;
+    try {
+        list = JSON.parse(raw);
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((entry): TagEntry[] => {
+        if (typeof entry === 'string') return [[entry, 0]];
+        if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number') {
+            return [[entry[0], entry[1]]];
+        }
+        return [];
+    });
+}
+
 /**
  * Cache — higher-level application cache backed by any {@link KVAdapter}.
  *
@@ -82,6 +134,9 @@ export class Cache {
         this.adapter = adapter ?? new MemoryAdapter();
         this.prefix = options.namespace ? `${options.namespace}:` : '';
         this.defaultTtl = options.defaultTtl;
+        if (RESERVED.test(this.prefix)) {
+            throw new Error(`cache-kit: the namespace "${options.namespace}" is reserved for tag indexes`);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -89,11 +144,17 @@ export class Cache {
     // -------------------------------------------------------------------------
 
     private prefixKey(key: string): string {
-        return `${this.prefix}${key}`;
+        const full = `${this.prefix}${key}`;
+        if (RESERVED.test(full)) throw new Error(`cache-kit: the key "${key}" is reserved for tag indexes`);
+        return full;
     }
 
-    private tagIndexKey(tag: string): string {
-        return `${this.prefix}${TAG_INDEX_PREFIX}${tag}`;
+    private tagSetKey(tag: string): string {
+        return `${this.prefix}${TAG_SET_PREFIX}${tag}`;
+    }
+
+    private tagListKey(tag: string): string {
+        return `${this.prefix}${TAG_LIST_PREFIX}${tag}`;
     }
 
     // -------------------------------------------------------------------------
@@ -102,16 +163,23 @@ export class Cache {
 
     /**
      * Retrieve a cached value by key.
-     * Returns `undefined` when the key is absent or has expired.
+     * Returns `undefined` when the key is absent or has expired, or when the
+     * stored value carries a prototype-pollution key (the entry is deleted).
      */
     async get<T = unknown>(key: string): Promise<T | undefined> {
-        const raw = await this.adapter.get(this.prefixKey(key));
+        const dataKey = this.prefixKey(key);
+        const raw = await this.adapter.get(dataKey);
         if (raw === undefined || raw === null) return undefined;
 
         try {
             return parseSafely(raw as string) as T;
         } catch (error) {
-            if (error instanceof PollutionError) throw error;
+            if (error instanceof PollutionError) {
+                // A miss: thrown, it failed every read until the TTL ran out
+                // (never without one), and remember() did not refetch.
+                await this.adapter.del(dataKey);
+                return undefined;
+            }
             throw new Error(
                 `cache-kit: failed to deserialize value for key "${key}". ` + 'The stored value is not valid JSON.',
             );
@@ -128,6 +196,7 @@ export class Cache {
      */
     async set<T>(key: string, value: T, options?: number | SetOptions): Promise<void> {
         const { ttl, tags } = this.resolveSetOptions(options);
+        const dataKey = this.prefixKey(key);
         const serialized = JSON.stringify(value);
         const effectiveTtl = ttl ?? this.defaultTtl;
         if (effectiveTtl !== undefined && effectiveTtl !== 0 && !(effectiveTtl > 0 && Number.isFinite(effectiveTtl))) {
@@ -136,10 +205,16 @@ export class Cache {
             );
         }
 
-        await this.adapter.set(this.prefixKey(key), serialized, effectiveTtl);
+        // get() could never return it: nothing is stored (and the old value goes).
+        if (isPolluted(serialized)) {
+            await this.adapter.del(dataKey);
+            return;
+        }
+
+        await this.adapter.set(dataKey, serialized, effectiveTtl);
 
         if (tags && tags.length > 0) {
-            await this.indexTags(key, tags);
+            await this.indexTags(key, tags, effectiveTtl);
         }
     }
 
@@ -158,29 +233,22 @@ export class Cache {
     }
 
     /**
-     * Flush the **entire** backing store shared by this Cache and every other
-     * Cache built on the same adapter.
+     * Delete every entry of this cache: its namespace (with the namespaces and
+     * tag indexes under it), or all the adapter's keys for a root cache. It
+     * runs the adapter's `clear()`: a KVManager clears its own namespace, and
+     * on Redis never the whole database unless `flushDb` allows it.
      *
-     * Implementation note: the {@link KVAdapter} interface does not expose key
-     * enumeration, so this recycles the adapter via `disconnect()`/`connect()`,
-     * which is a whole-store reset rather than a namespace-scoped one. To avoid
-     * a namespaced sub-cache silently nuking its siblings, this method refuses
-     * to run when a namespace prefix is set: it is only valid on a root Cache.
+     * It used to recycle the adapter (disconnect + connect): on Redis that
+     * deleted nothing, and a reconnect failing during a blip left the shared
+     * adapter dead after Redis recovered.
      *
-     * @throws Error when called on a namespaced Cache (a prefix is set).
+     * @throws Error when the adapter has no `clear()`.
      */
     async clear(): Promise<void> {
-        if (this.prefix !== '') {
-            const namespace = this.prefix.replace(/:$/, '');
-            throw new Error(
-                `cache-kit: clear() resets the entire shared backing store and ` +
-                    `cannot be called on the namespaced cache "${namespace}". ` +
-                    'Delete individual keys with delete(), invalidate a group with ' +
-                    'invalidateTag(), or call clear() on the root cache to reset everything.',
-            );
+        if (!this.adapter.clear) {
+            throw new Error(`cache-kit: the "${this.adapter.id}" adapter cannot clear its keys (it has no clear())`);
         }
-        await this.adapter.disconnect();
-        await this.adapter.connect();
+        await this.adapter.clear(this.prefix);
     }
 
     // -------------------------------------------------------------------------
@@ -222,22 +290,31 @@ export class Cache {
      * index entry is removed. Entries carrying other tags are unaffected.
      */
     async invalidateTag(tag: string): Promise<void> {
-        const indexKey = this.tagIndexKey(tag);
-        await withLock(this.adapter, indexKey, () => this.invalidateIndex(indexKey));
+        const listKey = this.tagListKey(tag);
+        await withLock(this.adapter, listKey, async () => {
+            // The JSON list too with an adapter that has sets: entries tagged
+            // before 0.x are listed there.
+            const keys = await this.drainList(listKey);
+            if (this.adapter.sdrain) keys.push(...(await this.adapter.sdrain(this.tagSetKey(tag))));
+            await this.deleteKeys(keys);
+        });
     }
 
-    private async invalidateIndex(indexKey: string): Promise<void> {
-        const raw = await this.adapter.get(indexKey);
-        if (raw === null || raw === undefined) return;
+    private async drainList(listKey: string): Promise<string[]> {
+        const raw = await this.adapter.get(listKey);
+        if (raw === null || raw === undefined) return [];
+        await this.adapter.del(listKey);
+        return parseTagList(raw).map(([key]) => key);
+    }
 
-        let keys: string[];
-        try {
-            keys = JSON.parse(raw as string) as string[];
-        } catch {
-            keys = [];
+    /** Deletes the entries of `keys` (relative to this cache), in batches; never a tag index. */
+    private async deleteKeys(keys: string[]): Promise<void> {
+        const full = [...new Set(keys)].map((key) => `${this.prefix}${key}`).filter((key) => !RESERVED.test(key));
+        for (let i = 0; i < full.length; i += DELETE_BATCH) {
+            const batch = full.slice(i, i + DELETE_BATCH);
+            if (this.adapter.mdel) await this.adapter.mdel(batch);
+            else await Promise.all(batch.map((key) => this.adapter.del(key)));
         }
-
-        await Promise.all([...keys.map((k) => this.adapter.del(this.prefixKey(k))), this.adapter.del(indexKey)]);
     }
 
     // -------------------------------------------------------------------------
@@ -275,31 +352,46 @@ export class Cache {
     }
 
     /**
-     * Read-modify-write of each tag's index, one at a time per index key: two
-     * concurrent set() calls with the same tag used to both read the old index
-     * and one key was lost, so invalidateTag() missed it. The lock is
-     * per-process; instances sharing Redis can still race (see the docs).
+     * Adds `key` to each tag's index, for as long as the entry lives. With an
+     * adapter that has `sadd` it is one atomic step per tag, whatever the size
+     * of the index. Otherwise a JSON list is rewritten, one set() at a time per
+     * index key (concurrent set() calls used to both read the old index and
+     * one key was lost); that lock is per-process, so instances sharing a store
+     * can still race (see the docs).
      */
-    private async indexTags(key: string, tags: string[]): Promise<void> {
+    private async indexTags(key: string, tags: string[], ttl: number | undefined): Promise<void> {
+        const adapter = this.adapter;
         await Promise.all(
             tags.map((tag) => {
-                const indexKey = this.tagIndexKey(tag);
-                return withLock(this.adapter, indexKey, () => this.addToIndex(indexKey, key));
+                if (adapter.sadd && adapter.sdrain) return adapter.sadd(this.tagSetKey(tag), key, ttl || undefined);
+                const listKey = this.tagListKey(tag);
+                return withLock(adapter, listKey, () => this.addToList(listKey, key, ttl));
             }),
         );
     }
 
-    private async addToIndex(indexKey: string, key: string): Promise<void> {
-        const raw = await this.adapter.get(indexKey);
-        let keys: string[] = [];
-        if (raw !== null && raw !== undefined) {
-            try {
-                keys = JSON.parse(raw as string) as string[];
-            } catch {
-                keys = [];
-            }
-        }
-        if (keys.includes(key)) return;
-        await this.adapter.set(indexKey, JSON.stringify([...keys, key]));
+    /**
+     * Rewriting the whole list on every set() made each one slower than the
+     * last, and expired keys were never dropped: they are now, the list expires
+     * with its last entry, and past MAX_TAG_LIST the oldest entries are deleted
+     * with their data (a deleted entry needs no invalidating).
+     */
+    private async addToList(listKey: string, key: string, ttl: number | undefined): Promise<void> {
+        const now = Date.now();
+        const expiresAt = ttl ? now + ttl * 1000 : 0;
+        const entries = parseTagList(await this.adapter.get(listKey)).filter(([, at]) => at === 0 || at > now);
+        const existing = entries.find(([listed]) => listed === key);
+        if (!existing) entries.push([key, expiresAt]);
+        // A key keeps its longest expiry: an earlier write may still be alive.
+        else if (existing[1] !== 0) existing[1] = expiresAt === 0 ? 0 : Math.max(existing[1], expiresAt);
+
+        const evicted = entries.length > MAX_TAG_LIST ? entries.splice(0, entries.length - MAX_TAG_LIST) : [];
+        await this.deleteKeys(evicted.map(([listed]) => listed));
+
+        // The list lives as long as its longest-lived entry (for good if one has no TTL).
+        const forever = entries.some(([, at]) => at === 0);
+        const last = entries.reduce((max, [, at]) => Math.max(max, at), 0);
+        const listTtl = forever ? undefined : (last - now) / 1000;
+        await this.adapter.set(listKey, JSON.stringify(entries), listTtl);
     }
 }

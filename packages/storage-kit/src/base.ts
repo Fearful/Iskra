@@ -1,3 +1,5 @@
+import { contentTypeFor } from './content-type';
+
 export interface StorageConfig {
     adapter: 'local' | 'minio' | 's3';
     basePath?: string;
@@ -21,9 +23,39 @@ export interface StorageFile {
 }
 
 export interface PutOptions {
+    /** Default: from the path's extension (see `contentTypeFor`). */
     contentType?: string;
+    /**
+     * `Content-Disposition` stored with the object (S3/MinIO). Default:
+     * `inline` for raster images, `attachment` for anything else.
+     */
+    contentDisposition?: string;
+    /**
+     * `false` fails with {@link FileExistsError} instead of replacing a file
+     * already stored at the path (S3 `If-None-Match: *`, an exclusive create
+     * locally). Default: `true`.
+     */
+    overwrite?: boolean;
     metadata?: Record<string, string>;
     public?: boolean;
+}
+
+/** What a URL from `url()` serves (S3/MinIO; the local adapter's URLs are served by the app). */
+export interface UrlOptions {
+    /** Default: from the path's extension, whatever type the object was stored with. */
+    contentType?: string;
+    /** Default: `inline` for raster images, `attachment` for anything else. */
+    contentDisposition?: string;
+}
+
+/** `put()` with `overwrite: false` found a file already stored at `path`. */
+export class FileExistsError extends Error {
+    readonly code = 'EEXIST';
+
+    constructor(readonly path: string) {
+        super(`File already exists: ${path}`);
+        this.name = 'FileExistsError';
+    }
 }
 
 export interface StorageAdapter {
@@ -35,7 +67,7 @@ export interface StorageAdapter {
     delete(path: string): Promise<void>;
     exists(path: string): Promise<boolean>;
     list(prefix?: string): Promise<StorageFile[]>;
-    url(path: string, expiresIn?: number): Promise<string>;
+    url(path: string, expiresIn?: number, options?: UrlOptions): Promise<string>;
     copy(from: string, to: string): Promise<void>;
     move(from: string, to: string): Promise<void>;
     isDirectory(path: string): Promise<boolean>;
@@ -52,7 +84,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     abstract delete(path: string): Promise<void>;
     abstract exists(path: string): Promise<boolean>;
     abstract list(prefix?: string): Promise<StorageFile[]>;
-    abstract url(path: string, expiresIn?: number): Promise<string>;
+    abstract url(path: string, expiresIn?: number, options?: UrlOptions): Promise<string>;
     abstract isDirectory(path: string): Promise<boolean>;
 
     isConnected(): boolean {
@@ -99,17 +131,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     }
 
     protected getMimeType(filename: string): string {
-        const ext = filename.split('.').pop()?.toLowerCase();
-        const mimeTypes: Record<string, string> = {
-            jpg: 'image/jpeg',
-            jpeg: 'image/jpeg',
-            png: 'image/png',
-            gif: 'image/gif',
-            pdf: 'application/pdf',
-            txt: 'text/plain',
-            json: 'application/json',
-            zip: 'application/zip',
-        };
-        return mimeTypes[ext || ''] || 'application/octet-stream';
+        return contentTypeFor(filename);
     }
 }

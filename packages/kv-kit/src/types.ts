@@ -19,4 +19,20 @@ export interface KVAdapter {
     mget?<T = unknown>(keys: string[]): Promise<(T | undefined)[]>;
     mset?<T = unknown>(entries: Array<[string, T]>, ttl?: number): Promise<void>;
     mdel?(keys: string[]): Promise<void>;
+
+    /**
+     * Deletes every key that starts with `prefix` (every key the adapter holds
+     * without one), without touching the connection. An adapter that cannot
+     * leaves it out, and callers such as cache-kit's `clear()` then fail.
+     */
+    clear?(prefix?: string): Promise<void>;
+
+    /**
+     * Expiring sets, for cache-kit's tag index: `sadd` adds `member` to the set
+     * at `key` for `ttl` seconds (for good without one), and the set lives as
+     * long as its longest-lived member. `sdrain` deletes the set and returns
+     * its members in one step, so a member added meanwhile is never lost.
+     */
+    sadd?(key: string, member: string, ttl?: number): Promise<void>;
+    sdrain?(key: string): Promise<string[]>;
 }

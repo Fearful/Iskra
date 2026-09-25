@@ -54,6 +54,13 @@ rl.on('line', (line) => {
             return;
         }
 
+        if (sql.startsWith('BIG_RESPONSE_TEST:')) {
+            // One response line of about that many bytes.
+            const bytes = Number(sql.slice('BIG_RESPONSE_TEST:'.length));
+            process.stdout.write(JSON.stringify({ id, data: [{ blob: 'x'.repeat(bytes) }] }) + '\n');
+            return;
+        }
+
         if (sql.includes('FAIL')) {
             process.stdout.write(JSON.stringify({ id, error: 'simulated query failure' }) + '\n');
             return;

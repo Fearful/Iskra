@@ -193,6 +193,80 @@ describe.if(redisUp)('Redis connection settings (requires Redis)', () => {
     });
 });
 
+describe.if(redisUp)('RedisAdapter clear() and expiring sets (requires Redis)', () => {
+    // Database 8, so SCAN and the assertions only see this test's keys.
+    const base = new URL(REDIS_URL);
+    const url = `redis://${base.hostname}:${Number(base.port) || 6379}/8`;
+    let raw: Redis;
+
+    beforeAll(async () => {
+        raw = new Redis(url);
+        await raw.flushdb();
+    });
+
+    afterAll(async () => {
+        await raw.flushdb();
+        raw.disconnect();
+    });
+
+    it('clears the keys under a prefix only, glob characters included', async () => {
+        const adapter = new RedisAdapter(url);
+        await adapter.connect();
+        try {
+            for (const k of ['app:1', 'app:2', 'app*x', 'apple', 'other']) await adapter.set(k, 1);
+            await adapter.sadd('app:tags:t', 'app:1', 60);
+            await adapter.clear('app:');
+            await adapter.clear('app*');
+            expect((await raw.keys('*')).sort()).toEqual(['apple', 'other']);
+            await expect(adapter.clear()).rejects.toThrow(/whole Redis database/);
+            expect(await raw.dbsize()).toBe(2);
+        } finally {
+            await raw.flushdb();
+            await adapter.disconnect();
+        }
+    });
+
+    it("clears within ioredis' keyPrefix", async () => {
+        const adapter = new RedisAdapter({ url, keyPrefix: 'svc:' });
+        await adapter.connect();
+        try {
+            await adapter.set('a', 1);
+            await adapter.sadd('tags:t', 'a');
+            await raw.set('other', '1');
+            expect((await raw.keys('*')).sort()).toEqual(['other', 'svc:a', 'svc:tags:t']);
+            await adapter.clear();
+            expect(await raw.keys('*')).toEqual(['other']);
+        } finally {
+            await raw.flushdb();
+            await adapter.disconnect();
+        }
+    });
+
+    it('keeps a set as long as its longest-lived member, and drains it once', async () => {
+        const adapter = new RedisAdapter(url);
+        await adapter.connect();
+        try {
+            await adapter.sadd('t', 'a', 60);
+            const ttl = await raw.pttl('t');
+            expect(ttl).toBeGreaterThan(59_000);
+            await adapter.sadd('t', 'b', 0.05);
+            expect(await raw.pttl('t')).toBeGreaterThanOrEqual(ttl - 1000);
+            await adapter.sadd('t', 'c');
+            expect(await raw.pttl('t')).toBe(-1); // c never expires
+
+            await Bun.sleep(100);
+            await adapter.sadd('t', 'd', 60); // drops the expired b
+            expect((await raw.zrange('t', 0, -1)).sort()).toEqual(['a', 'c', 'd']);
+            expect((await adapter.sdrain('t')).sort()).toEqual(['a', 'c', 'd']);
+            expect(await raw.exists('t')).toBe(0);
+            expect(await adapter.sdrain('t')).toEqual([]);
+        } finally {
+            await raw.flushdb();
+            await adapter.disconnect();
+        }
+    });
+});
+
 describe('RedisAdapter / KVManager guards', () => {
     it('fails loudly when used before connect()', async () => {
         // Regression: `this.client?.set(...)` silently did nothing.

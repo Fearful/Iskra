@@ -1,4 +1,5 @@
-export type { EmailConfig, EmailMessage, TemplateData, EmailAdapter } from './types';
+export type { EmailConfig, EmailMessage, EmailAddress, EmailRecipient, TemplateData, EmailAdapter } from './types';
+export { checkRecipients, checkReplyTo } from './headers';
 export { MockEmailAdapter } from './mock';
 export { createEmailAdapter } from './factory';
 export { SmtpEmailAdapter } from './providers/smtp';

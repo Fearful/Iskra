@@ -78,6 +78,9 @@ await kv.del('clave');
 
 // Verificar existencia
 const existe = await kv.has('clave');
+
+// Eliminar todas las claves del namespace (ver "Borrar claves")
+await kv.clear();
 ```
 
 ### Cliente nativo de Redis
@@ -131,7 +134,7 @@ typeof (await kv.get('contador')); // 'number'
 
 `undefined` se trata de forma explícita (se almacena como el literal JSON `null` y se decodifica de vuelta a `undefined`), por lo que nunca se corrompe en la cadena `"undefined"`. Valores escritos fuera del adaptador que no sean JSON válido se devuelven tal cual (como cadena).
 
-Lo que JSON no puede representar **no** vuelve igual, a diferencia del adaptador de memoria, que guarda el valor mismo: un `Date` vuelve como string ISO, un `Map` o `Set` como `{}`, `undefined` dentro de un array como `null`, y `null` como `undefined`. Esos valores hay que convertirlos a mano (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
+Lo que JSON no puede representar **no** vuelve igual, a diferencia del adaptador de memoria, que guarda una copia del valor mismo: un `Date` vuelve como string ISO, un `Map` o `Set` como `{}`, `undefined` dentro de un array como `null`, y `null` como `undefined`. Esos valores hay que convertirlos a mano (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
 
 ## Namespace
 
@@ -147,6 +150,27 @@ await cache.set('token', respuestaCache);
 ```
 
 El prefijo se aplica de forma transparente; nunca lo incluyes en tus cadenas de clave. La opción tiene como valor predeterminado `""` (sin prefijo) para que el código existente no se vea afectado.
+
+## Borrar claves
+
+`kv.clear(prefix?)` elimina todas las claves del namespace del manager (solo las que están bajo `prefix` dentro de él, si se indica), sin tocar la conexión:
+
+- Memoria: se eliminan las claves que coinciden.
+- Redis: las claves se buscan con `SCAN` y se eliminan con `DEL`, limitadas al namespace (y al `keyPrefix` de ioredis, si configuraste uno). Sin namespace, `clear()` vaciaría toda la base de Redis, que pueden compartir otras apps o servicios, así que lanza un error salvo que lo habilites con `flushDb: true`, que ejecuta `FLUSHDB`:
+
+```typescript
+const cache = new KVManager({ namespace: 'cache' });
+await cache.clear(); // elimina solo cache:*
+
+const propia = new KVManager({ flushDb: true }); // la base es solo de esta app
+await propia.clear(); // FLUSHDB
+```
+
+El `clear()` de cache-kit usa este `clear()`, así que una `Cache` sobre un `KVManager` borra solo sus propias claves.
+
+## Sets con expiración
+
+`sadd(key, member, ttl?)` y `sdrain(key)` mantienen un conjunto de strings cuyos miembros expiran uno por uno: el conjunto vive lo que su miembro más duradero, y `sdrain` lo elimina y devuelve sus miembros en un solo paso. En Redis es un sorted set ordenado por expiración, actualizado por un único script atómico. cache-kit guarda en ellos su índice de etiquetas. Solo `key` lleva el namespace; los miembros se guardan tal cual.
 
 ## Operaciones en Lote
 
@@ -171,6 +195,8 @@ await kv.mdel(['clave:a', 'clave:b', 'clave:c']);
 Un TTL es una cantidad de segundos; `0` (o ninguno) significa sin expiración, y un TTL negativo o no finito se rechaza con un `RangeError`.
 
 El adaptador en memoria gestiona los temporizadores de expiración sin fugas: sobrescribir una clave con una nueva llamada a `set` cancela cualquier temporizador previo antes de programar uno nuevo, por lo que un temporizador obsoleto nunca puede eliminar un valor recién escrito. Se admiten TTLs más largos que el límite de `setTimeout` (unos 24,8 días).
+
+Como Redis, el adaptador en memoria guarda y devuelve copias (`structuredClone`): modificar un objeto que pasaste a `set`, o uno que devolvió `get`, no cambia el valor guardado (antes era el mismo objeto, así que el cambio de una petición aparecía en todas las demás). Un valor que no se puede clonar, como una función, se rechaza; una instancia de clase vuelve como objeto plano.
 
 ## Variables de Entorno
 

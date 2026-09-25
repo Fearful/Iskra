@@ -293,7 +293,27 @@ Solo `false` desactiva un header por defecto (`xFrameOptions: false`). Una opcio
 - **CORS (`CorsFeature`):** `credentials: true` necesita que `origin` nombre los origenes permitidos (una lista o una funcion); con `origin` sin definir o `'*'`, `initialize()` tira un error (**breaking**). Antes mandaba `Access-Control-Allow-Origin: *`, que los navegadores rechazan con credenciales, y la salida habitual era reflejar cualquier origen.
 - **Permisos (`PermissionsFeature`):** los permisos y roles de cada usuario se cachean (con `CacheFeature`) durante `cacheTTL` segundos, 60 por defecto (antes una hora): un rol que revocas sigue valiendo ese tiempo. Llama a `await kernel.getFeature('permissions')?.invalidate(userId)` despues de cambiar los roles o permisos de un usuario para descartar la copia cacheada; baja `cacheTTL`, o usa `cachePermissions: false`, para cambiar consultas a la base por una ventana mas corta.
 - **CSRF en rutas puntuales:** `requireCsrf()` valida el token en la ruta aunque su metodo este en `ignoreMethods` (p. ej. un GET que modifica estado) y falla cerrado si `CsrfFeature` no esta registrada. En formularios `multipart/form-data` envia el token en el header `X-CSRF-Token`.
-- **Uploads (`UploadFeature`):** con `exposeRoutes: true` es obligatorio `authorize(c, action)` (`action`: `upload` | `list` | `download` | `delete`); usa `authorize: () => true` solo si las rutas deben ser publicas. El body se corta al superar `maxFileSize` (413) sin cargarlo entero en memoria, el nombre del archivo se sanea y los errores internos no se devuelven al cliente. `maxFileSize` mas 64 KiB de overhead multipart tiene que entrar en el `maxRequestBodySize` del Kernel (16 MiB por defecto): Bun rechaza bodies mas grandes antes de llegar a la ruta, asi que `initialize()` falla en vez de que el limite nunca se alcance sin aviso.
+- **Uploads (`UploadFeature`):** con `exposeRoutes: true` es obligatorio `authorize(c, action, target?)` (`action`: `upload` | `list` | `download` | `delete`); usa `authorize: () => true` solo si las rutas deben ser publicas. El body se corta al superar `maxFileSize` (413) sin cargarlo entero en memoria, el nombre del archivo se sanea y los errores internos no se devuelven al cliente. `maxFileSize` mas 64 KiB de overhead multipart tiene que entrar en el `maxRequestBodySize` del Kernel (16 MiB por defecto): Bun rechaza bodies mas grandes antes de llegar a la ruta, asi que `initialize()` falla en vez de que el limite nunca se alcance sin aviso.
+    - `target` es lo que toca la accion: `{ key, subfolder, filename }`, mas `size` y `type` en `upload` (el `{ key, subfolder }` de la carpeta en `list`); `subfolder` no tiene segmentos vacios ni `.`/`..`. `upload` se pregunta dos veces: primero sin target, antes de leer el body, y luego con el, antes de escribir nada. Una comprobacion como `Boolean(c.get('user'))` deja a cualquier usuario con sesion leer y borrar todos los archivos: limita el target al usuario.
+    - Una subida nunca reemplaza un archivo guardado: la ruta responde **409** salvo con `overwrite: true`.
+    - El archivo se guarda con un tipo tomado de su extension (`contentTypeFor` de storage-kit), nunca con el de quien lo sube (Bun deduce `File.type` del nombre: `image/svg+xml`, `text/html`). Las descargas se transmiten en streaming y solo las imagenes rasterizadas se sirven inline: todo lo demas lleva `Content-Disposition: attachment`, y toda descarga `Content-Security-Policy: sandbox`. En S3/MinIO el objeto guarda la misma disposicion.
+    - Sin `allowedExtensions` se acepta cualquier extension salvo el contenido web activo (`.html`, `.htm`, `.shtml`, `.xhtml`, `.xht`, `.mht`, `.mhtml`, `.svg`, `.svgz`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`, `.cjs`), que un navegador ejecuta donde se sirva inline; incluye una en `allowedExtensions` para aceptarla (se sigue guardando como `application/octet-stream` y se descarga). Con el adaptador de almacenamiento `local`, sirve su carpeta con los encabezados que describe [storage-kit](/es/packages/storage-kit/#tipo-de-contenido-y-disposicion).
+
+    ```typescript
+    new UploadFeature({
+        projectName: 'app',
+        exposeRoutes: true,
+        // Cada usuario lee y escribe solo bajo users/<id>/.
+        authorize: (c, _action, target) => {
+            const user = c.get('user');
+            if (!user) return false;
+            if (!target) return true; // upload, antes de leer el body
+            const own = `users/${user.id}`;
+            return target.subfolder === own || target.subfolder?.startsWith(`${own}/`) === true;
+        },
+    });
+    ```
+- **Email (`EmailFeature`):** el adaptador que entrega rechaza un mensaje (la promesa que devuelve se rechaza) cuyo `subject` o `headers` lleven un CR/LF, o cuyas entradas de `to`/`cc`/`bcc`/`replyTo` no sean cada una una sola direccion o un objeto `{ name, address }`: ver [destinatarios en mailer-kit](/es/packages/mailer-kit/#destinatarios). Los destinatarios de tipo objeto tambien se revisan (pasaban como `"[object Object]"`).
 - **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar, igual que un valor de ejemplo en produccion. Ver la seccion de Auth.
 
 ## Auth

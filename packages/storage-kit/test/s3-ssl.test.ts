@@ -68,4 +68,30 @@ describe('S3StorageAdapter - useSSL enforcement', () => {
                 }),
         ).not.toThrow();
     });
+
+    it('refuses plaintext endpoints the SDK parses as http without a //', () => {
+        // Regression: a regex for "http://" let these through; the SDK reads
+        // every one of them as http://minio:9000.
+        for (const endpoint of ['http:/minio:9000', 'http:minio:9000', 'http:\\\\minio:9000']) {
+            expect(
+                () =>
+                    new S3StorageAdapter({
+                        adapter: 'minio',
+                        connection: { endpoint, accessKey: 'x', secretKey: 'x', bucket: 'b' },
+                    }),
+            ).toThrow(/Refusing plaintext S3 endpoint/);
+        }
+    });
+
+    it('rejects an endpoint that is not an http(s) URL', () => {
+        for (const endpoint of ['minio:9000', '//minio:9000', 'ftp://minio']) {
+            expect(
+                () =>
+                    new S3StorageAdapter({
+                        adapter: 'minio',
+                        connection: { endpoint, accessKey: 'x', secretKey: 'x', bucket: 'b', useSSL: false },
+                    }),
+            ).toThrow(/Invalid S3 endpoint/);
+        }
+    });
 });

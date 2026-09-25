@@ -11,6 +11,10 @@ type PendingEntry = {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_START_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/** Bytes of a response line searched for its `{"id":N` prefix. */
+const HEAD_BYTES = 64;
 
 /** Settles once when the bridge reports `ready`, a fatal error, or exits. */
 type ReadyWaiter = { resolve: () => void; reject: (err: Error) => void };
@@ -26,6 +30,7 @@ export class OracleDriver implements Driver {
     private bridgePath: string;
     private timeoutMs: number;
     private startTimeoutMs: number;
+    private maxResponseBytes: number;
     private app: App | null = null;
 
     /**
@@ -33,15 +38,19 @@ export class OracleDriver implements Driver {
      *   shipped with this package (it is resolved next to both `src/` and `dist/`).
      * @param timeoutMs Per-query timeout.
      * @param startTimeoutMs How long start() waits for the bridge to connect.
+     * @param maxResponseBytes Largest response (a query's rows, as one line of
+     *   JSON) read from the bridge: a larger one rejects its query.
      */
     constructor(
         bridgePath?: string,
         timeoutMs: number = DEFAULT_TIMEOUT_MS,
         startTimeoutMs: number = DEFAULT_START_TIMEOUT_MS,
+        maxResponseBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
     ) {
         this.bridgePath = bridgePath || resolve(import.meta.dir, '../bridge/runner.js');
         this.timeoutMs = timeoutMs;
         this.startTimeoutMs = startTimeoutMs;
+        this.maxResponseBytes = maxResponseBytes;
     }
 
     async init(app: App) {
@@ -195,19 +204,45 @@ export class OracleDriver implements Driver {
     private async readStream(stream: ReadableStream, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
+        // The line being read, as the chunks received since it began: each chunk
+        // is scanned once for a newline, and a line joined and decoded once.
+        // Splitting the whole buffer again on every chunk was quadratic in the
+        // size of a result (a 32 MiB one took seconds of the event loop).
+        let parts: Uint8Array[] = [];
+        let size = 0;
+        // Past maxResponseBytes: the rest of the line is dropped.
+        let dropping = false;
 
         try {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line
-
-                for (const line of lines) {
-                    this.handleLine(line, pending, waiter);
+                const chunk = value as Uint8Array;
+                let start = 0;
+                for (let nl = chunk.indexOf(0x0a); nl !== -1; nl = chunk.indexOf(0x0a, start)) {
+                    const piece = chunk.subarray(start, nl);
+                    start = nl + 1;
+                    if (!dropping && size + piece.length > this.maxResponseBytes) {
+                        this.rejectTooLarge([...parts, piece], pending);
+                    } else if (!dropping) {
+                        parts.push(piece);
+                        this.handleLine(decoder.decode(Buffer.concat(parts, size + piece.length)), pending, waiter);
+                    }
+                    parts = [];
+                    size = 0;
+                    dropping = false;
+                }
+                const rest = chunk.subarray(start);
+                if (dropping || rest.length === 0) continue;
+                if (size + rest.length > this.maxResponseBytes) {
+                    this.rejectTooLarge([...parts, rest], pending);
+                    parts = [];
+                    size = 0;
+                    dropping = true;
+                } else {
+                    parts.push(rest);
+                    size += rest.length;
                 }
             }
         } catch (err) {
@@ -218,6 +253,20 @@ export class OracleDriver implements Driver {
             waiter.reject(new Error('Oracle bridge process exited before it was ready'));
             this.rejectAllPending(new Error('Oracle bridge process exited'), pending);
         }
+    }
+
+    /**
+     * A response past maxResponseBytes: the rest of its line is dropped, and
+     * the query it answers (its id leads the JSON the bridge writes) rejected.
+     */
+    private rejectTooLarge(parts: Uint8Array[], pending: Map<number, PendingEntry>) {
+        const head = Buffer.concat(parts.map((p) => p.subarray(0, HEAD_BYTES))).subarray(0, HEAD_BYTES);
+        const id = /^\s*\{\s*"id"\s*:\s*(\d+)/.exec(head.toString('utf8'))?.[1];
+        this.log('error', { maxResponseBytes: this.maxResponseBytes, id }, 'Oracle bridge response too large');
+        if (id === undefined) return;
+        this.settle(pending, Number(id), ({ reject }) =>
+            reject(new Error(`Oracle response exceeds maxResponseBytes (${this.maxResponseBytes} bytes)`)),
+        );
     }
 
     private handleLine(line: string, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {

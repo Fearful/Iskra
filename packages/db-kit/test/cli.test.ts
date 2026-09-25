@@ -35,19 +35,19 @@ describe('db-kit CLI argument parsing', () => {
 
     test("accepts 'generate' and echoes the drizzle-kit invocation", async () => {
         const { stdout } = await runCli(['generate']);
-        // The valid-command branch echoes `> bunx drizzle-kit <command> ...`.
-        expect(stdout).toContain('bunx drizzle-kit generate');
+        // The valid-command branch echoes `> bunx --no-install drizzle-kit <command> ...`.
+        expect(stdout).toContain('bunx --no-install drizzle-kit generate');
     });
 
     test('forwards extra args after a valid command (e.g. a migration name)', async () => {
         const { stdout } = await runCli(['generate', 'add_users_table']);
-        expect(stdout).toContain('bunx drizzle-kit generate add_users_table');
+        expect(stdout).toContain('bunx --no-install drizzle-kit generate add_users_table');
     });
 
     test('accepts each of the four valid commands', async () => {
         for (const cmd of ['generate', 'migrate', 'push', 'drop']) {
             const { stdout } = await runCli([cmd]);
-            expect(stdout).toContain(`bunx drizzle-kit ${cmd}`);
+            expect(stdout).toContain(`bunx --no-install drizzle-kit ${cmd}`);
         }
     });
 });

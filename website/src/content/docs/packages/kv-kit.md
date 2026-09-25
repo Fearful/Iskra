@@ -78,6 +78,9 @@ await kv.del('key');
 
 // Check existence
 const exists = await kv.has('key');
+
+// Delete every key of the namespace (see "Clearing keys")
+await kv.clear();
 ```
 
 ### Native Redis client
@@ -131,7 +134,7 @@ typeof (await kv.get('count'));   // 'number'
 
 `undefined` is handled explicitly (stored as the JSON `null` literal and decoded back to `undefined`), so it can never be corrupted into the string `"undefined"`. Values written outside the adapter that are not valid JSON are returned as-is (as a string).
 
-Anything JSON cannot represent does **not** round-trip, unlike with the in-memory adapter, which keeps the value itself: a `Date` comes back as an ISO string, a `Map` or `Set` as `{}`, `undefined` inside an array as `null`, and `null` as `undefined`. Convert such values yourself (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
+Anything JSON cannot represent does **not** round-trip, unlike with the in-memory adapter, which keeps a copy of the value itself: a `Date` comes back as an ISO string, a `Map` or `Set` as `{}`, `undefined` inside an array as `null`, and `null` as `undefined`. Convert such values yourself (`date.toISOString()` / `new Date(s)`, `Object.fromEntries(map)`).
 
 ## Namespace
 
@@ -147,6 +150,27 @@ await cache.set('token', cachedResponse);
 ```
 
 The prefix is applied automatically; you never include it in your key strings. The option defaults to `""` (no prefix) so existing code is unaffected.
+
+## Clearing keys
+
+`kv.clear(prefix?)` deletes every key of the manager's namespace (only those under `prefix` within it, when given), and never touches the connection:
+
+- Memory: the matching keys are deleted.
+- Redis: the keys are found with `SCAN` and deleted with `DEL`, scoped to the namespace (and to ioredis' `keyPrefix`, if you set one). Without a namespace, `clear()` would empty the whole Redis database, which other apps or services may share, so it throws unless you opt in with `flushDb: true`, which runs `FLUSHDB`:
+
+```typescript
+const cache = new KVManager({ namespace: 'cache' });
+await cache.clear(); // deletes cache:* only
+
+const owned = new KVManager({ flushDb: true }); // this app owns the database
+await owned.clear(); // FLUSHDB
+```
+
+cache-kit's `clear()` runs this `clear()`, so a `Cache` on a `KVManager` clears its own keys.
+
+## Expiring sets
+
+`sadd(key, member, ttl?)` and `sdrain(key)` keep a set of strings whose members expire one by one: the set lives as long as its longest-lived member, and `sdrain` deletes it and returns its members in one step. With Redis it is a sorted set scored by expiry, updated by one atomic script. cache-kit keeps its tag index in them. Only `key` is namespaced; members are stored as given.
 
 ## Batch Operations
 
@@ -171,6 +195,8 @@ await kv.mdel(['key:a', 'key:b', 'key:c']);
 A TTL is a number of seconds; `0` (or none) means no expiry, and a negative or non-finite TTL is rejected with a `RangeError`.
 
 The in-memory adapter manages expiry timers without leaks: overwriting a key with a new `set` call cancels any previous timer before scheduling the new one, so a stale timer can never delete a freshly written value. TTLs longer than `setTimeout`'s limit (about 24.8 days) are supported.
+
+Like Redis, the in-memory adapter stores and returns copies (`structuredClone`): changing an object you passed to `set`, or one `get` returned, does not change the stored value (it used to be the same object, so one request's change showed up in every other). A value that cannot be cloned, such as a function, is rejected; a class instance comes back as a plain object.
 
 ## Environment Variables
 

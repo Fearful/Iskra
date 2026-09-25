@@ -40,12 +40,47 @@ export interface RedisAdapterHooks {
      * console, outside the app's logger.
      */
     onError?: (error: Error) => void;
+    /**
+     * Lets `clear()` with no key prefix at all run FLUSHDB, which empties the
+     * whole Redis database, other apps' keys included.
+     */
+    flushDb?: boolean;
 }
 
 /** `EX` for whole seconds; `PX` for fractional TTLs, which Redis `EX` rejects. */
 function ttlArgs(ttl: number): ['EX', number] | ['PX', number] {
     return Number.isInteger(ttl) ? ['EX', ttl] : ['PX', Math.max(1, Math.round(ttl * 1000))];
 }
+
+/** `prefix` as a literal in a SCAN MATCH pattern. */
+const escapeGlob = (prefix: string): string => prefix.replace(/[*?[\]\\]/g, '\\$&');
+
+/** Keys deleted per DEL while clearing. */
+const CLEAR_BATCH = 1000;
+
+/**
+ * An expiring set is a sorted set scored by each member's expiry (Redis time,
+ * in ms; FOREVER for none). Adding a member drops the expired ones and keeps
+ * the key alive until its last member expires, in one atomic step.
+ * KEYS[1]: the set; ARGV[1]: the member; ARGV[2]: its TTL in ms, '' for none.
+ */
+const SADD_SCRIPT = `
+if redis.replicate_commands then redis.replicate_commands() end
+local forever = 9007199254740991
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+local expires = forever
+if ARGV[2] ~= '' then expires = now + tonumber(ARGV[2]) end
+local current = tonumber(redis.call('ZSCORE', KEYS[1], ARGV[1]) or '0')
+if expires > current then redis.call('ZADD', KEYS[1], expires, ARGV[1]) end
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. now)
+local last = redis.call('ZRANGE', KEYS[1], -1, -1, 'WITHSCORES')
+if tonumber(last[2]) >= forever then
+    redis.call('PERSIST', KEYS[1])
+else
+    redis.call('PEXPIREAT', KEYS[1], last[2])
+end
+`;
 
 /**
  * ioredis errors carry the command they answer with its arguments: AUTH's
@@ -206,5 +241,46 @@ export class RedisAdapter implements KVAdapter {
     async mdel(keys: string[]): Promise<void> {
         if (keys.length === 0) return;
         await this.redis.del(...keys);
+    }
+
+    /**
+     * Deletes the keys under `prefix` (after ioredis' own `keyPrefix`, if set)
+     * with SCAN and DEL. With no prefix at all this would be every key in the
+     * database, which only `flushDb: true` allows (as a FLUSHDB).
+     */
+    async clear(prefix = ''): Promise<void> {
+        const redis = this.redis;
+        const keyPrefix = redis.options.keyPrefix ?? '';
+        if (!keyPrefix && !prefix) {
+            if (!this.hooks.flushDb) {
+                throw new Error(
+                    'RedisAdapter.clear() without a key prefix would empty the whole Redis database: ' +
+                        'give the KVManager a namespace, or pass flushDb: true if the database belongs to this app alone',
+                );
+            }
+            await redis.flushdb();
+            return;
+        }
+        const match = `${escapeGlob(keyPrefix + prefix)}*`;
+        let cursor = '0';
+        do {
+            const [next, keys] = await redis.scan(cursor, 'MATCH', match, 'COUNT', CLEAR_BATCH);
+            cursor = next;
+            // SCAN returns whole keys, and ioredis prepends keyPrefix to DEL's.
+            if (keys.length > 0) await redis.del(...keys.map((key) => key.slice(keyPrefix.length)));
+        } while (cursor !== '0');
+    }
+
+    async sadd(key: string, member: string, ttl?: number): Promise<void> {
+        const seconds = checkTtl(ttl);
+        const ms = seconds === undefined ? '' : String(Math.max(1, Math.ceil(seconds * 1000)));
+        await this.redis.eval(SADD_SCRIPT, 1, key, member, ms);
+    }
+
+    async sdrain(key: string): Promise<string[]> {
+        const results = await this.redis.multi().zrange(key, 0, -1).del(key).exec();
+        const failed = results?.find(([err]) => err);
+        if (failed) throw failed[0];
+        return (results?.[0]?.[1] as string[] | undefined) ?? [];
     }
 }

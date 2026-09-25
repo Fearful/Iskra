@@ -378,6 +378,20 @@ export interface OpenAPIConfig {
 
 export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
 
+/** What an upload route acts on, as passed to `authorize`. */
+export interface UploadTarget {
+    /** Storage key: `<projectName>/<subfolder>/<filename>` (the folder itself for `list`). */
+    key: string;
+    /** The `subfolder`, without empty or dot-only segments. */
+    subfolder?: string;
+    /** `upload`, `download` and `delete`: the stored file name. */
+    filename?: string;
+    /** `upload`: the file's size in bytes. */
+    size?: number;
+    /** `upload`: the Content-Type it is stored with (from its extension). */
+    type?: string;
+}
+
 export interface UploadConfig {
     projectName: string;
     /**
@@ -386,13 +400,23 @@ export interface UploadConfig {
      * Kernel's `maxRequestBodySize` (16 MiB by default): initialize() fails otherwise.
      */
     maxFileSize?: number;
+    /**
+     * Extensions the upload route accepts (e.g. `['.jpg', '.png']`). Without
+     * it, any extension but those of active web content (`.html`, `.svg`,
+     * `.xml`, `.js`...), which a browser runs wherever the file is served
+     * inline; list one here to accept it.
+     */
     allowedExtensions?: string[];
+    /** Whether the upload route may replace a file stored under the same name (default false: 409). */
+    overwrite?: boolean;
     exposeRoutes?: boolean;
     routePrefix?: string;
     /**
      * Required with `exposeRoutes`: whether the request may perform `action` on
      * the built-in upload routes (e.g. check `c.get("user")`). Pass
-     * `() => true` to make them public on purpose.
+     * `() => true` to make them public on purpose. `target` is the file or
+     * folder the action touches; `upload` is asked twice: first without a
+     * target, before the body is read, then with it, before the file is written.
      */
-    authorize?: (c: Context, action: UploadAction) => boolean | Promise<boolean>;
+    authorize?: (c: Context, action: UploadAction, target?: UploadTarget) => boolean | Promise<boolean>;
 }
