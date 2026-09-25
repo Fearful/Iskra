@@ -179,5 +179,69 @@ describe('Rate Limit Feature', () => {
 
             await kernel.shutdown();
         });
+
+        it('behind a proxy that sets X-Real-IP, ignores a made-up X-Forwarded-For', async () => {
+            // Regression: X-Real-IP was read only when X-Forwarded-For was
+            // absent, so a new X-Forwarded-For per request was a new bucket.
+            const kernel = new Kernel({ trustProxy: 1, clientIpHeader: 'x-real-ip', logger: false });
+            kernel.registerFeature(new RateLimitFeature({ windowMs: 5000, max: 1 }));
+            await kernel.initialize();
+            const app = kernel.getApp();
+            app.get('/x', (c) => c.text('ok'));
+
+            const proxy = socket('10.0.0.2');
+            const statuses = [];
+            for (const fake of ['1.1.1.1', '2.2.2.2', '3.3.3.3']) {
+                const headers = { 'x-real-ip': '198.51.100.1', 'x-forwarded-for': fake };
+                statuses.push((await app.request('/x', { headers }, proxy)).status);
+            }
+            expect(statuses).toEqual([200, 429, 429]);
+
+            await kernel.shutdown();
+        });
+
+        it('counts an IPv6 client by its /64', async () => {
+            // Regression: each address was its own bucket, and one host has
+            // a whole /64 to rotate through.
+            const kernel = new Kernel({ trustProxy: 1, logger: false });
+            kernel.registerFeature(new RateLimitFeature({ windowMs: 5000, max: 2 }));
+            await kernel.initialize();
+            const app = kernel.getApp();
+            app.get('/x', (c) => c.text('ok'));
+
+            const proxy = socket('10.0.0.2');
+            const req = (ip: string) => app.request('/x', { headers: { 'x-forwarded-for': ip } }, proxy);
+            const statuses = [];
+            for (const ip of ['2001:db8:1:2::1', '2001:db8:1:2::2', '2001:db8:1:2:abcd::3']) {
+                statuses.push((await req(ip)).status);
+            }
+            expect(statuses).toEqual([200, 200, 429]);
+            // Another /64 is another client.
+            expect((await req('2001:db8:1:3::1')).status).toBe(200);
+
+            await kernel.shutdown();
+        });
+    });
+
+    it('tracks at most maxKeys clients, dropping the oldest', async () => {
+        // Regression: the memory store grew with every key until its entries
+        // expired (15 min by default), whatever their number.
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(
+            new RateLimitFeature({ windowMs: 60_000, max: 1, maxKeys: 2, keyGenerator: (c) => c.req.query('k')! }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/x', (c) => c.text('ok'));
+
+        const req = async (k: string) => (await app.request(`/x?k=${k}`)).status;
+        expect([await req('a'), await req('a')]).toEqual([200, 429]);
+        expect([await req('b'), await req('c')]).toEqual([200, 200]);
+        // 'a' was the oldest of three keys: forgotten, it starts a new window.
+        expect(await req('a')).toBe(200);
+        // 'c' is still counted.
+        expect(await req('c')).toBe(429);
+
+        await kernel.shutdown();
     });
 });

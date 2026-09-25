@@ -20,6 +20,21 @@ export type AuthKitDrizzleDb =
 /** Minimum length, in characters, for the session-signing secret. */
 const MIN_SECRET_LENGTH = 32;
 
+/**
+ * Pieces of the sample secrets docs and `.env.example` files ship. Compared
+ * without case, `-`, `_`, `.` or spaces, so `change-me` also matches
+ * `changeme` and `CHANGE_ME`.
+ */
+const PLACEHOLDER_SECRET_MARKERS = ['change-me', 'dev-secret', 'dev-only', 'your-secret', 'placeholder'];
+
+const normalizeSecret = (value: string) => value.toLowerCase().replace(/[-_.\s]/g, '');
+
+/** The placeholder marker `secret` contains, if any. */
+function placeholderMarker(secret: string): string | undefined {
+    const normalized = normalizeSecret(secret);
+    return PLACEHOLDER_SECRET_MARKERS.find((marker) => normalized.includes(normalizeSecret(marker)));
+}
+
 export interface BetterAuthConfigOptions {
     db: AuthKitDrizzleDb;
     adapterType: 'postgres' | 'mysql' | 'sqlite';
@@ -113,6 +128,16 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
     if (!secret || secret.length < MIN_SECRET_LENGTH) {
         throw new Error(
             `auth secret must be at least ${MIN_SECRET_LENGTH} characters; received ${secret ? secret.length : 0}`,
+        );
+    }
+    // A sample secret left in production is public: with it anyone can sign
+    // the session cookie cache, which is trusted without a database lookup,
+    // and so forge a session for any user.
+    const marker = process.env.NODE_ENV === 'production' ? placeholderMarker(secret) : undefined;
+    if (marker) {
+        throw new Error(
+            `auth secret looks like a placeholder (it contains "${marker}"); in production set a random secret ` +
+                `of at least ${MIN_SECRET_LENGTH} characters, e.g. from \`openssl rand -base64 32\``,
         );
     }
 

@@ -35,7 +35,7 @@ describe('Security Features', () => {
 
     it('should handle CSRF', async () => {
         const kernel = new Kernel();
-        kernel.registerFeature(new CsrfFeature({ secret: 'secret' }));
+        kernel.registerFeature(new CsrfFeature({ secret: 'csrf-secret-0123456789abcdef0123456789' }));
         await kernel.initialize();
 
         const app = kernel.getApp();

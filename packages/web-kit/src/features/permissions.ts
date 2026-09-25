@@ -31,6 +31,7 @@ export class PermissionsFeature implements Feature {
     dependencies = ['auth'];
     private config: Required<PermissionsConfig>;
     private roles: Map<string, Role> = new Map();
+    private kernel?: Kernel;
 
     constructor(config: PermissionsConfig = {}) {
         this.config = {
@@ -39,13 +40,25 @@ export class PermissionsFeature implements Feature {
             anonymousPermissions: config.anonymousPermissions || ['read:public'],
             enableRBAC: config.enableRBAC ?? true,
             cachePermissions: config.cachePermissions ?? true,
-            cacheTTL: config.cacheTTL || 3600,
+            // A revoked role or permission keeps working until the cached copy
+            // expires: an hour by default was far too long to wait.
+            cacheTTL: config.cacheTTL || 60,
         };
         Object.values(DEFAULT_ROLES).forEach((r) => this.roles.set(r.name, r));
     }
 
+    /**
+     * Drops the cached permissions and roles of `userId`, so the next request
+     * loads them again. Call it after changing them (a role revoked, a user
+     * blocked): until then the cached copy applies, for up to `cacheTTL`.
+     */
+    async invalidate(userId: string): Promise<void> {
+        await this.kernel?.getFeature('cache')?.client?.delete(`permissions:${userId}`);
+    }
+
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
+        this.kernel = kernel;
         const app = kernel.getApp();
         app.use('*', async (c: Context, next: Next) => {
             await this.permissionsMiddleware(c, next, kernel);
@@ -94,8 +107,7 @@ export class PermissionsFeature implements Feature {
                 if (this.config.cachePermissions) {
                     const cache = c.get('cache');
                     if (cache) {
-                        // Assume cache set exists and supports object storage (json stringify maybe required depending on cache impl)
-                        // Simple cache might require string
+                        // Until it expires or invalidate(userId) drops it.
                         await cache.set(`permissions:${userId}`, { permissions, roles }, this.config.cacheTTL);
                     }
                 }

@@ -1,7 +1,42 @@
 import { describe, expect, it } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { SessionFeature } from '../src/features/session';
-import { CacheFeature } from '../src/features/cache';
+import { CacheFeature, type CacheAdapter } from '../src/features/cache';
+import type { Feature } from '../src/types';
+
+/** A cache whose writes take a while to reach the store, like Redis over a network. */
+class SlowWritesCache implements CacheAdapter {
+    private map = new Map<string, unknown>();
+    /** Runs (once) while the next write is on its way. */
+    whileWriting?: () => Promise<unknown>;
+
+    private async travel() {
+        const run = this.whileWriting;
+        this.whileWriting = undefined;
+        await run?.();
+    }
+
+    async get(key: string) {
+        return this.map.get(key) ?? null;
+    }
+    async set(key: string, value: unknown) {
+        await this.travel();
+        this.map.set(key, value);
+    }
+    // Like SET ... XX: the store checks the key when the command arrives.
+    async setIfExists(key: string, value: unknown) {
+        await this.travel();
+        if (!this.map.has(key)) return false;
+        this.map.set(key, value);
+        return true;
+    }
+    async delete(key: string) {
+        this.map.delete(key);
+    }
+    async exists(key: string) {
+        return this.map.has(key);
+    }
+}
 
 describe('Session Feature', () => {
     it('should initialize with memory store', async () => {
@@ -375,6 +410,41 @@ describe('Session Feature', () => {
                 await kernel.shutdown();
             });
         }
+
+        it('a save does not re-create a session deleted while the write was on its way (cache store)', async () => {
+            // Regression: the save checked that the session still existed
+            // (get) and then wrote it (set). With Redis, a logout landing
+            // between the two was undone by the write.
+            const cache = new SlowWritesCache();
+            const kernel = new Kernel({ logger: false });
+            kernel.registerFeature({ name: 'cache', client: cache, async initialize() {} } as Feature);
+            kernel.registerFeature(new SessionFeature({ store: 'cache', secret: SECRET }));
+            await kernel.initialize();
+            const a = kernel.getApp();
+            a.get('/login', (c) => {
+                c.get('session').userId = 'u1';
+                return c.json({ ok: true });
+            });
+            a.get('/touch', (c) => {
+                c.get('session').lastSeen = Date.now();
+                return c.json({ ok: true });
+            });
+            a.get('/logout', async (c) => {
+                await c.get('destroySession')();
+                return c.json({ ok: true });
+            });
+            a.get('/me', (c) => c.json({ session: c.get('session') }));
+
+            const cookie = cookieOf(await a.request('/login'));
+            cache.whileWriting = async () => {
+                await a.request('/logout', { headers: { Cookie: cookie } });
+            };
+            await a.request('/touch', { headers: { Cookie: cookie } });
+
+            const me = (await (await a.request('/me', { headers: { Cookie: cookie } })).json()) as any;
+            expect(me.session).toEqual({});
+            await kernel.shutdown();
+        });
 
         it('marks the cookie Secure in production unless overridden', async () => {
             const prod = await app(new Kernel({ environment: 'production' }));

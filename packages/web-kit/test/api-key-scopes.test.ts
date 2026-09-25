@@ -20,7 +20,22 @@ describe('ApiKeyStore.hasScopes', () => {
 
     it('supports wildcard scopes', () => {
         expect(store.hasScopes({ scopes: ['users:*'] } as any, ['users:read'])).toBe(true);
+        expect(store.hasScopes({ scopes: ['users:*'] } as any, ['users:x:y'])).toBe(true);
         expect(store.hasScopes({ scopes: ['users:*'] } as any, ['posts:read'])).toBe(false);
+        expect(store.hasScopes({ scopes: ['*'] } as any, ['anything:at:all'])).toBe(true);
+    });
+
+    it('treats a wildcard only as a whole segment', () => {
+        // Regression: a trailing `*` was a raw string prefix, so `user*`
+        // granted `users:read` and `user-admin:delete`.
+        expect(store.hasScopes({ scopes: ['user*'] } as any, ['users:read'])).toBe(false);
+        expect(store.hasScopes({ scopes: ['user*'] } as any, ['user-admin:delete'])).toBe(false);
+        expect(store.hasScopes({ scopes: ['users:*'] } as any, ['usersX'])).toBe(false);
+        expect(store.hasScopes({ scopes: ['users:*'] } as any, ['users-admin:delete'])).toBe(false);
+        expect(store.hasScopes({ scopes: ['users:*'] } as any, ['users'])).toBe(false);
+        // Anything else is literal.
+        expect(store.hasScopes({ scopes: ['user*'] } as any, ['user*'])).toBe(true);
+        expect(store.hasScopes({ scopes: ['*:read'] } as any, ['users:read'])).toBe(false);
     });
 
     it('requires every scope when several are requested', () => {

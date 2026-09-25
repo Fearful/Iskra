@@ -2,6 +2,10 @@ import { Kernel } from "../src/kernel";
 import { CsrfFeature, requireCsrf } from "../src/features/csrf";
 import { SessionFeature } from "../src/features/session";
 
+// At least 32 random characters, from the environment (e.g. `openssl rand -base64 32`);
+// a random one per start otherwise, so tokens do not survive a restart.
+const CSRF_SECRET = process.env.CSRF_SECRET ?? crypto.randomUUID() + crypto.randomUUID();
+
 // ============================================================================
 // Example 1: Basic CSRF Protection
 // ============================================================================
@@ -11,7 +15,7 @@ const basicKernel = new Kernel({ port: 8001 });
 // CSRF protection with default settings
 basicKernel.registerFeature(
     new CsrfFeature({
-        secret: "your-csrf-secret-change-in-production",
+        secret: CSRF_SECRET,
     }),
 );
 
@@ -48,7 +52,7 @@ basicKernel.getApp().post("/submit", async (c) => {
 
 const sessionKernel = new Kernel({ port: 8005 });
 
-// Session feature (CSRF can optionally use session storage)
+// With SessionFeature, tokens are bound to the stored session.
 sessionKernel.registerFeature(
     new SessionFeature({
         store: "memory",
@@ -58,7 +62,7 @@ sessionKernel.registerFeature(
 
 sessionKernel.registerFeature(
     new CsrfFeature({
-        secret: "csrf-secret",
+        secret: CSRF_SECRET,
     }),
 );
 
@@ -87,6 +91,10 @@ sessionKernel.getApp().get("/login", (c) => {
 
 sessionKernel.getApp().post("/login", async (c) => {
     const body = await c.req.parseBody();
+
+    // A new session ID after login (session fixation); it also issues a new
+    // CSRF token, c.get("csrfToken"), for the pages that follow.
+    await c.get("regenerateSession")();
 
     // The session is a plain object: set fields, and it is saved after the response.
     const session = c.get("session");

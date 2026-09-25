@@ -14,6 +14,8 @@ The auth/web `secret` must be at least **32 characters**. `createBetterAuth` thr
 // throws: "auth secret must be at least 32 characters; received 8"
 ```
 
+In production (`NODE_ENV=production`) it also refuses a secret that is still a sample value, one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder` (in any case, with or without `-`, `_`, `.` or spaces). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone could forge a session. The `SessionFeature` and `CsrfFeature` secrets need 32 characters too.
+
 Always pull secrets from the environment, never hardcode them:
 
 ```typescript
@@ -42,12 +44,19 @@ The CSRF feature uses an HMAC-signed double-submit cookie (OWASP pattern). The t
 import { CsrfFeature } from '@iskra-bun/web-kit';
 
 new CsrfFeature({
-    secret: process.env.CSRF_SECRET, // required, or it throws
-    // cookieName defaults to "_csrf", headerName to "X-CSRF-Token"
+    secret: process.env.CSRF_SECRET, // required, >= 32 characters, or it throws
+    trustedOrigins: ['https://admin.example.com'], // other origins whose pages may post
+    // cookieName defaults to "__Host-csrf" ("_csrf" if not Secure), headerName to "X-CSRF-Token"
 });
 ```
 
-Cookies default to `httpOnly`, `secure`, `sameSite: 'Strict'`. There is a `disableCSRFCheck` kill-switch for local development, but it is **ignored in production** — even if a config ships with it enabled, it is neutralized whenever `NODE_ENV === 'production'`:
+The token alone does not say who submitted it: a sibling subdomain can set cookies for the parent domain, so it could plant a token it knows and submit it with the victim's session, and `SameSite` does not stop a same-site request. So:
+
+- A state-changing request from another origin is rejected: an `Origin` that is neither the app's own nor in `trustedOrigins` gets 403, and so does a request without `Origin` whose `Sec-Fetch-Site` is `cross-site`.
+- The cookie is `__Host-csrf` while it is Secure (the default), a name only the app's own host can set.
+- With `SessionFeature`, the token is signed together with the stored session's ID, and `regenerateSession()` issues a new one, so a token from another session is worthless.
+
+Cookies default to `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` has a `disableCSRFCheck` kill-switch (for better-auth's own check) for local development, but it is **ignored in production** — even if a config ships with it enabled, it is neutralized whenever `NODE_ENV === 'production'`:
 
 ```typescript
 const disableCSRFCheck = process.env.NODE_ENV !== 'production'
@@ -118,6 +127,10 @@ Kits, drivers, plugins and web features run with full access to the app, so the 
 `new App()` without a config reads `app.config.*` from the working directory (and `.env`). It no longer reads `.apprc` files, and it does not download `extends` layers from `github:`, `gitlab:` or `https://` sources (local `extends` paths still work). For a CLI or desktop binary that runs in directories you don't control, pass the config to `new App({ ... })`.
 
 ## HTTP hardening
+
+Rate limits count requests per client IP: the socket address or, with `new Kernel({ trustProxy: n })`, the address the proxies put in `clientIpHeader` (`X-Forwarded-For` by default, `X-Real-IP` if your proxy sets that one). Only that header is read, so a client cannot choose which one counts; IPv6 clients count by /64, and the in-memory counters are capped and swept.
+
+`CorsFeature` with `credentials: true` needs the allowed origins listed: a wildcard `origin` makes `initialize()` throw, instead of sending `Access-Control-Allow-Origin: *` (which browsers reject with credentials) and tempting apps to reflect every origin.
 
 The health endpoint hides internal details by default. `includeDetails` defaults to `false`, so feature lists, DB checks, and raw errors (which may embed connection strings) are never serialized to clients unless you explicitly opt in:
 

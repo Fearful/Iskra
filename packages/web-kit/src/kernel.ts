@@ -107,12 +107,18 @@ export class Kernel {
         // replace the whole object and silently drop the other headers.
         // X-XSS-Protection is off by default: the legacy auditor it enables is
         // gone from modern browsers and could itself be abused (OWASP).
+        // Only `false` turns a default off: an option left `undefined` (say,
+        // `xFrameOptions: process.env.X_FRAME_OPTIONS` with the variable
+        // unset), null or empty used to remove the header.
+        const overrides = Object.entries(this.config.securityHeaders ?? {}).filter(
+            ([, value]) => value !== undefined && value !== null && value !== '',
+        );
         const headers: SecurityHeadersConfig = {
             xFrameOptions: 'SAMEORIGIN',
             xContentTypeOptions: true,
             xXssProtection: false,
             referrerPolicy: 'strict-origin-when-cross-origin',
-            ...this.config.securityHeaders,
+            ...Object.fromEntries(overrides),
         };
         this.config.securityHeaders = headers;
 
@@ -231,6 +237,11 @@ export class Kernel {
                 for (const dep of feature.dependencies) {
                     visit(dep);
                 }
+            }
+            // Optional ones only set the order, when they are registered: the
+            // CSRF middleware reads the session, so it has to run after it.
+            for (const dep of feature.optionalDependencies ?? []) {
+                if (this.features.has(dep)) visit(dep);
             }
 
             visiting.delete(name);

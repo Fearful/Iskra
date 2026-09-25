@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
-import type { TrustProxy } from './client-ip';
+import type { ClientIpHeader, TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
 
@@ -25,11 +25,16 @@ export interface KernelConfig {
     environment?: 'development' | 'production' | 'test';
     securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
     /**
-     * Number of reverse proxies in front of the app (`true` = 1). Only then are
-     * `X-Forwarded-For` / `X-Real-IP` used to identify clients (rate limiting);
-     * by default the socket address is used. See `getClientIp`.
+     * Number of reverse proxies in front of the app (`true` = 1). Only then is
+     * `clientIpHeader` used to identify clients (rate limiting); by default the
+     * socket address is used. See `getClientIp`.
      */
     trustProxy?: TrustProxy;
+    /**
+     * The header those proxies put the client address in: `'x-forwarded-for'`
+     * (default) or `'x-real-ip'`. Only that one is read.
+     */
+    clientIpHeader?: ClientIpHeader;
     /**
      * Where the Kernel and its features log (startup, fallbacks, errors they
      * handle). Default: the console. `false`: nothing. WebPlugin passes the
@@ -44,7 +49,8 @@ export interface SecurityHeadersConfig {
         | {
               directives?: Record<string, string | string[]>;
           };
-    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string;
+    /** `false` turns the default (`SAMEORIGIN`) off; `undefined` keeps it. */
+    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string | false;
     xContentTypeOptions?: boolean;
     strictTransportSecurity?: {
         maxAge?: number;
@@ -60,7 +66,8 @@ export interface SecurityHeadersConfig {
         | 'same-origin'
         | 'strict-origin'
         | 'strict-origin-when-cross-origin'
-        | 'unsafe-url';
+        | 'unsafe-url'
+        | false;
     permissionsPolicy?: Record<string, string[]>;
 }
 
@@ -105,10 +112,18 @@ export interface ApiKeyConfig {
 }
 
 export interface CsrfConfig {
+    /** Signs the tokens; at least 32 characters. */
     secret: string;
+    /** Default `"__Host-csrf"` while the cookie is Secure (the default), `"_csrf"` otherwise. */
     cookieName?: string;
     headerName?: string;
     ignoreMethods?: string[];
+    /**
+     * Other origins whose pages may send state-changing requests (e.g. a
+     * frontend on another subdomain), as `https://app.example.com`. Requests
+     * whose `Origin` is neither the app's own nor one of these are rejected.
+     */
+    trustedOrigins?: string[];
     cookieOptions?: {
         httpOnly?: boolean;
         secure?: boolean;
@@ -121,6 +136,7 @@ export interface CsrfConfig {
 export interface Feature {
     name: string;
     dependencies?: string[]; // Required features
+    optionalDependencies?: string[]; // Features initialized first when they are registered
     peerDependencies?: string[]; // Required npm packages
     initialize(kernel: Kernel): Promise<void>;
     routes?: (app: Hono) => void;
@@ -152,6 +168,11 @@ export interface RateLimitConfig {
     handler?: (c: Context) => Response;
     standardHeaders?: boolean;
     store?: 'memory' | 'cache';
+    /**
+     * Most clients the memory store tracks at once (default 100 000). Past it
+     * the oldest are dropped, and they start a new window.
+     */
+    maxKeys?: number;
 }
 
 export interface HealthCheckConfig {
@@ -207,11 +228,12 @@ export interface AuthConfig {
     baseURL?: string; // For better-auth
     trustedOrigins?: string[]; // For better-auth CORS
     /**
-     * Per-client-IP limit on the auth routes (default 20 requests / 15 min).
+     * Per-client-IP limit on the auth routes (default 20 requests / 15 min,
+     * IPv6 clients by /64, at most `maxKeys` clients tracked: 100 000).
      * Raise it when a backend calls these routes on behalf of many users from
      * one IP (e.g. through the SDKs), or pass `false` to disable it.
      */
-    rateLimit?: false | { max?: number; windowMs?: number };
+    rateLimit?: false | { max?: number; windowMs?: number; maxKeys?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
     /**
      * Lifetime of better-auth's signed session cookie cache, in seconds
@@ -291,6 +313,11 @@ export interface CacheConfig {
     secret?: string;
     // ... (CacheConfig end)
     ttl?: number;
+    /**
+     * Memory adapter only: most entries kept (default 100 000). Past it the
+     * oldest writes are dropped; expired entries are swept every minute.
+     */
+    maxEntries?: number;
 }
 
 export interface PermissionsConfig {
@@ -298,7 +325,13 @@ export interface PermissionsConfig {
     loadRoles?: (userId: string) => Promise<string[]>;
     anonymousPermissions?: string[];
     enableRBAC?: boolean;
+    /** Keep each user's permissions and roles in the cache feature (default true). */
     cachePermissions?: boolean;
+    /**
+     * Seconds a user's cached permissions and roles are used (default 60): a
+     * revoked role keeps working that long unless you call
+     * `PermissionsFeature#invalidate(userId)`.
+     */
     cacheTTL?: number;
 }
 

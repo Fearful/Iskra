@@ -18,6 +18,14 @@ export class CorsFeature implements Feature {
 
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
+        // Browsers refuse credentials with `Access-Control-Allow-Origin: *`,
+        // which this used to send without a word, and the usual way out is to
+        // reflect any origin: every site could then read responses as the user.
+        if (this.config.credentials && this.config.origin === '*') {
+            throw new Error(
+                "CorsFeature: `credentials: true` needs `origin` to name the allowed origins (a list or a function), not '*' or unset.",
+            );
+        }
         const app = kernel.getApp();
 
         // Hono's cors() wants the allowed origin back (or null), not a boolean.

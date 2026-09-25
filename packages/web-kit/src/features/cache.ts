@@ -13,6 +13,13 @@ export interface CacheAdapter {
     get(key: string): Promise<unknown>;
     /** `ttl` in seconds. */
     set(key: string, value: unknown, ttl?: number): Promise<void>;
+    /**
+     * Like set(), but only if the key exists (and has not expired), checked
+     * and written atomically (Redis: `SET ... XX`); whether it was written.
+     * Used by the cache session store, so a save cannot re-create a session
+     * that another request deleted.
+     */
+    setIfExists?(key: string, value: unknown, ttl?: number): Promise<boolean>;
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
     increment?(key: string): Promise<number>;
@@ -24,23 +31,69 @@ export interface CacheAdapter {
     disconnect?(): Promise<void>;
 }
 
-// Simple Memory Adapter
+/** Most entries the memory adapter keeps unless `CacheConfig.maxEntries` says otherwise. */
+const DEFAULT_MAX_ENTRIES = 100_000;
+
+type MemoryEntry = { value: unknown; expires: number | null };
+
+/**
+ * Expired entries used to be removed only when read again, so keys written
+ * once (a rate-limit counter per client) piled up for good. They are swept
+ * every minute, and past `maxEntries` the oldest writes are dropped.
+ */
 class MemoryAdapter implements CacheAdapter {
-    private store = new Map<string, { value: unknown; expires: number | null }>();
+    private store = new Map<string, MemoryEntry>();
+    private sweeper: ReturnType<typeof setInterval>;
+    private readonly maxEntries: number;
+
+    constructor(maxEntries: number = DEFAULT_MAX_ENTRIES) {
+        this.maxEntries = Math.max(1, Math.floor(maxEntries) || DEFAULT_MAX_ENTRIES);
+        this.sweeper = setInterval(() => this.sweep(), 60_000);
+        // A cache nobody shut down must not keep the process alive.
+        this.sweeper.unref?.();
+    }
+
+    /** The entry, unless missing or expired (an expired one is removed). */
+    private live(key: string): MemoryEntry | undefined {
+        const item = this.store.get(key);
+        if (item?.expires && item.expires < Date.now()) {
+            this.store.delete(key);
+            return undefined;
+        }
+        return item;
+    }
+
+    /** Writes an entry last in the Map's order, so its first keys are the oldest writes. */
+    private put(key: string, entry: MemoryEntry): void {
+        this.store.delete(key);
+        this.store.set(key, entry);
+        for (const oldest of this.store.keys()) {
+            if (this.store.size <= this.maxEntries) break;
+            this.store.delete(oldest);
+        }
+    }
+
+    private sweep(): void {
+        const now = Date.now();
+        for (const [key, item] of this.store) {
+            if (item.expires && item.expires < now) this.store.delete(key);
+        }
+    }
 
     async get(key: string) {
-        const item = this.store.get(key);
-        if (!item) return null;
-        if (item.expires && item.expires < Date.now()) {
-            this.store.delete(key);
-            return null;
-        }
-        return item.value;
+        const item = this.live(key);
+        return item ? item.value : null;
     }
 
     async set(key: string, value: unknown, ttl?: number) {
         const expires = ttl ? Date.now() + ttl * 1000 : null;
-        this.store.set(key, { value, expires });
+        this.put(key, { value, expires });
+    }
+
+    async setIfExists(key: string, value: unknown, ttl?: number) {
+        if (!this.live(key)) return false;
+        this.put(key, { value, expires: ttl ? Date.now() + ttl * 1000 : null });
+        return true;
     }
 
     async delete(key: string) {
@@ -48,12 +101,12 @@ class MemoryAdapter implements CacheAdapter {
     }
 
     async exists(key: string) {
-        return this.store.has(key);
+        return this.live(key) !== undefined;
     }
 
     async increment(key: string): Promise<number> {
-        const item = this.store.get(key);
-        if (!item || (item.expires && item.expires < Date.now())) {
+        const item = this.live(key);
+        if (!item) {
             return 0;
         }
         const newVal = Number(item.value) + 1;
@@ -62,15 +115,19 @@ class MemoryAdapter implements CacheAdapter {
     }
 
     async incrementWithTtl(key: string, ttlMs: number): Promise<number> {
-        const item = this.store.get(key);
-        if (!item || (item.expires && item.expires < Date.now())) {
-            this.store.set(key, { value: 1, expires: Date.now() + ttlMs });
+        const item = this.live(key);
+        if (!item) {
+            this.put(key, { value: 1, expires: Date.now() + ttlMs });
             return 1;
         }
         const next = Number(item.value) + 1;
         item.value = next;
         item.expires ??= Date.now() + ttlMs;
         return next;
+    }
+
+    async disconnect() {
+        clearInterval(this.sweeper);
     }
 }
 
@@ -107,6 +164,14 @@ class RedisAdapter implements CacheAdapter {
         } else {
             await this.client.set(key, stringValue);
         }
+    }
+
+    async setIfExists(key: string, value: unknown, ttl?: number) {
+        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        const result = ttl
+            ? await this.client.set(key, stringValue, 'EX', ttl, 'XX')
+            : await this.client.set(key, stringValue, 'XX');
+        return result === 'OK';
     }
 
     async delete(key: string) {
@@ -159,10 +224,10 @@ export class CacheFeature implements Feature {
                 });
             } catch {
                 this.log.warn('Redis connection failed, falling back to memory cache');
-                this.client = new MemoryAdapter();
+                this.client = new MemoryAdapter(this.config.maxEntries);
             }
         } else {
-            this.client = new MemoryAdapter();
+            this.client = new MemoryAdapter(this.config.maxEntries);
         }
 
         const app = kernel.getApp();
