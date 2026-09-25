@@ -61,7 +61,10 @@ const CLIENT_IP_HEADER = 'x-iskra-client-ip';
  */
 function resolveBaseURL(baseURL: string | undefined): string {
     const resolved = baseURL || process.env.BETTER_AUTH_URL;
-    if (resolved) return resolved;
+    if (resolved) {
+        assertHttpsInProduction(resolved);
+        return resolved;
+    }
     if (process.env.NODE_ENV === 'production') {
         throw new Error(
             "AuthFeature: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, " +
@@ -69,6 +72,28 @@ function resolveBaseURL(baseURL: string | undefined): string {
         );
     }
     return 'http://localhost:3000';
+}
+
+/** Hosts a production baseURL may reach over plain http (e.g. docker compose on one machine). */
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * better-auth marks the session cookies Secure only for an https baseURL, so
+ * an http:// one in production sent them over plain HTTP as well.
+ */
+function assertHttpsInProduction(baseURL: string): void {
+    if (process.env.NODE_ENV !== 'production') return;
+    let url: URL;
+    try {
+        url = new URL(baseURL);
+    } catch {
+        return; // reported by assertBaseURLMatchesBasePath
+    }
+    if (url.protocol === 'https:' || LOCAL_HOSTNAMES.has(url.hostname)) return;
+    throw new Error(
+        `AuthFeature: baseURL "${baseURL}" must use https in production: better-auth marks the session cookies ` +
+            'Secure only for an https baseURL. Plain http is allowed only for localhost, 127.0.0.1 and [::1].',
+    );
 }
 
 /**
