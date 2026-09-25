@@ -1,11 +1,12 @@
-import { Post, CreatePostInput } from './post.model.ts';
+import { Post } from './post.model.ts';
 import { v4 as uuidv4 } from 'uuid';
 
 // In-memory store
 const posts: Post[] = [];
 
 export class FeedService {
-    static async create(input: CreatePostInput): Promise<Post> {
+    /** `authorId` es el del autor autenticado (el router lo toma de la API key). */
+    static async create(input: Omit<Post, 'id' | 'createdAt'>): Promise<Post> {
         const post: Post = {
             id: uuidv4(),
             ...input,
