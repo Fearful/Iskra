@@ -1,5 +1,5 @@
 import { App } from '@iskra-bun/core';
-import { WebPlugin, CsrfFeature, HealthCheckFeature, RateLimitFeature } from '@iskra-bun/web-kit';
+import { WebPlugin, CsrfFeature, HealthCheckFeature, RateLimitFeature, type CsrfConfig } from '@iskra-bun/web-kit';
 import { KVManager } from '@iskra-bun/kv-kit';
 import { WorkerManager } from '@iskra-bun/worker-kit';
 import { config } from './app.config.ts';
@@ -19,6 +19,10 @@ app.config.kv = {
 const honoApp = new Hono();
 honoApp.route('/', router);
 
+// A variable, not a literal: `trustedOrigins` is only in the CsrfConfig of
+// web-kit versions whose CsrfFeature checks the Origin (earlier ones ignore it).
+const csrf: CsrfConfig & { trustedOrigins?: string[] } = config.csrf;
+
 const worker = new WorkerManager({
     connection: config.redis.url,
     queueName: QUEUE_NAMES.ANSWERS,
@@ -36,7 +40,7 @@ app.register(
         router: honoApp,
         features: [
             new HealthCheckFeature({ path: '/health' }),
-            new CsrfFeature({ secret: config.csrf.secret }),
+            new CsrfFeature(csrf),
             new RateLimitFeature({
                 max: 60,
                 windowMs: 60_000,

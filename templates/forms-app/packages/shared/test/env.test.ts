@@ -25,10 +25,18 @@ describe('secretFromEnv', () => {
         expect(() => secretFromEnv(NAME, DEV)).toThrow(`${NAME} must be set in production`);
     });
 
-    it('refuses the development value, or a short one, in production', () => {
+    it('refuses the development value, a placeholder, or a short one, in production', () => {
         process.env.NODE_ENV = 'production';
         process.env[NAME] = DEV;
         expect(() => secretFromEnv(NAME, DEV)).toThrow(`${NAME} must be set in production`);
+        for (const placeholder of [
+            'your-secret-key',
+            'Change_Me.Please-0123456789abcdefghijk',
+            'PLACEHOLDER'.repeat(4),
+        ]) {
+            process.env[NAME] = placeholder;
+            expect(() => secretFromEnv(NAME, DEV, { minLength: 1 })).toThrow(`${NAME} must be set in production`);
+        }
         process.env[NAME] = 'x'.repeat(31);
         expect(() => secretFromEnv(NAME, DEV)).toThrow('at least 32 characters');
         expect(secretFromEnv(NAME, DEV, { minLength: 8 })).toBe('x'.repeat(31));

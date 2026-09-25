@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 
 const VITE = 'http://localhost:5173';
@@ -10,14 +11,14 @@ async function signInStatuses(nodeEnv: string): Promise<Record<string, number>> 
         [process.execPath, join(import.meta.dir, 'fixtures', 'origin-probe.ts'), VITE, NGINX, OTHER],
         {
             // Defaults only: no CORS_ORIGINS / AUTH_BASE_URL from the environment.
-            // Production has no default secrets.
+            // Production has no default secrets: real random ones.
             env: {
                 ...process.env,
                 NODE_ENV: nodeEnv,
                 CORS_ORIGINS: '',
                 AUTH_BASE_URL: '',
-                AUTH_SECRET: 'origin-probe-auth-secret-0123456789abcdef',
-                INTERNAL_API_TOKEN: 'origin-probe-internal-api-token-0123456789',
+                AUTH_SECRET: randomBytes(32).toString('base64'),
+                INTERNAL_API_TOKEN: randomBytes(32).toString('base64'),
             },
             stdout: 'pipe',
             stderr: 'inherit',

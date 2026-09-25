@@ -98,7 +98,7 @@ describe('static files', () => {
                 '/demo/encuesta/assets/..%2F..%2F..%2Felsewhere%2Fassets%2Fsecret.txt',
                 '/demo/encuesta/assets/../../../elsewhere/assets/secret.txt',
             ]) {
-                const { status, body } = await rawGet(server.port, path);
+                const { status, body } = await rawGet(server.port!, path);
                 expect({ path, status }).toEqual({ path, status: 404 });
                 expect(body).not.toContain('OUTSIDE');
                 expect(body).not.toContain('SECRET');

@@ -157,6 +157,8 @@ services:
       # that use the same keys are refused. Empty: any hostname.
       RECAPTCHA_HOSTNAMES: ${RECAPTCHA_HOSTNAMES:-}
       CSRF_SECRET: ${CSRF_SECRET:?set it in .env, see .env.example}
+      # Origins of the form pages (nginx's here), for the CSRF Origin check.
+      PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:-http://localhost}
       IP_HASH_SECRET: ${IP_HASH_SECRET:?set it in .env, see .env.example}
       # Behind nginx: the client IP is its X-Forwarded-For entry.
       TRUST_PROXY: "1"

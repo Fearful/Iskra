@@ -7,7 +7,7 @@ const SECRETS = ['RECAPTCHA_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET'];
 /** Loads app.config.ts in a production process with only the given secrets set. */
 function loadProductionConfig(secrets: Record<string, string>) {
     const env: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
-    for (const name of SECRETS) delete env[name];
+    for (const name of [...SECRETS, 'PUBLIC_ORIGINS', 'RECAPTCHA_HOSTNAMES']) delete env[name];
     const code = `const { config } = await import(${JSON.stringify(CONFIG)}); console.log(JSON.stringify(config));`;
     const proc = Bun.spawnSync([process.execPath, '-e', code], { env: { ...env, ...secrets } });
     return { ok: proc.exitCode === 0, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
@@ -49,6 +49,21 @@ describe('forms-api configuration in production', () => {
         expect(config.csrf.secret).toBe('c'.repeat(44));
         expect(config.ipHashSecret).toBe('i'.repeat(44));
         expect(config.recaptcha.hostnames).toEqual([]);
+        // nginx's origin in docker-compose.yml.
+        expect(config.csrf.trustedOrigins).toEqual(['http://localhost']);
+    });
+
+    it('reads the public origins for the CSRF Origin check as a comma-separated list', () => {
+        const { stdout } = loadProductionConfig({
+            RECAPTCHA_SECRET: 'r',
+            CSRF_SECRET: 'c'.repeat(44),
+            IP_HASH_SECRET: 'i'.repeat(44),
+            PUBLIC_ORIGINS: ' https://forms.example.com, ,https://www.example.com',
+        });
+        expect(JSON.parse(stdout).csrf.trustedOrigins).toEqual([
+            'https://forms.example.com',
+            'https://www.example.com',
+        ]);
     });
 
     it('reads the reCAPTCHA hostnames as a comma-separated list', () => {

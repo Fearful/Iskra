@@ -192,6 +192,7 @@ base64 rompen la URL.
 | `RECAPTCHA_HOSTNAMES` | Hostnames (separados por coma) desde los que se sirven los formularios: forms-api rechaza los tokens de reCAPTCHA emitidos en otro sitio. Definila en produccion | vacio (cualquier hostname) |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
+| `PUBLIC_ORIGINS` | Origenes publicos (separados por coma) de los formularios, p. ej. `https://forms.example.com`: forms-api rechaza (CSRF) los envios desde otro origen. Hace falta detras de un proxy que termina TLS, donde forms-api recibe `http://` | `http://localhost` |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
 | `DATABASE_URL` | URL de conexion a Postgres (compose la arma con `DB_PASSWORD`) | `postgresql://forms:<DB_PASSWORD>@postgres:5432/forms_app` |
 | `REDIS_URL` | URL de conexion a Redis (compose la arma con `REDIS_PASSWORD`) | `redis://:<REDIS_PASSWORD>@redis:6379` |

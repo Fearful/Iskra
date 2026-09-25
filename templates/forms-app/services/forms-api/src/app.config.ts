@@ -20,6 +20,12 @@ export const AppConfigSchema = z.object({
     }),
     csrf: z.object({
         secret: z.string(),
+        /**
+         * Origins the form pages are served from (PUBLIC_ORIGINS, comma-
+         * separated), for CsrfFeature's Origin check: behind a proxy that
+         * terminates TLS, forms-api sees http:// requests for https:// pages.
+         */
+        trustedOrigins: z.array(z.string()).default([]),
     }),
     /** Keys the daily IP hash, so it cannot be reversed by hashing every IPv4 address. */
     ipHashSecret: z.string(),
@@ -47,6 +53,10 @@ export const config: AppConfig = AppConfigSchema.parse({
     },
     csrf: {
         secret: secretFromEnv('CSRF_SECRET', 'dev-csrf-secret-change-me-32-characters'),
+        trustedOrigins: (process.env.PUBLIC_ORIGINS || 'http://localhost')
+            .split(',')
+            .map((origin) => origin.trim())
+            .filter(Boolean),
     },
     // A key of its own: it used to fall back to CSRF_SECRET, so the stored IP
     // hashes and the CSRF token signatures came from the same key.
