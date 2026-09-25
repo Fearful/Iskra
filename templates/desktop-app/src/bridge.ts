@@ -15,6 +15,12 @@ import type { App } from '@iskra-bun/core';
 
 const inTauri = '__TAURI_INTERNALS__' in globalThis;
 
+/** Lo que devuelve el comando Rust `abrir_archivo`. */
+export interface ArchivoLeido {
+    ruta: string;
+    contenido: string;
+}
+
 export class DesktopBridge {
     constructor(private readonly app: App) {}
 
@@ -38,17 +44,18 @@ export class DesktopBridge {
         return invoke<T>(command, args);
     }
 
-    /** Abre el dialogo nativo de seleccion de archivo y devuelve la ruta elegida. */
-    async openFileDialog(): Promise<string | null> {
+    /**
+     * Abre el dialogo nativo y lee el archivo que elige el usuario, todo en
+     * Rust (comando `abrir_archivo`). null si cancela. Ningun comando recibe
+     * una ruta: el viejo `leer_archivo(ruta)` leia cualquier archivo que le
+     * pidiera un script del webview.
+     */
+    async pickFile(): Promise<ArchivoLeido | null> {
         if (!inTauri) {
-            this.app.logger.info('[stub] openFileDialog → null');
+            this.app.logger.info('[stub] pickFile → null');
             return null;
         }
-        // Import dinamico por nombre para no resolver el modulo en build-time:
-        // el plugin solo existe cuando la app corre dentro de Tauri.
-        const dialog = await import(/* @vite-ignore */ '@tauri-apps/plugin-dialog' as string);
-        const selected = await dialog.open({ multiple: false, title: 'Elegí un archivo' });
-        return typeof selected === 'string' ? selected : null;
+        return this.invoke<ArchivoLeido | null>('abrir_archivo');
     }
 
     /** Reenvia eventos emitidos desde Rust al bus de eventos de Iskra. */

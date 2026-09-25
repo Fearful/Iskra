@@ -1,14 +1,17 @@
 /**
  * Frontend de la app de escritorio (corre en el webview de Tauri).
  *
- * Llama a los comandos Rust definidos en `src-tauri/src/lib.rs` con `invoke()`,
- * abre el diálogo nativo con el plugin de dialog, y controla la ventana con la
- * API de window. Cuando se sirve fuera de Tauri (`bun run ui` / un navegador),
- * `window.__TAURI__` no existe y caemos a stubs para que la UI siga viva.
+ * Llama a los comandos Rust definidos en `src-tauri/src/lib.rs` y controla la
+ * ventana. Tauri 2 inyecta siempre `window.__TAURI_INTERNALS__`, el IPC que usa
+ * `@tauri-apps/api` por dentro; `window.__TAURI__` solo existe con
+ * `app.withGlobalTauri`, que expone la API entera a cualquier script de la
+ * pagina. Esta UI, sin bundler, usa el IPC directamente y solo para lo que
+ * necesita (y la capability `default` decide que comandos acepta Rust). Fuera de
+ * Tauri (un navegador comun) cae a stubs para que la UI siga viva.
  */
 
-const tauri = window.__TAURI__;
-const inTauri = Boolean(tauri);
+const ipc = window.__TAURI_INTERNALS__;
+const inTauri = typeof ipc?.invoke === 'function';
 
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg) => ($('status').textContent = msg);
@@ -18,8 +21,11 @@ async function invoke(cmd, args) {
     setStatus(`[demo navegador] invoke("${cmd}") no disponible fuera de Tauri`);
     return null;
   }
-  return tauri.core.invoke(cmd, args);
+  return ipc.invoke(cmd, args);
 }
+
+// Lo mismo que hacen getCurrentWindow().setTitle() / .minimize() de @tauri-apps/api.
+const currentWindow = () => ipc.metadata.currentWindow.label;
 
 async function loadAppInfo() {
   const info = inTauri
@@ -33,17 +39,17 @@ async function openFile() {
     setStatus('El diálogo de archivos solo funciona dentro de Tauri.');
     return;
   }
-  const path = await tauri.dialog.open({ multiple: false, title: 'Elegí un archivo' });
-  if (!path) {
-    setStatus('Selección cancelada.');
-    return;
-  }
-  $('file-path').textContent = path;
-  setStatus('Leyendo archivo…');
+  setStatus('Elegí un archivo…');
   try {
-    const content = await invoke('leer_archivo', { ruta: path });
-    $('file-content').textContent = content ?? '';
-    setStatus(`Cargado (${(content ?? '').length} caracteres).`);
+    // El diálogo y la lectura corren en Rust: la página no elige qué ruta se lee.
+    const archivo = await invoke('abrir_archivo');
+    if (!archivo) {
+      setStatus('Selección cancelada.');
+      return;
+    }
+    $('file-path').textContent = archivo.ruta;
+    $('file-content').textContent = archivo.contenido;
+    setStatus(`Cargado (${archivo.contenido.length} caracteres).`);
   } catch (err) {
     $('file-content').textContent = '';
     setStatus(`Error: ${err}`);
@@ -53,14 +59,14 @@ async function openFile() {
 async function changeTitle() {
   const nuevo = `Iskra Desktop · ${new Date().toLocaleTimeString()}`;
   if (inTauri) {
-    await tauri.window.getCurrentWindow().setTitle(nuevo);
+    await invoke('plugin:window|set_title', { label: currentWindow(), value: nuevo });
   }
   setStatus(`Título: ${nuevo}`);
 }
 
 async function minimize() {
   if (inTauri) {
-    await tauri.window.getCurrentWindow().minimize();
+    await invoke('plugin:window|minimize', { label: currentWindow() });
   } else {
     setStatus('Minimizar solo funciona dentro de Tauri.');
   }
