@@ -15,6 +15,8 @@ import { spawnSync } from 'node:child_process';
 
 interface Probe {
     path: string;
+    /** Sent as a JSON POST; without it the probe is a GET. */
+    body?: unknown;
     /** Exact status expected; without it any response below 500 passes. */
     status?: number;
 }
@@ -49,7 +51,17 @@ const CASES: Case[] = [
     { kind: 'image', name: 'ecommerce-api', port: 3000, probes: [{ path: '/api/products', status: 200 }] },
     { kind: 'image', name: 'realtime-feed', port: 3000, probes: [{ path: '/feed', status: 200 }] },
     { kind: 'image', name: 'full-stack-app', port: 3000, probes: [{ path: '/doc', status: 200 }] },
-    { kind: 'image', name: 'python-data-processor', port: 3000, probes: [{ path: '/health', status: 200 }] },
+    {
+        kind: 'image',
+        name: 'python-data-processor',
+        port: 3000,
+        // /process goes through the Python script: /health alone answers
+        // even when the image has no python3.
+        probes: [
+            { path: '/health', status: 200 },
+            { path: '/process', body: { data: [1, 2, 3] }, status: 200 },
+        ],
+    },
     // A WebSocket server: a plain GET gets 426 Upgrade Required.
     {
         kind: 'image',
@@ -97,10 +109,20 @@ function docker(args: string[], opts: { quiet?: boolean; allowFail?: boolean } =
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Status of GET url, or null when nothing answers yet. */
-async function httpStatus(url: string): Promise<number | null> {
+/** Status of the probe's request to `url`, or null when nothing answers yet. */
+async function httpStatus(url: string, probe: Probe): Promise<number | null> {
     try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(3_000), redirect: 'manual' });
+        const res = await fetch(url, {
+            signal: AbortSignal.timeout(5_000),
+            redirect: 'manual',
+            ...(probe.body === undefined
+                ? {}
+                : {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify(probe.body),
+                  }),
+        });
         await res.body?.cancel();
         return res.status;
     } catch {
@@ -118,7 +140,7 @@ async function waitForProbes(base: string, probes: Probe[], alive: () => boolean
         if (!alive()) return 'the container exited';
         let all = true;
         for (const probe of probes) {
-            const status = await httpStatus(base + probe.path);
+            const status = await httpStatus(base + probe.path, probe);
             last.set(probe.path, status);
             if (!passes(probe, status)) all = false;
         }

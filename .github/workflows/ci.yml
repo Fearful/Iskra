@@ -112,6 +112,52 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  # The Python and Java SDKs against the real contract server
+  # (sdks/contract/server.ts), which each suite starts with Bun; plus a build
+  # of the Spring MVC example and a syntax check of the FastAPI one.
+  sdks:
+    name: SDK contract tests (Python, Java)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Python SDK
+        working-directory: sdks/python/iskra-client
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pytest
+          python -m compileall -q examples
+
+      - name: Java SDK
+        working-directory: sdks/java/iskra-client
+        run: mvn -B install
+
+      - name: Java Spring MVC example
+        working-directory: sdks/java/iskra-client/examples/mvc-auth
+        run: mvn -B -DskipTests package
+
   # Dependency vulnerability (CVE) gate: google/osv-scanner reads the
   # committed text lockfile (bun.lock) natively and queries osv.dev for known
   # CVEs in the resolved third-party dependencies. Accepted findings (with a
