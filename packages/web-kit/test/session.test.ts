@@ -436,7 +436,9 @@ describe('Session Feature', () => {
             a.get('/me', (c) => c.json({ session: c.get('session') }));
 
             const cookie = cookieOf(await a.request('/login'));
-            cache.whileWriting = () => a.request('/logout', { headers: { Cookie: cookie } });
+            cache.whileWriting = async () => {
+                await a.request('/logout', { headers: { Cookie: cookie } });
+            };
             await a.request('/touch', { headers: { Cookie: cookie } });
 
             const me = (await (await a.request('/me', { headers: { Cookie: cookie } })).json()) as any;
