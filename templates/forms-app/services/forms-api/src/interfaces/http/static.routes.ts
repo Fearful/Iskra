@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { serveStatic } from 'hono/bun';
 import { config } from '../../app.config.ts';
 
 const app = new Hono();
@@ -23,6 +22,13 @@ export const FORM_PAGE_CSP = [
     "frame-ancestors 'none'",
 ].join('; ');
 
+// Slugs as the admin API allows them, and the flat names Vite gives the
+// assets. The path was built from the decoded parameters as they came, so a
+// slug with an encoded slash ("..%2F") reached files outside the static
+// directory: /..%2F..%2Fsomewhere/else served any index.html on the machine.
+const SLUG = /^[a-z0-9-]+$/;
+const ASSET = /^[\w-]+(\.[\w-]+)+$/;
+
 // Serve prerendered form HTML and assets
 // Route: /:spaceSlug/:formSlug → serves index.html
 // Route: /:spaceSlug/:formSlug/assets/* → serves JS/CSS bundles
@@ -30,6 +36,9 @@ app.get('/:spaceSlug/:formSlug/assets/*', async (c) => {
     const spaceSlug = c.req.param('spaceSlug');
     const formSlug = c.req.param('formSlug');
     const assetPath = c.req.path.split('/assets/')[1];
+    if (!SLUG.test(spaceSlug) || !SLUG.test(formSlug) || !ASSET.test(assetPath)) {
+        return c.json({ error: 'Not found' }, 404);
+    }
 
     const filePath = `${config.staticDir}/${spaceSlug}/${formSlug}/assets/${assetPath}`;
 
@@ -42,7 +51,9 @@ app.get('/:spaceSlug/:formSlug/assets/*', async (c) => {
                 },
             });
         }
-    } catch {}
+    } catch {
+        // Unreadable: answered as missing.
+    }
 
     return c.json({ error: 'Not found' }, 404);
 });
@@ -50,6 +61,7 @@ app.get('/:spaceSlug/:formSlug/assets/*', async (c) => {
 app.get('/:spaceSlug/:formSlug', async (c) => {
     const spaceSlug = c.req.param('spaceSlug');
     const formSlug = c.req.param('formSlug');
+    if (!SLUG.test(spaceSlug) || !SLUG.test(formSlug)) return c.json({ error: 'Form not found' }, 404);
 
     const filePath = `${config.staticDir}/${spaceSlug}/${formSlug}/index.html`;
 
@@ -66,7 +78,9 @@ app.get('/:spaceSlug/:formSlug', async (c) => {
                 },
             });
         }
-    } catch {}
+    } catch {
+        // Unreadable: answered as missing.
+    }
 
     return c.json({ error: 'Form not found' }, 404);
 });
