@@ -94,7 +94,7 @@ describe('OpenTelemetry instrumentation options', () => {
                 [HTTP]: {
                     redactedQueryParams: ['sid'],
                     ignoreIncomingRequestHook: () => true,
-                    requestHook: (s) => calls.push(s),
+                    requestHook: (span: unknown) => calls.push(span),
                 },
                 '@opentelemetry/instrumentation-fs': { enabled: true },
             },
