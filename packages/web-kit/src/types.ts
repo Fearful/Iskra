@@ -325,7 +325,13 @@ export interface PermissionsConfig {
     loadRoles?: (userId: string) => Promise<string[]>;
     anonymousPermissions?: string[];
     enableRBAC?: boolean;
+    /** Keep each user's permissions and roles in the cache feature (default true). */
     cachePermissions?: boolean;
+    /**
+     * Seconds a user's cached permissions and roles are used (default 60): a
+     * revoked role keeps working that long unless you call
+     * `PermissionsFeature#invalidate(userId)`.
+     */
     cacheTTL?: number;
 }
 
