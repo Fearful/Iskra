@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { secretFromEnv } from '@forms-app/shared/env';
+import { internalApiToken } from '@forms-app/shared/internal-api';
 
 // The documented dev flow serves the admin SPA from Vite on :5173, whose proxy
 // forwards the browser's Origin unchanged: better-auth rejected every sign-in
@@ -24,6 +25,8 @@ export const AppConfigSchema = z.object({
         origins: z.string().default(DEFAULT_ORIGINS),
     }),
     formManagerUrl: z.string().default('http://form-manager:4001'),
+    /** Sent to form-manager's /internal API (INTERNAL_API_TOKEN). */
+    internalApiToken: z.string(),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -47,4 +50,5 @@ export const config: AppConfig = AppConfigSchema.parse({
         origins: process.env.CORS_ORIGINS || DEFAULT_ORIGINS,
     },
     formManagerUrl: process.env.FORM_MANAGER_URL || 'http://form-manager:4001',
+    internalApiToken: internalApiToken(),
 });

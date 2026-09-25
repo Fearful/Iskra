@@ -8,6 +8,7 @@
         ".": "./src/index.ts",
         "./db": "./src/db/schema.ts",
         "./env": "./src/env.ts",
+        "./internal-api": "./src/internal-api.ts",
         "./validation": "./src/validation/index.ts"
     },
     "scripts": {

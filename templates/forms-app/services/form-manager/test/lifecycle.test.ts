@@ -3,12 +3,19 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REDIS_KEYS } from '@forms-app/shared';
+import { config } from '../src/app.config.ts';
+import { LifecycleService } from '../src/domain/lifecycle/lifecycle.service.ts';
 
+// Set on the config object: STATIC_DIR set here was ignored once another test
+// file (the router's) had loaded the config.
 const staticDir = mkdtempSync(join(tmpdir(), 'form-manager-static-'));
-process.env.STATIC_DIR = staticDir;
-const { LifecycleService } = await import('../src/domain/lifecycle/lifecycle.service.ts');
+const configuredStaticDir = config.staticDir;
+config.staticDir = staticDir;
 
-afterAll(() => rmSync(staticDir, { recursive: true, force: true }));
+afterAll(() => {
+    config.staticDir = configuredStaticDir;
+    rmSync(staticDir, { recursive: true, force: true });
+});
 
 describe('LifecycleService.removeForm', () => {
     it("deletes the form's Redis keys, index entry and static page", async () => {

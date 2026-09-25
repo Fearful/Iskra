@@ -1,8 +1,19 @@
 import { Hono } from 'hono';
+import { hasInternalApiToken } from '@forms-app/shared/internal-api';
+import { config } from '../../app.config.ts';
 import { PrerenderService } from '../../domain/prerender/prerender.service.ts';
 import { LifecycleService } from '../../domain/lifecycle/lifecycle.service.ts';
 
 const app = new Hono();
+
+// Only admin-api and cron call these, with INTERNAL_API_TOKEN: they used to
+// answer anyone who reached the service, and remove deletes a form's page.
+app.use('/internal/*', async (c, next) => {
+    if (!hasInternalApiToken(c.req.header('Authorization'), config.internalApiToken)) {
+        return c.json({ error: 'Unauthorized' }, 401);
+    }
+    await next();
+});
 
 app.post('/internal/prerender/:formId', async (c) => {
     const formId = c.req.param('formId');

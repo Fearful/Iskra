@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { internalApiToken } from '@forms-app/shared/internal-api';
 
 export const AppConfigSchema = z.object({
     web: z.object({
@@ -12,6 +13,8 @@ export const AppConfigSchema = z.object({
         url: z.string().default('redis://localhost:6379'),
     }),
     staticDir: z.string().default('/app/static'),
+    /** Required on every /internal request (INTERNAL_API_TOKEN). */
+    internalApiToken: z.string(),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -26,4 +29,5 @@ export const config: AppConfig = AppConfigSchema.parse({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
     },
     staticDir: process.env.STATIC_DIR || '/app/static',
+    internalApiToken: internalApiToken(),
 });

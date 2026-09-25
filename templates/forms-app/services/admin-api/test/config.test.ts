@@ -7,6 +7,7 @@ const CONFIG = join(import.meta.dir, '..', 'src', 'app.config.ts');
 function loadProductionConfig(secrets: Record<string, string>) {
     const env: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
     delete env.AUTH_SECRET;
+    delete env.INTERNAL_API_TOKEN;
     const code = `const { config } = await import(${JSON.stringify(CONFIG)}); console.log(JSON.stringify(config));`;
     const proc = Bun.spawnSync([process.execPath, '-e', code], { env: { ...env, ...secrets } });
     return { ok: proc.exitCode === 0, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
@@ -27,10 +28,20 @@ describe('admin-api configuration in production', () => {
         expect(stderr).toContain('AUTH_SECRET must be set in production');
     });
 
-    it('starts with AUTH_SECRET set', () => {
-        const { ok, stdout, stderr } = loadProductionConfig({ AUTH_SECRET: 'a'.repeat(44) });
+    it("refuses to start without form-manager's INTERNAL_API_TOKEN", () => {
+        const { ok, stderr } = loadProductionConfig({ AUTH_SECRET: 'a'.repeat(44) });
+        expect(ok).toBe(false);
+        expect(stderr).toContain('INTERNAL_API_TOKEN must be set in production');
+    });
+
+    it('starts with its secrets set', () => {
+        const { ok, stdout, stderr } = loadProductionConfig({
+            AUTH_SECRET: 'a'.repeat(44),
+            INTERNAL_API_TOKEN: 't'.repeat(44),
+        });
         expect(stderr).toBe('');
         expect(ok).toBe(true);
         expect(JSON.parse(stdout).auth.secret).toBe('a'.repeat(44));
+        expect(JSON.parse(stdout).internalApiToken).toBe('t'.repeat(44));
     });
 });

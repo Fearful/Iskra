@@ -1,7 +1,17 @@
 import { forms, spaces } from '@forms-app/shared/db';
 import { eq, and, lte, sql, or, isNull } from 'drizzle-orm';
 import { FormStatus } from '@forms-app/shared';
+import { internalApiHeaders } from '@forms-app/shared/internal-api';
 import { config } from '../app.config.ts';
+
+/** A POST to form-manager's /internal API, which requires the internal token. */
+function formManager(path: string, body: unknown): Promise<Response> {
+    return fetch(`${config.formManagerUrl}/internal/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...internalApiHeaders(config.internalApiToken) },
+        body: JSON.stringify(body),
+    });
+}
 
 export class SchedulerService {
     private static db: any;
@@ -24,11 +34,7 @@ export class SchedulerService {
         let opened = 0;
         for (const form of formsToOpen) {
             try {
-                const res = await fetch(`${config.formManagerUrl}/internal/lifecycle/open`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ formId: form.id }),
-                });
+                const res = await formManager('lifecycle/open', { formId: form.id });
 
                 if (res.ok) {
                     opened++;
@@ -57,11 +63,7 @@ export class SchedulerService {
         let closed = 0;
         for (const form of formsToClose) {
             try {
-                const res = await fetch(`${config.formManagerUrl}/internal/lifecycle/close`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ formId: form.id }),
-                });
+                const res = await formManager('lifecycle/close', { formId: form.id });
 
                 if (res.ok) {
                     closed++;

@@ -4,9 +4,22 @@ import { z } from 'zod';
 import { FormService } from '../../domain/forms/form.service.ts';
 import { SpaceService } from '../../domain/spaces/space.service.ts';
 import { FIELD_TYPES, type FieldType } from '@forms-app/shared';
+import { internalApiHeaders } from '@forms-app/shared/internal-api';
 import { config } from '../../app.config.ts';
 
 const app = new Hono();
+
+/** A POST to form-manager's /internal API, which requires the internal token. */
+function formManager(path: string, body?: unknown): Promise<Response> {
+    return fetch(`${config.formManagerUrl}/internal/${path}`, {
+        method: 'POST',
+        headers: {
+            ...internalApiHeaders(config.internalApiToken),
+            ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+}
 
 const FieldOptionSchema = z.object({
     label: z.string().min(1),
@@ -114,11 +127,7 @@ app.delete('/forms/:id', async (c) => {
     // Unpublish it: its Redis keys kept forms-api accepting answers for it.
     if (form.status !== 'draft' && space) {
         try {
-            const res = await fetch(`${config.formManagerUrl}/internal/lifecycle/remove`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ spaceSlug: space.slug, formSlug: form.slug }),
-            });
+            const res = await formManager('lifecycle/remove', { spaceSlug: space.slug, formSlug: form.slug });
             if (!res.ok) console.error('Failed to unpublish deleted form:', await res.text());
         } catch (err) {
             console.error('Failed to unpublish deleted form:', err);
@@ -141,7 +150,7 @@ app.post('/forms/:id/publish', async (c) => {
 
     // Trigger prerender
     try {
-        await fetch(`${config.formManagerUrl}/internal/prerender/${id}`, { method: 'POST' });
+        await formManager(`prerender/${encodeURIComponent(id)}`);
     } catch (err) {
         console.error('Failed to trigger prerender:', err);
     }
@@ -153,7 +162,7 @@ app.post('/forms/:id/publish', async (c) => {
 app.post('/forms/:id/prerender', async (c) => {
     const id = c.req.param('id');
     try {
-        const res = await fetch(`${config.formManagerUrl}/internal/prerender/${id}`, { method: 'POST' });
+        const res = await formManager(`prerender/${encodeURIComponent(id)}`);
         const data = await res.json();
         return c.json({ data });
     } catch (err: any) {

@@ -111,7 +111,15 @@ const CASES: Case[] = [
             { from: 'form-manager', target: 'form-manager:4001/health' },
             { from: 'form-manager', target: 'cron:4002/health' },
         ],
-        secrets: ['DB_PASSWORD', 'REDIS_PASSWORD', 'AUTH_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET', 'RECAPTCHA_SECRET'],
+        secrets: [
+            'DB_PASSWORD',
+            'REDIS_PASSWORD',
+            'AUTH_SECRET',
+            'INTERNAL_API_TOKEN',
+            'CSRF_SECRET',
+            'IP_HASH_SECRET',
+            'RECAPTCHA_SECRET',
+        ],
     },
 ];
 

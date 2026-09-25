@@ -14,7 +14,15 @@ interface Service {
 const text = readFileSync(join(import.meta.dir, '..', 'docker-compose.yml'), 'utf8');
 const { services } = Bun.YAML.parse(text) as { services: Record<string, Service> };
 
-const SECRETS = ['DB_PASSWORD', 'REDIS_PASSWORD', 'AUTH_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET', 'RECAPTCHA_SECRET'];
+const SECRETS = [
+    'DB_PASSWORD',
+    'REDIS_PASSWORD',
+    'AUTH_SECRET',
+    'INTERNAL_API_TOKEN',
+    'CSRF_SECRET',
+    'IP_HASH_SECRET',
+    'RECAPTCHA_SECRET',
+];
 
 /** Services that share a network with `name`, so can connect to any of its ports. */
 function reachableFrom(name: string): string[] {
@@ -54,6 +62,11 @@ describe('docker-compose.yml', () => {
         for (const [, service] of clients) {
             expect(service.environment!.REDIS_URL).toStartWith('redis://:${REDIS_PASSWORD');
         }
+    });
+
+    it("gives form-manager's internal API token to form-manager and its callers only", () => {
+        const holders = Object.entries(services).filter(([, s]) => s.environment?.INTERNAL_API_TOKEN);
+        expect(holders.map(([name]) => name).sort()).toEqual(['admin-api', 'cron', 'form-manager']);
     });
 
     it('lets forms-api reach nginx and Redis only', () => {

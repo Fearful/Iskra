@@ -109,6 +109,7 @@ cat > .env <<EOF
 DB_PASSWORD=$(openssl rand -hex 32)
 REDIS_PASSWORD=$(openssl rand -hex 32)
 AUTH_SECRET=$(openssl rand -base64 32)
+INTERNAL_API_TOKEN=$(openssl rand -base64 32)
 CSRF_SECRET=$(openssl rand -base64 32)
 IP_HASH_SECRET=$(openssl rand -base64 32)
 RECAPTCHA_SITE_KEY=tu-site-key
@@ -173,6 +174,7 @@ base64 rompen la URL.
 | `DB_PASSWORD` | postgres y los servicios que lo usan | Password de PostgreSQL |
 | `REDIS_PASSWORD` | redis y los servicios que lo usan | Password de Redis (`requirepass`) |
 | `AUTH_SECRET` | admin-api | Firma las sesiones de Better Auth, 32+ caracteres. Con el cache de sesion en cookie, quien lo conoce puede fabricar la sesion de cualquier admin |
+| `INTERNAL_API_TOKEN` | admin-api, cron, form-manager | Token de la API `/internal` de form-manager, 32+ caracteres: admin-api y cron lo envian (`Authorization: Bearer`) y form-manager responde 401 sin el |
 | `CSRF_SECRET` | forms-api | Firma los tokens CSRF, 32+ caracteres |
 | `IP_HASH_SECRET` | forms-api | Clave del hash diario de IP de cada respuesta, 32+ caracteres y distinta de `CSRF_SECRET` (sin ella el hash se puede revertir probando todas las IPv4) |
 | `RECAPTCHA_SECRET` | forms-api | Clave privada de reCAPTCHA v3, la emite Google |
@@ -332,11 +334,15 @@ Todos los endpoints excepto auth requieren sesion autenticada (401 sin sesion). 
 
 ### form-manager (puerto 4001) — intranet
 
+Solo la llaman admin-api y cron, con `Authorization: Bearer <INTERNAL_API_TOKEN>`; sin ese
+token responde 401 (el token se compara en tiempo constante).
+
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | `POST` | `/internal/prerender/:formId` | Construir archivos estaticos para un formulario |
 | `POST` | `/internal/lifecycle/open` | Abrir formulario (actualiza status + Redis) |
 | `POST` | `/internal/lifecycle/close` | Cerrar formulario (actualiza status + TTL en Redis) |
+| `POST` | `/internal/lifecycle/remove` | Despublicar un formulario borrado (claves de Redis y archivos estaticos) |
 
 ### forms-api (puerto 3000) — via nginx `/formularios/`
 

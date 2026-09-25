@@ -10,13 +10,14 @@ async function signInStatuses(nodeEnv: string): Promise<Record<string, number>> 
         [process.execPath, join(import.meta.dir, 'fixtures', 'origin-probe.ts'), VITE, NGINX, OTHER],
         {
             // Defaults only: no CORS_ORIGINS / AUTH_BASE_URL from the environment.
-            // Production has no default AUTH_SECRET.
+            // Production has no default secrets.
             env: {
                 ...process.env,
                 NODE_ENV: nodeEnv,
                 CORS_ORIGINS: '',
                 AUTH_BASE_URL: '',
                 AUTH_SECRET: 'origin-probe-auth-secret-0123456789abcdef',
+                INTERNAL_API_TOKEN: 'origin-probe-internal-api-token-0123456789',
             },
             stdout: 'pipe',
             stderr: 'inherit',
