@@ -10,6 +10,13 @@ declare module 'hono' {
     }
 }
 
+/**
+ * An incoming ID is kept only if it is visible ASCII (UUIDs, trace headers
+ * such as `Root=1-…;Parent=…`), up to 200 characters: it is echoed back and
+ * written to the logs, so a client could otherwise fill them with anything.
+ */
+const ACCEPTED_REQUEST_ID = /^[\x21-\x7e]{1,200}$/;
+
 export class RequestIdFeature implements Feature {
     name = 'request-id';
     private log: KernelLogger = consoleLogger;
@@ -30,7 +37,7 @@ export class RequestIdFeature implements Feature {
         app.use('*', async (c: Context, next: Next) => {
             let requestId = c.req.header(this.config.headerName);
 
-            if (!requestId) {
+            if (!requestId || !ACCEPTED_REQUEST_ID.test(requestId)) {
                 requestId = this.config.generator();
             }
 

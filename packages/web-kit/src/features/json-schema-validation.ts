@@ -52,11 +52,24 @@ function createAjvInstance(options: JsonValidationOptions = {}): Ajv {
 
 // ─── Error Formatter ────────────────────────────────────────────────────────
 
+/**
+ * Most distinct errors reported per request. ajv-errors needs `allErrors`, so a
+ * body whose array items each fail yields one error per item.
+ */
+const MAX_REPORTED_ERRORS = 100;
+
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): FormattedValidationErrors {
     const result: FormattedValidationErrors = { fields: {}, errors: [] };
     if (!errors) return result;
 
+    // Sets, and at most MAX_REPORTED_ERRORS: de-duplicating with
+    // Array.includes() was quadratic in the number of errors, so one 117 KiB
+    // body of array items blocked the event loop for seconds.
+    const reported = new Set<string>();
+    const fieldMessages = new Map<string, Set<string>>();
+
     for (const err of errors) {
+        if (reported.size >= MAX_REPORTED_ERRORS) break;
         let fieldPath: string;
 
         if (err.instancePath) {
@@ -69,18 +82,26 @@ function formatAjvErrors(errors: ErrorObject[] | null | undefined): FormattedVal
 
         const message = err.message || 'Invalid value';
 
-        if (!result.fields[fieldPath]) {
-            result.fields[fieldPath] = [];
-        }
-
-        if (!result.fields[fieldPath].includes(message)) {
-            result.fields[fieldPath].push(message);
-        }
+        let messages = fieldMessages.get(fieldPath);
+        if (!messages) fieldMessages.set(fieldPath, (messages = new Set()));
+        messages.add(message);
 
         const formatted = fieldPath === '_root' ? message : `${fieldPath}: ${message}`;
-        if (!result.errors.includes(formatted)) {
+        if (!reported.has(formatted)) {
+            reported.add(formatted);
             result.errors.push(formatted);
         }
+    }
+
+    // Defined, not assigned: a field path comes from the request's own keys,
+    // and `fields["__proto__"] = [...]` would replace the object's prototype.
+    for (const [fieldPath, messages] of fieldMessages) {
+        Object.defineProperty(result.fields, fieldPath, {
+            value: [...messages],
+            enumerable: true,
+            writable: true,
+            configurable: true,
+        });
     }
 
     return result;

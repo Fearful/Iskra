@@ -139,6 +139,12 @@ export interface CorsConfig {
 }
 
 export interface RateLimitConfig {
+    /**
+     * Feature name, `'rate-limit'` by default. Feature names are unique, so a
+     * second limiter (e.g. a stricter one for login) needs its own; its
+     * counters are kept apart from the other limiter's.
+     */
+    name?: string;
     windowMs?: number;
     max?: number;
     keyGenerator?: (c: Context) => string;
@@ -207,6 +213,13 @@ export interface AuthConfig {
      */
     rateLimit?: false | { max?: number; windowMs?: number };
     disableCSRFCheck?: boolean; // Disable CSRF protection (for testing)
+    /**
+     * Lifetime of better-auth's signed session cookie cache, in seconds
+     * (default 300). Sessions are checked against that cookie without a
+     * database lookup, so a session revoked by sign-out or "revoke sessions"
+     * keeps working this long; lower it to shorten that window.
+     */
+    cookieCacheMaxAge?: number;
     authMode?: 'oidc' | 'email'; // Authentication mode
     /**
      * Email/password sign-in. Defaults to `authMode === "email"`, so an OIDC

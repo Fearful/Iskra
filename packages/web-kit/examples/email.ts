@@ -32,6 +32,9 @@ correctedKernel.registerFeature(
     })
 );
 
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await correctedKernel.initialize();
+
 correctedKernel.getApp().post("/send-email", async (c) => {
     const email = c.get("email");
     const body = await c.req.json();

@@ -49,6 +49,18 @@ class SimpleLogger implements RequestLogger {
 }
 /* eslint-enable no-console */
 
+/**
+ * The request path for a log line, with control and line-separator characters
+ * escaped: Hono decodes it, so `%0A` in a URL started a forged log line.
+ */
+function printablePath(path: string): string {
+    return path.replace(
+        // eslint-disable-next-line no-control-regex -- control characters are what it escapes
+        /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g,
+        (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
+}
+
 export class LoggerFeature implements Feature {
     name = 'logger';
     private log: KernelLogger = consoleLogger;
@@ -74,7 +86,7 @@ export class LoggerFeature implements Feature {
             app.use('*', async (c: Context, next: Next) => {
                 const start = Date.now();
                 const requestId = c.get('requestId');
-                this.logger.info(`Incoming request ${c.req.method} ${c.req.path}`, { requestId });
+                this.logger.info(`Incoming request ${c.req.method} ${printablePath(c.req.path)}`, { requestId });
 
                 await next();
 

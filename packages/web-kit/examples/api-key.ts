@@ -36,6 +36,9 @@ basicKernel.registerFeature(
     }),
 );
 
+// Initialize before adding routes: a route added earlier skips the features' middleware.
+await basicKernel.initialize();
+
 basicKernel.getApp().get("/", (c) => {
     return c.json({
         message: "API Key Example - Basic",
@@ -61,11 +64,6 @@ basicKernel.getApp().get("/protected", requireApiKey(), (c) => {
     });
 });
 
-// await basicKernel.initialize();
-// await basicKernel.start(); 
-// Commented out start to allow other examples to run or simple require main check
-
 if (import.meta.main) {
-    await basicKernel.initialize();
     await basicKernel.start();
 }

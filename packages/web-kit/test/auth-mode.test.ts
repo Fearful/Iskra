@@ -48,3 +48,15 @@ describe('AuthFeature authMode / enableSelfRegistration', () => {
         expect((await optionsFor({ enableSelfRegistration: false })).disableSignUp).toBe(true);
     });
 });
+
+describe('AuthFeature cookieCacheMaxAge', () => {
+    // A revoked session keeps passing the signed cookie cache for its lifetime;
+    // the option was accepted by auth-kit but never reached it from web-kit.
+    it('is forwarded to auth-kit', async () => {
+        expect((await optionsFor({ cookieCacheMaxAge: 30 })).cookieCacheMaxAge).toBe(30);
+    });
+
+    it("leaves auth-kit's default when unset", async () => {
+        expect('cookieCacheMaxAge' in (await optionsFor({}))).toBe(false);
+    });
+});

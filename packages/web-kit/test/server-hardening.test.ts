@@ -66,3 +66,52 @@ describe('WebDriver — error/header hardening', () => {
         expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
     });
 });
+
+describe('WebDriver — request body limit', () => {
+    const PORT = 3459;
+
+    async function start(options: { maxRequestBodySize?: number } = {}) {
+        const app = new App({ name: 'WebBodyLimitTest' });
+        app.register(
+            new WebDriver({
+                port: PORT,
+                ...options,
+                routes: [
+                    {
+                        method: 'POST',
+                        path: '/echo',
+                        handler: async (ctx) => ({ length: (await ctx.raw.req.text()).length }),
+                    },
+                ],
+            }),
+        );
+        await app.start();
+        return app;
+    }
+
+    it('caps bodies at 16 MiB by default, like the Kernel (Bun alone allows 128 MiB)', async () => {
+        const app = await start();
+        try {
+            const ok = await fetch(`http://localhost:${PORT}/echo`, { method: 'POST', body: 'x'.repeat(1024) });
+            expect(await ok.json()).toEqual({ length: 1024 });
+
+            const big = await fetch(`http://localhost:${PORT}/echo`, {
+                method: 'POST',
+                body: new Uint8Array(16 * 1024 * 1024 + 1),
+            });
+            expect(big.status).toBe(413);
+        } finally {
+            await app.stop();
+        }
+    });
+
+    it('takes maxRequestBodySize', async () => {
+        const app = await start({ maxRequestBodySize: 1000 });
+        try {
+            const big = await fetch(`http://localhost:${PORT}/echo`, { method: 'POST', body: 'x'.repeat(2000) });
+            expect(big.status).toBe(413);
+        } finally {
+            await app.stop();
+        }
+    });
+});

@@ -95,7 +95,7 @@ import type { Hono } from 'hono';
 
 export class GreetingFeature implements Feature {
   name = 'greeting';
-  dependencies = ['errorHandler'];
+  dependencies = ['error-handler'];
 
   async initialize(kernel: Kernel) {
     // Set up shared state, read config from the kernel.
@@ -121,8 +121,18 @@ app.register(new WebPlugin({ port: 3000, features: [new GreetingFeature()] }));
 
 ### `dependencies` vs `peerDependencies`
 
-- `dependencies` — features that **must** be present and initialized first. Missing ones are an error.
-- `peerDependencies` — features that, **if present**, should initialize first, but are optional.
+- `dependencies` — names of features that **must** be registered. They are initialized first, so their middleware runs before yours. A missing one is an error.
+- `peerDependencies` — names of **npm packages** the feature needs. A missing one only logs a warning, and they do not change the initialization order.
+
+Features with no dependency between them run their middleware in the order they were registered.
+
+### Rules the Kernel enforces
+
+- **Middleware in `initialize()`, routes in `routes()`.** Hono only runs the middleware registered before a route. The Kernel registers every feature's middleware first and every feature's routes after, so CSRF, rate limiting, auth and CORS apply to all routes. A feature that adds a route in `initialize()` would escape the middleware of the features initialized after it, so `initialize()` fails instead.
+- **Unique names.** Registering a feature whose name is already taken throws. It used to replace the first one silently: a helper named `csrf` dropped the CSRF check. `RateLimitFeature` takes a `name` for a second limiter.
+- **Routes after `initialize()`.** With a standalone `Kernel`, call `await kernel.initialize()` before `kernel.getApp().get(...)`: a route added earlier would skip the security headers and every feature's middleware, so `initialize()` throws. With `WebPlugin`, pass your routes as `router`.
+
+A Driver, Plugin or Feature runs with full access to the app: its config and secrets, `app.context` (where `set()` replaces an existing key such as `db`) and every event on the bus. Review one as you would any other dependency.
 
 ## Packaging for reuse
 

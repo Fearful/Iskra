@@ -5,6 +5,11 @@ import type { RouteOptions } from './router';
 
 export interface WebServerOptions {
     port?: number;
+    /**
+     * Largest request body accepted, in bytes; bigger ones get 413 before any
+     * route runs. Default 16 MiB, as in the Kernel (Bun's own default is 128 MiB).
+     */
+    maxRequestBodySize?: number;
     routes?: RouteOptions[];
     debug?: boolean;
     openApi?: {
@@ -13,6 +18,8 @@ export interface WebServerOptions {
         version: string;
     };
 }
+
+const DEFAULT_MAX_REQUEST_BODY_SIZE = 16 * 1024 * 1024;
 
 export class WebDriver implements Driver {
     name = 'WebDriver';
@@ -146,6 +153,9 @@ export class WebDriver implements Driver {
         this.runningServer = Bun.serve({
             fetch: this.server.fetch,
             port,
+            // Bodies are read whole (c.req.json()); without a cap an anonymous
+            // client could hold 128 MiB per request in memory.
+            maxRequestBodySize: this.options.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE,
         });
     }
 

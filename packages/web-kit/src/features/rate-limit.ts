@@ -83,7 +83,7 @@ export class RateLimitFeature implements Feature {
      * per-process memory store.
      */
     dependencies?: string[];
-    private config: Required<Omit<RateLimitConfig, 'keyGenerator' | 'skip' | 'handler'>> & {
+    private config: Required<Omit<RateLimitConfig, 'name' | 'keyGenerator' | 'skip' | 'handler'>> & {
         keyGenerator?: RateLimitConfig['keyGenerator'];
         skip?: RateLimitConfig['skip'];
         handler?: RateLimitConfig['handler'];
@@ -93,7 +93,14 @@ export class RateLimitFeature implements Feature {
     private trustProxy?: TrustProxy;
     private warnedUnknownClient = false;
 
+    /** Store key prefix; a named limiter gets its own, so two never share counters. */
+    private keyPrefix = 'rate_limit:';
+
     constructor(config: RateLimitConfig = {}) {
+        if (config.name && config.name !== this.name) {
+            this.name = config.name;
+            this.keyPrefix = `rate_limit:${config.name}:`;
+        }
         if (config.store === 'cache') this.dependencies = ['cache'];
         this.config = {
             windowMs: config.windowMs || 15 * 60 * 1000,
@@ -161,7 +168,7 @@ export class RateLimitFeature implements Feature {
         }
 
         const key = this.config.keyGenerator ? this.config.keyGenerator(c) : this.defaultKeyGenerator(c);
-        const rlKey = `rate_limit:${key}`;
+        const rlKey = `${this.keyPrefix}${key}`;
         const count = await store.increment(rlKey, this.config.windowMs);
 
         if (count > this.config.max) {
