@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { secretFromEnv } from '@forms-app/shared/env';
 
 export const AppConfigSchema = z.object({
     web: z.object({
@@ -34,12 +35,15 @@ export const config: AppConfig = AppConfigSchema.parse({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
     },
     recaptcha: {
-        secret: process.env.RECAPTCHA_SECRET || 'your-secret-key',
+        // Issued by Google (https://www.google.com/recaptcha/admin), not generated.
+        secret: secretFromEnv('RECAPTCHA_SECRET', 'your-secret-key', { minLength: 1 }),
         minScore: Number(process.env.RECAPTCHA_MIN_SCORE) || 0.5,
     },
     csrf: {
-        secret: process.env.CSRF_SECRET || 'dev-csrf-secret',
+        secret: secretFromEnv('CSRF_SECRET', 'dev-csrf-secret-change-me-32-characters'),
     },
-    ipHashSecret: process.env.IP_HASH_SECRET || process.env.CSRF_SECRET || 'dev-ip-hash-secret',
+    // A key of its own: it used to fall back to CSRF_SECRET, so the stored IP
+    // hashes and the CSRF token signatures came from the same key.
+    ipHashSecret: secretFromEnv('IP_HASH_SECRET', 'dev-ip-hash-secret-change-me-32-chars'),
     staticDir: process.env.STATIC_DIR || '/app/static',
 });

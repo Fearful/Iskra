@@ -12,6 +12,7 @@
  */
 /* eslint-disable no-console -- a CLI script: its report goes to stdout/stderr. */
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 
 interface Probe {
     path: string;
@@ -39,6 +40,11 @@ interface ComposeCase {
     probes: Probe[];
     /** `service:port/path` probed from inside the nginx container (not published). */
     internal: string[];
+    /**
+     * Variables the compose file requires (`${VAR:?}`, its secrets): each run
+     * gets random ones. Hex, since some go into connection URLs.
+     */
+    secrets: string[];
 }
 
 type Case = ImageCase | ComposeCase;
@@ -87,6 +93,7 @@ const CASES: Case[] = [
             { path: '/admin/', status: 200 },
         ],
         internal: ['admin-api:4000/health', 'form-manager:4001/health', 'cron:4002/health'],
+        secrets: ['DB_PASSWORD', 'AUTH_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET', 'RECAPTCHA_SECRET'],
     },
 ];
 
@@ -97,10 +104,14 @@ const START_TIMEOUT_MS = 60_000;
 /** How long a started container must keep running after its probes pass. */
 const SETTLE_MS = 3_000;
 
-function docker(args: string[], opts: { quiet?: boolean; allowFail?: boolean } = {}): { ok: boolean; out: string } {
+function docker(
+    args: string[],
+    opts: { quiet?: boolean; allowFail?: boolean; env?: NodeJS.ProcessEnv } = {},
+): { ok: boolean; out: string } {
     const res = spawnSync('docker', args, {
         encoding: 'utf8',
         stdio: opts.quiet ? 'pipe' : ['ignore', 'inherit', 'inherit'],
+        env: opts.env,
     });
     const ok = res.status === 0;
     if (!ok && !opts.allowFail) throw new Error(`docker ${args.join(' ')} failed (${res.status})\n${res.stderr ?? ''}`);
@@ -192,21 +203,25 @@ async function runImage(c: ImageCase, build: boolean): Promise<string | null> {
 
 async function runCompose(c: ComposeCase, build: boolean): Promise<string | null> {
     const compose = ['compose', '-f', c.file, '-p', COMPOSE_PROJECT];
+    // Every compose command interpolates the file, so each one gets them (a
+    // `down` without them fails as well).
+    const env = { ...process.env, ...Object.fromEntries(c.secrets.map((v) => [v, randomBytes(32).toString('hex')])) };
     let failure: string | null = null;
-    docker([...compose, 'up', '-d', ...(build ? ['--build'] : ['--no-build'])], { allowFail: true });
+    docker([...compose, 'up', '-d', ...(build ? ['--build'] : ['--no-build'])], { allowFail: true, env });
     try {
-        failure = await probeCompose(c, compose);
+        failure = await probeCompose(c, compose, env);
         return failure;
     } finally {
-        if (failure) docker([...compose, 'logs', '--tail', '30'], { allowFail: true });
-        docker([...compose, 'down', '-v', '--remove-orphans'], { quiet: true, allowFail: true });
+        if (failure) docker([...compose, 'logs', '--tail', '30'], { allowFail: true, env });
+        docker([...compose, 'down', '-v', '--remove-orphans'], { quiet: true, allowFail: true, env });
     }
 }
 
-async function probeCompose(c: ComposeCase, compose: string[]): Promise<string | null> {
+async function probeCompose(c: ComposeCase, compose: string[], env: NodeJS.ProcessEnv): Promise<string | null> {
     try {
         const exited = () =>
-            docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true }).out;
+            docker([...compose, 'ps', '-a', '--status', 'exited', '--format', '{{.Service}}'], { quiet: true, env })
+                .out;
         const failure = await waitForProbes('http://127.0.0.1:80', c.probes, () => exited() === '');
         if (failure) return `${failure}${exited() ? `; exited: ${exited().replace(/\n/g, ', ')}` : ''}`;
         // Services start at different speeds: retried until the same deadline.
@@ -214,6 +229,7 @@ async function probeCompose(c: ComposeCase, compose: string[]): Promise<string |
             docker([...compose, 'exec', '-T', 'nginx', 'wget', '-q', '-O', '/dev/null', `http://${target}`], {
                 quiet: true,
                 allowFail: true,
+                env,
             }).ok;
         const deadline = Date.now() + START_TIMEOUT_MS;
         let pending = c.internal;

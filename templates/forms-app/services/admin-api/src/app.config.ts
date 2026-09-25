@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { secretFromEnv } from '@forms-app/shared/env';
 
 // The documented dev flow serves the admin SPA from Vite on :5173, whose proxy
 // forwards the browser's Origin unchanged: better-auth rejected every sign-in
@@ -36,7 +37,9 @@ export const config: AppConfig = AppConfigSchema.parse({
         url: process.env.DATABASE_URL || 'postgresql://forms:secret@localhost:5432/forms_app',
     },
     auth: {
-        secret: process.env.AUTH_SECRET || 'dev-secret-change-me-min-32-characters-long',
+        // Signs the session cookies: with better-auth's cookie cache, whoever
+        // knows it can make one for any admin, with no session in the database.
+        secret: secretFromEnv('AUTH_SECRET', 'dev-secret-change-me-min-32-characters-long'),
         baseURL: process.env.AUTH_BASE_URL || 'http://localhost:4000',
         basePath: '/api/auth',
     },

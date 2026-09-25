@@ -1,3 +1,6 @@
+# Every secret comes from the environment or a .env next to this file (see
+# .env.example). None has a default: `docker compose` refuses to start without
+# them, where it used to run with values anyone could read here.
 services:
   # ─── Infrastructure ──────────────────────────────────────────────────────────
   nginx:
@@ -16,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: forms_app
       POSTGRES_USER: forms
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set it in .env, see .env.example}
     ports:
       - "5432:5432"
     volumes:
@@ -46,8 +49,8 @@ services:
       dockerfile: templates/forms-app/services/admin-api/Dockerfile
     environment:
       PORT: "4000"
-      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
-      AUTH_SECRET: ${AUTH_SECRET:-dev-only-auth-secret-change-me-32chars}
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:?set it in .env, see .env.example}@postgres:5432/forms_app
+      AUTH_SECRET: ${AUTH_SECRET:?set it in .env, see .env.example}
       # Origin only: a path here would move better-auth's routes off /api/auth.
       AUTH_BASE_URL: http://localhost
       CORS_ORIGINS: http://localhost
@@ -70,7 +73,7 @@ services:
       dockerfile: templates/forms-app/services/form-manager/Dockerfile
     environment:
       PORT: "4001"
-      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:?set it in .env, see .env.example}@postgres:5432/forms_app
       REDIS_URL: redis://redis:6379
       STATIC_DIR: /app/static
       RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-your-site-key}
@@ -88,7 +91,7 @@ services:
       dockerfile: templates/forms-app/services/cron/Dockerfile
     environment:
       PORT: "4002"
-      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:?set it in .env, see .env.example}@postgres:5432/forms_app
       REDIS_URL: redis://redis:6379
       FORM_MANAGER_URL: http://form-manager:4001
       CHECK_INTERVAL_MS: "30000"
@@ -108,10 +111,10 @@ services:
     environment:
       PORT: "3000"
       REDIS_URL: redis://redis:6379
-      RECAPTCHA_SECRET: ${RECAPTCHA_SECRET:-your-secret-key}
+      RECAPTCHA_SECRET: ${RECAPTCHA_SECRET:?set it in .env, see .env.example}
       RECAPTCHA_MIN_SCORE: "0.5"
-      CSRF_SECRET: ${CSRF_SECRET:-dev-csrf-secret}
-      IP_HASH_SECRET: ${IP_HASH_SECRET:-dev-ip-hash-secret}
+      CSRF_SECRET: ${CSRF_SECRET:?set it in .env, see .env.example}
+      IP_HASH_SECRET: ${IP_HASH_SECRET:?set it in .env, see .env.example}
       # Behind nginx: the client IP is its X-Forwarded-For entry.
       TRUST_PROXY: "1"
       STATIC_DIR: /app/static
@@ -128,7 +131,7 @@ services:
       context: ../..
       dockerfile: templates/forms-app/services/answer-writer/Dockerfile
     environment:
-      DATABASE_URL: postgresql://forms:${DB_PASSWORD:-secret}@postgres:5432/forms_app
+      DATABASE_URL: postgresql://forms:${DB_PASSWORD:?set it in .env, see .env.example}@postgres:5432/forms_app
       REDIS_URL: redis://redis:6379
       WORKER_CONCURRENCY: "50"
       BATCH_MAX_SIZE: "50"

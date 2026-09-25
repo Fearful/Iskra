@@ -84,11 +84,25 @@ En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegari
 ```bash
 # Desde la raiz del monorepo
 bun install
+cd templates/forms-app
+
+# Secretos: no tienen valores por defecto, sin ellos docker compose no arranca
+cat > .env <<EOF
+DB_PASSWORD=$(openssl rand -hex 32)
+AUTH_SECRET=$(openssl rand -base64 32)
+CSRF_SECRET=$(openssl rand -base64 32)
+IP_HASH_SECRET=$(openssl rand -base64 32)
+RECAPTCHA_SITE_KEY=tu-site-key
+RECAPTCHA_SECRET=tu-secret-key
+EOF
 
 # Levantar todo el stack
-cd templates/forms-app
 docker compose up --build
 ```
+
+Las claves de reCAPTCHA las emite Google (ver
+[Envios de formularios y reCAPTCHA](#envios-de-formularios-y-recaptcha)); con las de
+ejemplo el stack arranca, pero todo envio se rechaza con 403.
 
 En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
 de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
@@ -107,7 +121,8 @@ El admin-api no permite registrarse publicamente: todas sus rutas requieren sesi
 
 ```bash
 cd services/admin-api
-DATABASE_URL=postgresql://forms:secret@localhost:5432/forms_app \
+set -a; . ../../.env; set +a  # DB_PASSWORD
+DATABASE_URL="postgresql://forms:$DB_PASSWORD@localhost:5432/forms_app" \
   bun run create-admin admin@example.com 'una-contrasena-larga'
 ```
 
@@ -115,8 +130,8 @@ Despues inicia sesion en http://localhost/admin/login.
 
 ### Envios de formularios y reCAPTCHA
 
-forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que con las claves de
-ejemplo (`your-site-key` / `your-secret-key`) todo envio se rechaza con 403. Para probar
+forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que con claves de
+ejemplo (como las del inicio rapido) todo envio se rechaza con 403. Para probar
 localmente, registra un par de claves v3 con el dominio `localhost` en
 https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
 `RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
@@ -124,21 +139,33 @@ formulario, asi que re-publicalo despues de cambiarla).
 
 ## Variables de entorno
 
-Copia `.env.example` a `.env`:
+`docker compose` las lee de `.env` (ver `.env.example`). Los secretos no tienen valor por
+defecto: en produccion (las imagenes se construyen con `NODE_ENV=production`) un servicio
+no arranca si le falta uno, si es mas corto de lo pedido o si es el valor de desarrollo.
+Fuera de produccion (`bun dev`) cada servicio usa un valor de desarrollo. Generalos con
+`openssl rand -base64 32`, salvo los passwords que van dentro de una URL de conexion
+(`DB_PASSWORD`): `openssl rand -hex 32`, porque la `/` y el `+` de base64 rompen la URL.
+
+**Secretos** (obligatorios):
+
+| Variable | Servicio | Descripcion |
+|----------|----------|-------------|
+| `DB_PASSWORD` | postgres y los servicios que lo usan | Password de PostgreSQL |
+| `AUTH_SECRET` | admin-api | Firma las sesiones de Better Auth, 32+ caracteres. Con el cache de sesion en cookie, quien lo conoce puede fabricar la sesion de cualquier admin |
+| `CSRF_SECRET` | forms-api | Firma los tokens CSRF, 32+ caracteres |
+| `IP_HASH_SECRET` | forms-api | Clave del hash diario de IP de cada respuesta, 32+ caracteres y distinta de `CSRF_SECRET` (sin ella el hash se puede revertir probando todas las IPv4) |
+| `RECAPTCHA_SECRET` | forms-api | Clave privada de reCAPTCHA v3, la emite Google |
+
+**Otras**:
 
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
-| `DB_PASSWORD` | Password de PostgreSQL | `secret` |
-| `DATABASE_URL` | URL de conexion a Postgres | `postgresql://forms:secret@postgres:5432/forms_app` |
-| `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
-| `AUTH_SECRET` | Secreto para Better Auth (sesiones/tokens), 32+ caracteres | `dev-only-auth-secret-change-me-32chars` |
+| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
-| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
-| `RECAPTCHA_SECRET` | Clave privada de reCAPTCHA v3 | `your-secret-key` |
-| `CSRF_SECRET` | Secreto para generacion de tokens CSRF | `dev-csrf-secret` |
-| `IP_HASH_SECRET` | Clave del hash diario de IP de cada respuesta (sin ella el hash se puede revertir probando todas las IPv4) | `CSRF_SECRET` |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
+| `DATABASE_URL` | URL de conexion a Postgres (compose la arma con `DB_PASSWORD`) | `postgresql://forms:<DB_PASSWORD>@postgres:5432/forms_app` |
+| `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
 | `FORM_MANAGER_URL` | URL interna del form-manager | `http://form-manager:4001` |
 
 ## Estructura del proyecto
@@ -406,7 +433,10 @@ No se guarda la IP cruda. Se hashea con SHA256 usando un salt que rota diariamen
 
 ### Secretos
 
-Todos los secretos (AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET) se configuran via variables de entorno. Los valores por defecto son solo para desarrollo.
+Todos los secretos (ver [Variables de entorno](#variables-de-entorno)) se configuran via
+variables de entorno y no tienen valores por defecto en `docker-compose.yml`. En
+produccion un servicio no arranca si le falta uno, si es demasiado corto o si es el
+valor de desarrollo; esos valores existen solo para `bun dev`.
 
 ## Escalabilidad
 
@@ -508,7 +538,7 @@ A partir de aca podes:
 Para produccion necesitas:
 
 1. Dos instancias de nginx: una en la DMZ (solo `/formularios/`) y otra en la red interna (`/admin/`)
-2. Secretos reales para AUTH_SECRET, CSRF_SECRET, IP_HASH_SECRET, RECAPTCHA_SECRET
+2. Secretos propios para cada variable de [Variables de entorno](#variables-de-entorno) (sin ellos los servicios no arrancan)
 3. PostgreSQL y Redis en alta disponibilidad
 4. Al menos 2 replicas de forms-api y answer-writer
 
