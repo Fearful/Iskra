@@ -128,10 +128,10 @@ describe('Migration System', () => {
                 migrationsDir: './drizzle',
             });
 
-        it('runs `bunx drizzle-kit migrate` with DATABASE_URL injected', async () => {
+        it('runs `bunx --no-install drizzle-kit migrate` with DATABASE_URL injected', async () => {
             mockSpawn({ exitCode: 0, stdout: 'ok' });
             await helper().migrate();
-            expect(lastCmd).toEqual(['bunx', 'drizzle-kit', 'migrate']);
+            expect(lastCmd).toEqual(['bunx', '--no-install', 'drizzle-kit', 'migrate']);
             expect(lastOpts.env.DATABASE_URL).toBe('postgres://localhost/test');
         });
 
@@ -156,6 +156,7 @@ describe('Migration System', () => {
             await helper().generate();
             expect(lastCmd).toEqual([
                 'bunx',
+                '--no-install',
                 'drizzle-kit',
                 'generate',
                 '--schema',
@@ -169,7 +170,7 @@ describe('Migration System', () => {
             mockSpawn({ exitCode: 0 });
             await helper().push();
             // push accepts --schema but not --out
-            expect(lastCmd).toEqual(['bunx', 'drizzle-kit', 'push', '--schema', './schema.ts']);
+            expect(lastCmd).toEqual(['bunx', '--no-install', 'drizzle-kit', 'push', '--schema', './schema.ts']);
             expect(lastCmd).not.toContain('--out');
         });
 
@@ -177,7 +178,7 @@ describe('Migration System', () => {
             mockSpawn({ exitCode: 0 });
             await helper().drop();
             // drop accepts --out but not --schema
-            expect(lastCmd).toEqual(['bunx', 'drizzle-kit', 'drop', '--out', './drizzle']);
+            expect(lastCmd).toEqual(['bunx', '--no-install', 'drizzle-kit', 'drop', '--out', './drizzle']);
             expect(lastCmd).not.toContain('--schema');
         });
 
@@ -185,7 +186,7 @@ describe('Migration System', () => {
         it('runs `drizzle-kit migrate` without --schema/--out (unsupported there)', async () => {
             mockSpawn({ exitCode: 0 });
             await helper().migrate();
-            expect(lastCmd).toEqual(['bunx', 'drizzle-kit', 'migrate']);
+            expect(lastCmd).toEqual(['bunx', '--no-install', 'drizzle-kit', 'migrate']);
         });
 
         // configPath, when provided, threads through to every command via --config.
@@ -199,7 +200,14 @@ describe('Migration System', () => {
                 configPath: './drizzle.config.ts',
             });
             await h.migrate();
-            expect(lastCmd).toEqual(['bunx', 'drizzle-kit', 'migrate', '--config', './drizzle.config.ts']);
+            expect(lastCmd).toEqual([
+                'bunx',
+                '--no-install',
+                'drizzle-kit',
+                'migrate',
+                '--config',
+                './drizzle.config.ts',
+            ]);
         });
 
         it('throws MigrationError carrying exit code and stderr on failure', async () => {

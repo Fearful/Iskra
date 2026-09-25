@@ -154,6 +154,8 @@ await db.runMigrations(undefined, './drizzle');
 
 `runMigrations` applies the migrations generated in `migrationsDir` with Drizzle's migrator, over the connection opened by `start()` (it used to run `drizzle-kit migrate`, which ignored both arguments and failed without a `drizzle.config.ts`). `MigrationHelper` still passes `--schema` and `--out` to `drizzle-kit generate` and `--config` to every command.
 
+`MigrationHelper` (and the db-kit CLI) only run the drizzle-kit installed in the project, found in `node_modules/.bin` of the working directory or a parent, through `bunx --no-install drizzle-kit`. drizzle-kit is a devDependency: where it is not installed (e.g. after `bun install --production`) they fail with a `MigrationError` asking to `bun add -d drizzle-kit`. They used to run `bunx drizzle-kit`, which then downloaded the latest release from npm and ran it with `DATABASE_URL` in its environment.
+
 When a migration command exits non-zero, the captured `drizzle-kit` stderr is
 **scrubbed of credentials** before it is attached to `MigrationError.context.stderr`.
 drizzle-kit echoes the full connection string on failure, so any embedded

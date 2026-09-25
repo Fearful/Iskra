@@ -162,6 +162,14 @@ migrador de Drizzle, sobre la conexion que abrio `start()` (antes lanzaba
 `drizzle.config.ts`). `MigrationHelper` sigue pasando `--schema` y `--out` a
 `drizzle-kit generate` y `--config` a todos los comandos.
 
+`MigrationHelper` (y la CLI de db-kit) solo ejecutan el drizzle-kit instalado en el
+proyecto, buscado en `node_modules/.bin` del directorio de trabajo o de uno padre,
+mediante `bunx --no-install drizzle-kit`. drizzle-kit es una devDependency: donde
+no esta instalado (por ejemplo tras `bun install --production`) fallan con un
+`MigrationError` que pide `bun add -d drizzle-kit`. Antes ejecutaban
+`bunx drizzle-kit`, que entonces descargaba la ultima version de npm y la ejecutaba
+con `DATABASE_URL` en su entorno.
+
 Cuando un comando de migracion termina con codigo distinto de cero, el stderr
 capturado de `drizzle-kit` se **depura de credenciales** antes de adjuntarse a
 `MigrationError.context.stderr`. drizzle-kit imprime la cadena de conexion
