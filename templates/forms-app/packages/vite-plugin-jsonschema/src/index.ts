@@ -6,7 +6,7 @@ const VIRTUAL_PREFIX = 'virtual:form-validation/';
 const RESOLVED_PREFIX = '\0virtual:form-validation/';
 // Bare imports of the generated modules (zod) resolve from this package: the
 // build root is often a temp directory without node_modules (form-manager's
-// pre-render builds in /tmp/form-builds/<id>).
+// pre-render builds in a private one, form-build-* under os.tmpdir()).
 const RESOLVE_FROM = fileURLToPath(import.meta.url);
 
 export interface JsonSchemaPluginOptions {

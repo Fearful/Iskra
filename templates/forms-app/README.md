@@ -428,11 +428,11 @@ Cada tipo de campo tiene limites maximos definidos en `field-constraints.ts` par
 1. Admin crea formulario con campos y validaciones via la interfaz
 2. `schema-generator.ts` convierte campos → JSON Schema con errorMessages
 3. Admin publica → admin-api llama a form-manager
-4. form-manager lee formulario de Postgres, genera archivos temporales:
+4. form-manager lee formulario de Postgres, genera archivos temporales en un directorio privado (`mkdtemp`, modo 0700) que borra al terminar, tambien si el build falla:
    - `index.html` con la estructura del formulario
    - `main.ts` con JS vanilla (validacion Zod, CSRF, reCAPTCHA, submit)
    - CSS con estilos base
-5. Corre `vite.build()` con el `vite-plugin-jsonschema`
+5. Corre `vite.build()` con el `vite-plugin-jsonschema` y una configuracion cerrada: sin archivo de config, sin `.env`, sin `public/`, sin buscar configs de PostCSS ni `tsconfig.json` en los directorios padre (otro usuario de la maquina podria dejarlos en el directorio temporal compartido)
 6. Output va al volumen compartido: `/app/static/{spaceSlug}/{formSlug}/`
 7. Escribe schema en Redis para que forms-api lo tenga inmediatamente
 
