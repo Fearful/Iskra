@@ -43,7 +43,11 @@ export function setupDatabase(app: App): Db {
     if (!handle) throw new Error('DB Driver not initialized');
     // This template's database is SQLite (app.config.ts), so the handle is
     // Drizzle's bun:sqlite one.
-    const db = handle as Db;
+    return initDatabase(handle as Db);
+}
+
+/** Creates the tables in `db` and hands it to the services. */
+export function initDatabase(db: Db): Db {
     for (const ddl of TABLES) db.run(sql.raw(ddl));
     ProductService.setDb(db);
     OrderService.setDb(db);

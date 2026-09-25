@@ -4,7 +4,16 @@ import { DbDriver } from '@iskra-bun/db-kit';
 import { config } from './app.config.ts';
 import productRouter from './interfaces/http/router.ts';
 import { setupDatabase } from './db/setup.ts';
+import { createApiKeyFeature, parseApiKeys } from './auth.ts';
 import { Hono } from 'hono';
+
+// API keys de los usuarios (ver src/auth.ts). Una entrada invalida corta el arranque.
+const apiKeys = parseApiKeys(process.env.API_KEYS);
+if (apiKeys.length === 0) {
+    console.warn(
+        '[ecommerce-api] API_KEYS está vacío: el catálogo es público, pero crear productos u órdenes responde 401.',
+    );
+}
 
 const app = new App({ name: 'EcommerceAPI' });
 
@@ -30,7 +39,7 @@ app.register(
     new WebPlugin({
         port: config.web.port,
         router: router,
-        features: [new CacheFeature(config.cache)],
+        features: [new CacheFeature(config.cache), createApiKeyFeature(apiKeys)],
     }),
 );
 

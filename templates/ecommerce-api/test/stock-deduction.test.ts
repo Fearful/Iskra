@@ -45,8 +45,7 @@ describe('Ecommerce API - Stock Deduction', () => {
             description: 'Test Description',
         });
 
-        await OrderService.create({
-            userId: 'user-1',
+        await OrderService.create('user-1', {
             items: [{ productId: product.id, quantity: 2 }],
         });
 
@@ -64,8 +63,7 @@ describe('Ecommerce API - Stock Deduction', () => {
 
         let error: any;
         try {
-            await OrderService.create({
-                userId: 'user-2',
+            await OrderService.create('user-2', {
                 items: [{ productId: product.id, quantity: 2 }],
             });
         } catch (e) {
@@ -85,8 +83,7 @@ describe('Ecommerce API - Stock Deduction', () => {
 
         // The same product twice (4 + 7 > 10), and a second product short of stock.
         await expect(
-            OrderService.create({
-                userId: 'u',
+            OrderService.create('u', {
                 items: [
                     { productId: product.id, quantity: 4 },
                     { productId: product.id, quantity: 7 },
@@ -94,8 +91,7 @@ describe('Ecommerce API - Stock Deduction', () => {
             }),
         ).rejects.toThrow(/Insufficient stock/);
         await expect(
-            OrderService.create({
-                userId: 'u',
+            OrderService.create('u', {
                 items: [
                     { productId: product.id, quantity: 4 },
                     { productId: other.id, quantity: 2 },

@@ -73,8 +73,7 @@ describe('Ecommerce Domain Logic', () => {
         const p1 = await ProductService.create({ name: 'P1', price: 50, stock: 5 });
         const p2 = await ProductService.create({ name: 'P2', price: 30, stock: 10 });
 
-        const order = await OrderService.create({
-            userId: 'user-123',
+        const order = await OrderService.create('user-123', {
             items: [
                 { productId: p1.id, quantity: 2 },
                 { productId: p2.id, quantity: 1 },
@@ -97,8 +96,7 @@ describe('Ecommerce Domain Logic', () => {
         // Expect promise to reject
         let error: any;
         try {
-            await OrderService.create({
-                userId: 'user-123',
+            await OrderService.create('user-123', {
                 items: [{ productId: p1.id, quantity: 2 }],
             });
         } catch (e) {
