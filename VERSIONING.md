@@ -44,7 +44,10 @@ and an **Experimental** callout in their docs.
 3. **Merging the "Version Packages" PR** triggers the workflow again — this time
    with no pending changesets — so it **builds every package to `dist/` and
    publishes** the changed public packages to npm with provenance, then creates
-   the matching GitHub Releases.
+   the matching GitHub Releases. The build runs in a job of its own with no
+   secrets; the `publish` job, in the `npm` environment, only runs the
+   Changesets CLI on the built packages, so no build tool or dependency install
+   script runs next to the npm credentials.
 
 Versions and changelogs are therefore never edited by hand; they are derived
 from changeset files.
@@ -82,9 +85,16 @@ after that, npm exchanges the job's OIDC token and no npm secret exists at all:
 
 1. On npmjs.com, open each package's **Settings → Trusted publishing** and add a
    GitHub Actions publisher: organization/user `fearful`, repository `iskra`,
-   workflow filename `release.yml` (no environment).
-2. Run a release to confirm it publishes, then delete the `NPM_TOKEN` repository
-   secret (and revoke the token on npmjs.com).
+   workflow filename `release.yml`, environment `npm`. Only the workflow's
+   `publish` job runs in that environment, so no other job can mint a publish
+   token.
+2. Run a release to confirm it publishes, then delete the `NPM_TOKEN` secret
+   (and revoke the token on npmjs.com).
+
+In the repository settings, the `npm` environment (created by the first run)
+can require an approval before each publish; until trusted publishing is
+configured, store `NPM_TOKEN` as a secret of that environment rather than of
+the repository.
 
 To check a published version, `npm view <package>@<version> dist.attestations`
 lists its attestations, and `npm audit signatures` in a project that depends on

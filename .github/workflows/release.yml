@@ -1,19 +1,26 @@
 # Release workflow for the Iskra monorepo (Changesets-driven).
 #
-# On every push to `main`, the Changesets action does one of two things:
+# On every push to `main`:
 #
-#   1. If there are pending changeset files, it opens (or updates) a
-#      "Version Packages" PR that consumes them: bumps each affected
-#      @iskra-bun/* package, writes its CHANGELOG.md, and deletes the
-#      changesets. Merging that PR is the human "cut a release" gate.
+#   1. `version`: if there are pending changeset files, the Changesets action
+#      opens (or updates) a "Version Packages" PR that consumes them: bumps
+#      each affected @iskra-bun/* package, writes its CHANGELOG.md, and deletes
+#      the changesets. Merging that PR is the human "cut a release" gate.
 #
-#   2. If there are NO pending changesets (i.e. the version PR was just
-#      merged), it runs the `release` script — which builds every package
-#      to `dist/`, rewrites `workspace:` dependency ranges to real versions
-#      (scripts/pin-workspace-deps.ts; npm publish does not understand the
-#      protocol), and then `changeset publish`es each public package to npm
-#      with a provenance attestation (publishConfig.provenance), and creates
-#      the matching GitHub Releases.
+#   2. If there are NO pending changesets (the version PR was just merged):
+#      `build` builds every package to `dist/` and rewrites `workspace:`
+#      dependency ranges to real versions (scripts/pin-workspace-deps.ts; npm
+#      publish does not understand the protocol), then `publish` runs
+#      `changeset publish`, which publishes each public package to npm with a
+#      provenance attestation (publishConfig.provenance), and creates the
+#      matching GitHub Releases.
+#
+# The jobs are split so that the code that builds the packages (the whole
+# toolchain and its dependencies) never runs next to a credential: `build` has
+# a read-only token and no secrets, and the jobs that hold the npm token, the
+# OIDC permission or a write token install dependencies without running their
+# install scripts and run only the Changesets CLI. A compromised build
+# dependency could otherwise publish trojaned packages or push to the repo.
 #
 # Versions and changelogs are therefore never hand-edited; they flow from the
 # changeset files contributors add (see CONTRIBUTING.md / VERSIONING.md).
@@ -29,30 +36,108 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # create GitHub Releases + push the version PR
-  pull-requests: write # open/update the "Version Packages" PR
-  id-token: write # npm provenance attestations
+  contents: read
 
 jobs:
-  release:
-    name: Version PR or publish to npm
+  version:
+    name: Version PR
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version branch
+      pull-requests: write # open/update the "Version Packages" PR
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # Only the Changesets CLI and scripts/sync.ts run here: no install scripts.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Without a `publish` input the action only manages the version PR; it
+      # reports whether changesets are pending so `build`/`publish` can run.
+      - name: Create or update the version PR
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: bun run version # `changeset version` — bumps + writes CHANGELOGs
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build packages
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and pin workspace dependencies
+        run: |
+          bun run build
+          bun run scripts/pin-workspace-deps.ts
+          tar -czf release-build.tgz packages/*/dist packages/*/package.json
+
+      - name: Upload the built packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-build
+          path: release-build.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    # Create this environment in the repository settings to require an
+    # approval before publishing, and to scope NPM_TOKEN (or npm trusted
+    # publishing) to this job.
+    environment: npm
+    permissions:
+      contents: write # create GitHub Releases and push the release tags
+      id-token: write # npm provenance attestations / trusted publishing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
       # npm (not bun) performs the actual publish: `npm publish --provenance`
       # (enabled below via NPM_CONFIG_PROVENANCE) is the supported provenance path.
       - name: Setup Node (for npm publish + provenance)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
@@ -62,16 +147,23 @@ jobs:
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
+      # For the Changesets CLI only; the packages were built by `build`. Before
+      # unpacking: the pinned manifests no longer match the lockfile.
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Create Version PR or publish
-        uses: changesets/action@v1
+      - name: Download the built packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          version: bun run version # `changeset version` — bumps + writes CHANGELOGs
-          publish: bun run release # build, pin workspace deps, `changeset publish`
-          commit: "chore: version packages"
-          title: "chore: version packages"
+          name: release-build
+
+      - name: Unpack the built packages
+        run: tar -xzf release-build.tgz && rm release-build.tgz
+
+      - name: Publish
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          publish: bunx changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Only needed until every package has this workflow configured as its

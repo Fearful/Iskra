@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-Iskra is pre-1.0. Security fixes are applied to the latest `0.1.x` release line.
+Iskra is pre-1.0. Security fixes are released for the latest minor version of each package (`@iskra-bun/*` and `create-iskra`); older minors do not get backports, so upgrade to receive them. Since the packages are 0.x, a fix can come in a new minor version with breaking changes, which its changelog describes.
 
 | Version | Supported |
 | :------ | :-------- |
-| 0.1.x   | ✅        |
-| < 0.1   | ❌        |
+| Latest minor of each package (0.x) | ✅ |
+| Older minors | ❌ |
 
 The experimental kits (`@iskra-bun/desktop-kit`, `@iskra-bun/mobile-kit`, `@iskra-bun/db-oracle`) are provided as-is and are not yet covered by the same support guarantees.
 

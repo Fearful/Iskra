@@ -1,13 +1,32 @@
 # Serves the pre-built static site (website/dist) on the port Fly expects.
 # Starlight builds directory-style pages (foo/index.html) with trailing-slash
 # links, which Caddy's file_server serves directly (and it 301s /foo -> /foo/).
+
+# The site publishes install commands: HSTS keeps a first plain-HTTP visit
+# from being downgraded. No script policy (Starlight inlines its theme
+# script); framing, plugins and <base> are locked down. A snippet, because
+# handle_errors is a route of its own that the site's directives don't reach.
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
 :8080 {
 	root * /srv
 	encode gzip zstd
+	import security_headers
 	file_server
 
 	# Serve Starlight's generated 404 page on any not-found.
 	handle_errors {
+		import security_headers
 		rewrite * /404.html
 		file_server
 	}
