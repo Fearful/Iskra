@@ -92,6 +92,21 @@ describe('loadAppConfig', () => {
         const dir = makeConfigDir(`export default { db: { driver: 'oracle', url: 'x' } };`);
         await expect(loadAppConfig(dir)).rejects.toThrow();
     });
+
+    it('validates the environment and stdin options of a process', async () => {
+        const dir = makeConfigDir(`export default {
+            processes: { etl: { command: 'python3', inheritEnv: ['DATABASE_URL'], maxPendingStdinBytes: 1024 } },
+        };`);
+        const config = await loadAppConfig(dir);
+        expect(config.processes?.etl).toMatchObject({ inheritEnv: ['DATABASE_URL'], maxPendingStdinBytes: 1024 });
+
+        const env = makeConfigDir(
+            `export default { processes: { etl: { command: 'x', inheritEnv: 'DATABASE_URL' } } };`,
+        );
+        await expect(loadAppConfig(env)).rejects.toThrow();
+        const max = makeConfigDir(`export default { processes: { etl: { command: 'x', maxPendingStdinBytes: 0 } } };`);
+        await expect(loadAppConfig(max)).rejects.toThrow();
+    });
 });
 
 describe('loadAppConfig and the working directory', () => {

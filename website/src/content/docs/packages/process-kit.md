@@ -68,7 +68,34 @@ for line in sys.stdin:
     sys.stdout.flush()
 ```
 
-The protocol is one message per line. `processManager.send(name, data)` JSON-encodes an object; a string is written as is, so one with a line break is refused (the child would read it as several messages). A stdout line longer than 1 MiB is emitted truncated as a `process:log`, and the rest of it is dropped rather than read as a message. The child inherits the app's environment (`env` adds to it), secrets included; the arguments are logged only at `debug` level.
+The protocol is one message per line. `processManager.send(name, data)` JSON-encodes an object; a string is written as is, so one with a line break is refused (the child would read it as several messages). A stdout line longer than 1 MiB is emitted truncated as a `process:log`, and the rest of it is dropped rather than read as a message. The arguments are logged only at `debug` level.
+
+`send()` resolves to `true` when the message was written or queued, and to `false`, with a warning, when it was not sent: an unknown process, one not in `stdio` mode, a string with a line break, or a child that is not reading its stdin. What the pipe does not take waits in the app's memory, so `send()` refuses a message when the bytes still waiting for that child would go over `maxPendingStdinBytes` (8 MiB by default). A message is always taken when nothing is waiting, and one warning is logged until the child catches up. When a caller waits for the child's reply (an HTTP request forwarded to a script, say), check the result so it fails at once instead of waiting for its timeout:
+
+```typescript
+if (!(await pm.send('processor', { requestId, data }))) {
+    return c.json({ error: 'Processor busy' }, 503);
+}
+```
+
+## Environment
+
+A child does not inherit the app's whole environment. By default it gets the variables programs need to run, which carry no secrets (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LANG`, `LANGUAGE`, `LC_*`, `TZ`, `TMPDIR`, `TMP`, `TEMP` and `NODE_ENV`; on Windows also `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PATHEXT` and `USERPROFILE`), plus the ones set in `env`. `DATABASE_URL`, `AUTH_SECRET`, cloud credentials and whatever was loaded from `.env` stay in the app, so a child that runs third-party code (a Python package, a plugin, a user's script) cannot read them.
+
+```typescript
+processes: {
+    etl: {
+        command: 'python3',
+        args: ['etl.py'],
+        inheritEnv: ['DATABASE_URL', 'HTTPS_PROXY'], // also these, from the app's environment
+        env: { ETL_BATCH_SIZE: '500' },              // set for this child only
+    },
+},
+```
+
+`inheritEnv: true` passes the whole environment.
+
+> **Breaking (0.x):** children used to inherit every variable of the app. A child that reads one from its environment (`os.environ['DATABASE_URL']`, say) now needs it listed in `inheritEnv` or set in `env`; `inheritEnv: true` restores the old behaviour.
 
 ## Events
 
@@ -135,7 +162,9 @@ interface ProcessConfig {
     restartOnCrash?: boolean;      // default: false
     maxRestarts?: number;          // default: 10
     restartCooldown?: number;      // ms; if process uptime exceeds this, restart counter resets. default: 60000
-    env?: Record<string, string>;  // Additional environment variables
+    env?: Record<string, string>;  // Variables set for the child
+    inheritEnv?: boolean | string[]; // App variables the child inherits: a minimal set by default (see Environment), a list adds names, true = all
+    maxPendingStdinBytes?: number; // stdio: bytes send() lets wait for a child that is not reading. default: 8 MiB
     restartBackoff?: {
         initialMs?: number;        // Delay before first restart. default: 1000
         maxMs?: number;            // Maximum delay cap. default: 30000

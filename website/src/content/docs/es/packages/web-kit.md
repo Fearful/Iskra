@@ -166,20 +166,65 @@ health.addReadinessCheck('db', async () => {
 });
 ```
 
-Si algun check registrado retorna `false`, lanza una excepcion o tarda mas que `checkTimeoutMs` (por defecto 2000), `/health/ready` responde con **503** e incluye los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
+Si algun check registrado retorna `false`, lanza una excepcion o tarda mas que `checkTimeoutMs` (por defecto 2000), `/health/ready` responde con **503** (`{ status: "not ready" }`) y registra como warning los nombres de los checks fallidos. Sin checks registrados siempre retorna `ready` (comportamiento anterior).
 
-### Detalles del endpoint /health
+### Detalles de los endpoints
 
-Por defecto `includeDetails` es **`false`** (cambio respecto a versiones previas). El endpoint `/health` sin autenticar ya no expone la lista interna de features ni strings de error crudos: los errores se registran en el servidor y la respuesta es generica (`{ status: "ok", timestamp }`).
+Por defecto `includeDetails` es **`false`**, para los tres endpoints:
+
+- `/health` responde `{ status, timestamp }`: sin lista de features, resultados por check ni strings de error crudos (los errores se registran en el servidor).
+- `/health/ready` responde `{ status }`: los nombres de los checks (`checks`, `failed`) quedan afuera, porque pueden describir la infraestructura (`postgres-primary-10.0.3.12`). El codigo de estado es lo que usa un orquestador.
+- `/health/live` responde `{ status, timestamp }`, sin `uptime`.
+
+> **Breaking (0.x):** `/health/ready` y `/health/live` devolvian los nombres de los checks y el uptime sin importar `includeDetails`.
 
 Los checks (ping real a la base de `DbFeature`, cache y `checks` propios) corren siempre, cada uno con un timeout (`checkTimeoutMs`, 2 s por defecto). Si alguno falla, `/health` responde **503** con `{ status: "error" }`, para que el balanceador u orquestador pueda actuar.
 
-Para incluir el detalle de features y checks, activa `includeDetails: true`. Como esto revela informacion interna, **gatea el endpoint detras de autenticacion**:
+Para incluir las features, los resultados y nombres de los checks y el uptime, activa `includeDetails: true`. Como esto revela informacion interna, **gatea los endpoints detras de autenticacion**:
 
 ```typescript
 const health = new HealthCheckFeature({ includeDetails: true });
 // Exponer solo en una ruta protegida — no en el /health publico
 ```
+
+## Documentacion OpenAPI
+
+`OpenAPIFeature` sirve el spec de las rutas agregadas con `addRoute()` en `/openapi.json`, y una pagina de referencia de la API ([Scalar](https://github.com/scalar/scalar)) en `/docs`:
+
+```typescript
+new OpenAPIFeature({
+    title: 'Orders API',
+    version: '1.0.0',
+    servers: [{ url: 'https://api.example.com' }],
+    // Ambas rutas: false responde 403, una Response se envia tal cual.
+    authorize: (c) => c.get('user')?.role === 'admin',
+    // docs: false,   // no sirve ninguna (en produccion, por ejemplo)
+    // scalar: false, // sirve /openapi.json sin la pagina
+});
+```
+
+- La pagina carga una version fija de `@scalar/api-reference` desde jsDelivr, con su hash de Subresource Integrity y `crossorigin="anonymous"`: el navegador rechaza el script si el CDN sirve otra cosa (cargaba `@latest`, asi que lo ultimo que publicara Scalar corria en el origen de la app). Para actualizarlo, o servirlo desde tu propio origen, usa `scalar: { src, integrity }`, donde `integrity` es el hash `sha384-…` de ese archivo exacto.
+- La pagina envia su propio `Content-Security-Policy`: scripts solo del origen de ese script, requests solo al origen de la app y a los `servers` del spec ("Try it"), nada mas se carga. Las fuentes web de Scalar y su agente de IA, que envia el spec a los servidores de Scalar, estan apagados. El titulo se escapa como HTML.
+- `/openapi.json` y `/docs` se registran en `routes()`, asi que un middleware agregado a la app despues de `initialize()` (un `basicAuth()`, por ejemplo) no corre para ellas: usa `authorize`, que corre para ambas. Devuelve una Response para responder con ella, como un pedido de Basic auth:
+
+```typescript
+authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
+```
+
+## Tracing
+
+`OtelTracingFeature` crea un span por request con [`@hono/otel`](https://github.com/honojs/middleware/tree/main/packages/otel), a traves de la configuracion de OpenTelemetry de la app (el tracer provider global, o el `tracer` o `tracerProvider` que le pases):
+
+```typescript
+new OtelTracingFeature({
+    serviceName: 'orders-api',
+    ignoreIncomingTraceContext: true, // un servicio expuesto a internet
+});
+```
+
+- `url.full` se exporta con el valor de los parametros de query con pinta de secreto reemplazado por `REDACTED` (`SECRET_QUERY_PARAMS` de `@iskra-bun/core`: `token`, `access_token`, `api_key`, `code`, `state`…), y lo mismo el token del link `/reset-password/<token>` de better-auth: los links de verificacion de email y de reseteo de contrasena, y las API keys en el query string, llegaban al collector. `redactedQueryParams` define la lista (`[]` conserva todos los valores). Otros tokens en paths se exportan tal cual.
+- Por defecto un request continua la traza que nombra su header `traceparent`. `ignoreIncomingTraceContext: true` empieza una traza nueva por request y descarta el `baggage` entrante: en un endpoint publico un cliente podria forzar que sus requests se muestreen y colgarlas de una traza que elija. Deja el default detras de un gateway que define el contexto de traza el mismo.
+- Los headers listados en `captureRequestHeaders` se exportan tal cual: no incluyas `authorization` ni `cookie`.
 
 ## Errores HTTP
 

@@ -61,4 +61,44 @@ describe('Health Check Feature — leak hardening', () => {
 
         await kernel.shutdown();
     });
+
+    it('keeps readiness check names out of /health/ready by default', async () => {
+        // Names can describe the infrastructure; the status code tells an
+        // orchestrator all it needs.
+        const warnings: string[] = [];
+        const logger = { debug() {}, info() {}, error() {}, warn: (msg: string) => warnings.push(msg) };
+        const failing = new Kernel({ logger });
+        failing.registerFeature(
+            new HealthCheckFeature({
+                readinessChecks: { 'postgres-primary-10.0.3.12': async () => false, cache: async () => true },
+            }),
+        );
+        await failing.initialize();
+
+        const res = await failing.getApp().request('/health/ready');
+        expect(res.status).toBe(503);
+        expect(await res.json()).toEqual({ status: 'not ready' });
+        // The operator still finds out which one failed.
+        expect(warnings).toEqual(['Readiness checks failed: postgres-primary-10.0.3.12']);
+
+        const passing = new Kernel({ logger: false });
+        passing.registerFeature(new HealthCheckFeature({ readinessChecks: { 'redis-10.0.3.13': async () => true } }));
+        await passing.initialize();
+        expect(await (await passing.getApp().request('/health/ready')).json()).toEqual({ status: 'ready' });
+
+        await failing.shutdown();
+        await passing.shutdown();
+    });
+
+    it('keeps the uptime out of /health/live by default', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new HealthCheckFeature());
+        await kernel.initialize();
+
+        const live = (await (await kernel.getApp().request('/health/live')).json()) as any;
+        expect(live.status).toBe('alive');
+        expect(live.uptime).toBeUndefined();
+
+        await kernel.shutdown();
+    });
 });

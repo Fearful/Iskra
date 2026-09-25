@@ -150,6 +150,19 @@ router.on('subscribe:me', async (ctx) => {
 socketDriver.broadcastTo(connectionId, 'inbox:new', { unread: 3 });
 ```
 
+## Defaults
+
+De fabrica el driver esta abierto: esta pensado para cerrarlo con estas opciones antes de exponerlo a usuarios.
+
+| Que | Default | Opcion para restringirlo |
+| --- | --- | --- |
+| Quien puede conectarse | cualquier origen, sin autenticacion (se registra un warning al arrancar) | `allowedOrigins`, `authenticate` |
+| A que salas puede unirse un cliente | a cualquiera | `canJoin` |
+| En que topicos puede publicar un cliente | en cualquiera, `global` (todos los sockets) incluido | `canPublish` |
+| Que eventos sin handler llegan al bus de la app | todos, como `socket:<evento>` | `allowedEvents` |
+
+El tamano de frame (`maxPayloadLength`) y la tasa de mensajes (`rateLimit`) si estan acotados por defecto; ver [Proteccion contra DoS](#proteccion-contra-dos).
+
 ## Handshake: origen y autenticacion
 
 Sin configuracion, el driver acepta conexiones de cualquier origen y sin autenticar (y lo avisa con un warning al arrancar). Un navegador envia las cookies del usuario en el handshake de WebSocket, asi que cualquier sitio podria abrir una conexion en su nombre (cross-site WebSocket hijacking).
@@ -161,13 +174,46 @@ const driver = new SocketDriver({
     // Handshakes con otro header Origin reciben 403; sin Origin (clientes no-navegador) se aceptan.
     allowedOrigins: ['https://app.example.com'],
     // Lo que devuelva queda en ctx.socket.data.auth; null/undefined/false (o un throw) => 401.
-    authenticate: async (req) => verifyToken(new URL(req.url).searchParams.get('token')),
+    authenticate: (req) => redeemTicket(new URL(req.url).searchParams.get('ticket')),
 });
 ```
 
+### Como enviar la credencial
+
+Un navegador no puede definir headers en un WebSocket, asi que la credencial viaja en la URL, en un subprotocolo o en una cookie. La URL del handshake termina en los logs de acceso de cada proxy y balanceador del camino, y en el historial del navegador: no pongas ahi un token de larga vida (un token de sesion, un JWT, una API key). En orden de preferencia:
+
+- **Un ticket de corta vida y de un solo uso.** Una ruta HTTP autenticada emite un ticket aleatorio valido por unos segundos, el cliente se conecta con el, y `authenticate` lo canjea una sola vez, asi que una URL que quedo en un log no sirve para nada:
+
+```typescript
+// Una instancia; con varias, guarda los tickets en un store compartido con
+// expiracion y leelos y borralos atomicamente (Redis SET … EX y GETDEL).
+const tickets = new Map<string, { userId: string; expires: number }>();
+
+// Lado HTTP, detras de tu auth: un ticket valido por 30 s.
+app.post('/api/ws-ticket', requireAuth(kernel), (c) => {
+    const ticket = crypto.randomUUID();
+    tickets.set(ticket, { userId: c.get('user').id, expires: Date.now() + 30_000 });
+    return c.json({ ticket });
+});
+
+// Lado socket: cada ticket sirve una vez.
+function redeemTicket(ticket: string | null) {
+    const entry = ticket ? tickets.get(ticket) : undefined;
+    if (ticket) tickets.delete(ticket);
+    return entry && entry.expires > Date.now() ? { userId: entry.userId } : null;
+}
+
+// Navegador
+const { ticket } = await (await fetch('/api/ws-ticket', { method: 'POST' })).json();
+const ws = new WebSocket(`wss://app.example.com/ws?ticket=${ticket}`);
+```
+
+- **El header `Sec-WebSocket-Protocol`**, que el navegador si permite definir: `new WebSocket(url, ['bearer', token])`. Bun responde con el primer protocolo (`bearer`), y `authenticate` lee el token de `req.headers.get('sec-websocket-protocol')` (un subprotocolo no puede contener `/`, `=`, `,` ni espacios: usa un token base64url o hex). Los proxies rara vez registran este header, pero el token sigue siendo de larga vida: un ticket es mejor.
+- **La cookie de sesion**, que el navegador envia solo: entonces define `allowedOrigins`, porque esa cookie es justamente lo que le permite a otro sitio conectarse como el usuario.
+
 ## Autorizacion
 
-El driver acepta hooks opcionales `canJoin` y `canPublish` que controlan las uniones a salas y las publicaciones por conexion. Ambos permiten todo por defecto cuando se omiten.
+El driver acepta hooks opcionales `canJoin` y `canPublish` que controlan las uniones a salas y las publicaciones por conexion. Ambos permiten todo por defecto cuando se omiten: cualquier cliente puede unirse a cualquier sala (incluida la sala por conexion de otro usuario) y publicar en cualquier topico, `global` incluido, hasta que los definas.
 
 ```typescript
 import { SocketDriver } from '@iskra-bun/socket-kit';

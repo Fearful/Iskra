@@ -68,7 +68,34 @@ for line in sys.stdin:
     sys.stdout.flush()
 ```
 
-El protocolo es un mensaje por linea. `processManager.send(name, data)` codifica un objeto como JSON; un string se escribe tal cual, asi que uno con un salto de linea se rechaza (el hijo lo leeria como varios mensajes). Una linea de stdout de mas de 1 MiB se emite truncada como `process:log`, y el resto se descarta en vez de leerse como mensaje. El hijo hereda el entorno de la app (`env` le agrega variables), secretos incluidos; los argumentos solo se registran en nivel `debug`.
+El protocolo es un mensaje por linea. `processManager.send(name, data)` codifica un objeto como JSON; un string se escribe tal cual, asi que uno con un salto de linea se rechaza (el hijo lo leeria como varios mensajes). Una linea de stdout de mas de 1 MiB se emite truncada como `process:log`, y el resto se descarta en vez de leerse como mensaje. Los argumentos solo se registran en nivel `debug`.
+
+`send()` resuelve `true` cuando el mensaje se escribio o quedo en cola, y `false`, con un warning, cuando no se envio: un proceso que no existe, uno que no esta en modo `stdio`, un string con un salto de linea, o un hijo que no esta leyendo su stdin. Lo que el pipe no acepta espera en la memoria de la app, asi que `send()` rechaza un mensaje cuando los bytes que siguen esperando a ese hijo superarian `maxPendingStdinBytes` (8 MiB por defecto). Un mensaje siempre se acepta cuando no hay nada esperando, y se registra un solo warning hasta que el hijo se pone al dia. Cuando quien llama espera la respuesta del hijo (un request HTTP reenviado a un script, por ejemplo), revisa el resultado para que falle en el acto en vez de esperar su timeout:
+
+```typescript
+if (!(await pm.send('processor', { requestId, data }))) {
+    return c.json({ error: 'Processor busy' }, 503);
+}
+```
+
+## Entorno
+
+Un hijo no hereda todo el entorno de la app. Por defecto recibe las variables que los programas necesitan para correr, que no llevan secretos (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LANG`, `LANGUAGE`, `LC_*`, `TZ`, `TMPDIR`, `TMP`, `TEMP` y `NODE_ENV`; en Windows tambien `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PATHEXT` y `USERPROFILE`), mas las que se definen en `env`. `DATABASE_URL`, `AUTH_SECRET`, las credenciales de la nube y lo que se cargo de `.env` quedan en la app, asi que un hijo que corre codigo de terceros (un paquete de Python, un plugin, un script de un usuario) no puede leerlos.
+
+```typescript
+processes: {
+    etl: {
+        command: 'python3',
+        args: ['etl.py'],
+        inheritEnv: ['DATABASE_URL', 'HTTPS_PROXY'], // tambien estas, del entorno de la app
+        env: { ETL_BATCH_SIZE: '500' },              // definida solo para este hijo
+    },
+},
+```
+
+`inheritEnv: true` pasa el entorno completo.
+
+> **Breaking (0.x):** antes los hijos heredaban todas las variables de la app. Un hijo que lee una de su entorno (`os.environ['DATABASE_URL']`, por ejemplo) ahora necesita que este listada en `inheritEnv` o definida en `env`; `inheritEnv: true` vuelve al comportamiento anterior.
 
 ## Eventos
 
@@ -135,7 +162,9 @@ interface ProcessConfig {
     restartOnCrash?: boolean;      // default: false
     maxRestarts?: number;          // default: 10
     restartCooldown?: number;      // ms; si el uptime supera este valor, el contador se reinicia. default: 60000
-    env?: Record<string, string>;  // Variables de entorno adicionales
+    env?: Record<string, string>;  // Variables definidas para el hijo
+    inheritEnv?: boolean | string[]; // Variables de la app que hereda el hijo: un conjunto minimo por defecto (ver Entorno), una lista agrega nombres, true = todas
+    maxPendingStdinBytes?: number; // stdio: bytes que send() deja esperando a un hijo que no lee. default: 8 MiB
     restartBackoff?: {
         initialMs?: number;        // Retraso antes del primer reinicio. default: 1000
         maxMs?: number;            // Limite maximo del retraso. default: 30000

@@ -20,6 +20,16 @@ export type {
 } from './types';
 export * from './errors';
 
+/**
+ * The finished jobs kept in Redis, payload included, unless a job or
+ * `defaultJobOptions` says otherwise: BullMQ's own default is to keep every
+ * completed and failed job forever.
+ */
+const RETENTION = {
+    removeOnComplete: { count: 1000 },
+    removeOnFail: { age: 7 * 24 * 60 * 60, count: 5000 },
+};
+
 export class WorkerManager implements Driver {
     name = 'WorkerManager';
     private app: App | null = null;
@@ -46,7 +56,7 @@ export class WorkerManager implements Driver {
         try {
             this.queue = new Queue(this.options.queueName || 'iskra-jobs', {
                 connection,
-                defaultJobOptions: this.mapJobOptions(this.options.defaultJobOptions),
+                defaultJobOptions: { ...RETENTION, ...this.mapJobOptions(this.options.defaultJobOptions) },
             });
         } catch (err) {
             throw new QueueError('Failed to initialize BullMQ queue', {

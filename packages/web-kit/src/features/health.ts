@@ -149,18 +149,23 @@ export class HealthCheckFeature implements Feature {
             }
         }
 
+        // The status code is what an orchestrator acts on. Check names can
+        // name internal hosts (`postgres-primary-10.0.3.12`), so like /health
+        // the body lists them only with includeDetails; the log has them.
+        const details = this.config.includeDetails;
         if (failed.length > 0) {
-            return c.json({ status: 'not ready', checks: results, failed }, 503);
+            this.log.warn(`Readiness checks failed: ${failed.join(', ')}`);
+            return c.json({ status: 'not ready', ...(details && { checks: results, failed }) }, 503);
         }
 
-        return c.json({ status: 'ready', checks: results });
+        return c.json({ status: 'ready', ...(details && { checks: results }) });
     }
 
     private async handleLivenessCheck(c: Context) {
         return c.json({
             status: 'alive',
             timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
+            ...(this.config.includeDetails && { uptime: process.uptime() }),
         });
     }
 }

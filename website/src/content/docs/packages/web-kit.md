@@ -166,20 +166,65 @@ health.addReadinessCheck('db', async () => {
 });
 ```
 
-When any registered check returns `false`, throws, or takes longer than `checkTimeoutMs` (default 2000), `/health/ready` responds with **503** and lists the failed check names. With no checks registered it always returns `ready` (previous behavior).
+When any registered check returns `false`, throws, or takes longer than `checkTimeoutMs` (default 2000), `/health/ready` responds with **503** (`{ status: "not ready" }`) and logs the names of the failed checks as a warning. With no checks registered it always returns `ready` (previous behavior).
 
-### /health endpoint details
+### Endpoint details
 
-`includeDetails` now defaults to **`false`** (change from previous versions). The unauthenticated `/health` endpoint no longer exposes the internal feature list or raw error strings: errors are logged server-side and the response is generic (`{ status: "ok", timestamp }`).
+`includeDetails` defaults to **`false`**, for the three endpoints:
+
+- `/health` answers `{ status, timestamp }`: no feature list, per-check results or raw error strings (errors are logged server-side).
+- `/health/ready` answers `{ status }`: the check names (`checks`, `failed`) are left out, since they can describe the infrastructure (`postgres-primary-10.0.3.12`). The status code is what an orchestrator acts on.
+- `/health/live` answers `{ status, timestamp }`, without `uptime`.
+
+> **Breaking (0.x):** `/health/ready` and `/health/live` used to return the check names and the uptime whatever `includeDetails` said.
 
 The checks (a real ping to the `DbFeature` database, the cache, and your own `checks`) always run, each with a timeout (`checkTimeoutMs`, 2 s by default). If any fails, `/health` answers **503** with `{ status: "error" }` so a load balancer or orchestrator can act on it.
 
-To include feature and check details, set `includeDetails: true`. Because this reveals internal information, **gate the endpoint behind authentication**:
+To include the features, check results, check names and uptime, set `includeDetails: true`. Because this reveals internal information, **gate the endpoints behind authentication**:
 
 ```typescript
 const health = new HealthCheckFeature({ includeDetails: true });
 // Expose only on a protected route — not on the public /health
 ```
+
+## OpenAPI documentation
+
+`OpenAPIFeature` serves the spec of the routes added with `addRoute()` at `/openapi.json`, and an API reference page ([Scalar](https://github.com/scalar/scalar)) at `/docs`:
+
+```typescript
+new OpenAPIFeature({
+    title: 'Orders API',
+    version: '1.0.0',
+    servers: [{ url: 'https://api.example.com' }],
+    // Both routes: false answers 403, a Response is sent as it is.
+    authorize: (c) => c.get('user')?.role === 'admin',
+    // docs: false,   // serve neither (in production, say)
+    // scalar: false, // serve /openapi.json without the page
+});
+```
+
+- The page loads one pinned `@scalar/api-reference` release from jsDelivr, with its Subresource Integrity hash and `crossorigin="anonymous"`: the browser refuses the script if the CDN serves anything else (it loaded `@latest`, so whatever Scalar published last ran on the app's origin). Update it, or serve it from your own origin, with `scalar: { src, integrity }`, where `integrity` is the `sha384-…` hash of that exact file.
+- The page sends its own `Content-Security-Policy`: scripts only from that script's origin, requests only to the app's origin and to the spec's `servers` ("Try it"), nothing else loaded. Scalar's web fonts and its AI agent, which sends the spec to Scalar's servers, are off. The title is HTML-escaped.
+- `/openapi.json` and `/docs` are registered in `routes()`, so middleware added to the app after `initialize()` (a `basicAuth()`, say) does not run for them: use `authorize`, which runs for both. Return a Response to answer with it, such as a Basic auth prompt:
+
+```typescript
+authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
+```
+
+## Tracing
+
+`OtelTracingFeature` creates a span per request with [`@hono/otel`](https://github.com/honojs/middleware/tree/main/packages/otel), through the app's OpenTelemetry setup (the global tracer provider, or the `tracer` or `tracerProvider` you pass):
+
+```typescript
+new OtelTracingFeature({
+    serviceName: 'orders-api',
+    ignoreIncomingTraceContext: true, // a service that faces the internet
+});
+```
+
+- `url.full` is exported with the value of secret-looking query parameters replaced by `REDACTED` (`SECRET_QUERY_PARAMS` from `@iskra-bun/core`: `token`, `access_token`, `api_key`, `code`, `state`…), and so is the token of better-auth's `/reset-password/<token>` link: email verification and password reset links, and API keys in query strings, reached the collector. `redactedQueryParams` sets the list (`[]` keeps every value). Other tokens in paths are exported as they are.
+- By default a request continues the trace named in its `traceparent` header. `ignoreIncomingTraceContext: true` starts a new trace for each request and drops the incoming `baggage`: on a public endpoint a client could otherwise force its requests to be sampled and attach them to a trace of its choosing. Keep the default behind a gateway that sets the trace context itself.
+- The headers listed in `captureRequestHeaders` are exported as they are: do not list `authorization` or `cookie`.
 
 ## HTTP Errors
 
