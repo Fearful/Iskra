@@ -260,7 +260,7 @@ new Kernel({
 
 - Solo se lee `clientIpHeader` (**breaking**). Antes `X-Real-IP` se usaba cuando faltaba `X-Forwarded-For`, y eso lo decide el cliente: detras de un proxy que solo completa `X-Real-IP` y deja pasar `X-Forwarded-For`, un `X-Forwarded-For` inventado era un bucket nuevo en cada request. Si tu proxy completa `X-Real-IP` (nginx: `proxy_set_header X-Real-IP $remote_addr`), configura `clientIpHeader: 'x-real-ip'`; con `X-Forwarded-For`, cada proxy tiene que agregarse al final (nginx: `$proxy_add_x_forwarded_for`).
 - Los clientes IPv6 se cuentan por su prefijo /64, porque un host suele tener un /64 entero para ir rotando, y `::ffff:192.0.2.1` cuenta como `192.0.2.1`. `clientIpKey(ip)` devuelve esa clave para un limitador propio.
-- El store en memoria sigue como maximo `maxKeys` clientes (100 000 por defecto; por encima descarta los mas viejos) y barre los vencidos cada minuto; el limitador de auth acepta `rateLimit: { maxKeys }` y el adapter en memoria de `CacheFeature` `maxEntries`, con el mismo default. Sus timers no mantienen vivo el proceso.
+- El store en memoria sigue como maximo `maxKeys` clientes (100 000 por defecto; por encima descarta los mas viejos) y barre los vencidos cada minuto; el limitador de auth acepta `rateLimit: { maxKeys }` y el adapter en memoria de `CacheFeature` `maxEntries`, con el mismo default. Sus timers no mantienen vivo el proceso. Ese adapter guarda y devuelve copias (`structuredClone`), como vuelven los valores de Redis: cambiar un valor leido de la cache ya no cambia el guardado.
 
 ## Configuracion de Seguridad
 

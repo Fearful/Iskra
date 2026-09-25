@@ -80,19 +80,21 @@ class MemoryAdapter implements CacheAdapter {
         }
     }
 
+    // Values go in and out as copies, as through Redis: the stored object
+    // itself let one request's change to a cached value reach every other.
     async get(key: string) {
         const item = this.live(key);
-        return item ? item.value : null;
+        return item ? structuredClone(item.value) : null;
     }
 
     async set(key: string, value: unknown, ttl?: number) {
         const expires = ttl ? Date.now() + ttl * 1000 : null;
-        this.put(key, { value, expires });
+        this.put(key, { value: structuredClone(value), expires });
     }
 
     async setIfExists(key: string, value: unknown, ttl?: number) {
         if (!this.live(key)) return false;
-        this.put(key, { value, expires: ttl ? Date.now() + ttl * 1000 : null });
+        this.put(key, { value: structuredClone(value), expires: ttl ? Date.now() + ttl * 1000 : null });
         return true;
     }
 
