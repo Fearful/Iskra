@@ -187,4 +187,45 @@ describe('Error Handler Feature', () => {
 
         await kernel.shutdown();
     });
+
+    it('logs client errors (4xx) at debug level and server errors at error level', async () => {
+        // Regression: every 4xx was logged as an error, so any client could
+        // fill the error log (and page whoever watches it) with 404s and 401s.
+        const logged: Record<'debug' | 'info' | 'warn' | 'error', string[]> = {
+            debug: [],
+            info: [],
+            warn: [],
+            error: [],
+        };
+        const logger = {
+            debug: (m: string) => logged.debug.push(m),
+            info: (m: string) => logged.info.push(m),
+            warn: (m: string) => logged.warn.push(m),
+            error: (m: string) => logged.error.push(m),
+        };
+        const kernel = new Kernel({ logger });
+        kernel.registerFeature(new ErrorHandlerFeature());
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/missing', () => {
+            throw new NotFoundError('No such thing');
+        });
+        app.get('/denied', () => {
+            throw new HTTPException(401, { message: 'Unauthorized' });
+        });
+        app.get('/broken', () => {
+            throw new Error('Database is down');
+        });
+
+        expect((await app.request('/missing')).status).toBe(404);
+        expect((await app.request('/denied')).status).toBe(401);
+        expect(logged.error).toEqual([]);
+        expect(logged.debug).toContain('Request failed with 404');
+        expect(logged.debug).toContain('Request failed with 401');
+
+        expect((await app.request('/broken')).status).toBe(500);
+        expect(logged.error).toEqual(['Unhandled error']);
+
+        await kernel.shutdown();
+    });
 });

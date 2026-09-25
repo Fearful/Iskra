@@ -49,7 +49,8 @@ export interface SecurityHeadersConfig {
         | {
               directives?: Record<string, string | string[]>;
           };
-    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string;
+    /** `false` turns the default (`SAMEORIGIN`) off; `undefined` keeps it. */
+    xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string | false;
     xContentTypeOptions?: boolean;
     strictTransportSecurity?: {
         maxAge?: number;
@@ -65,7 +66,8 @@ export interface SecurityHeadersConfig {
         | 'same-origin'
         | 'strict-origin'
         | 'strict-origin-when-cross-origin'
-        | 'unsafe-url';
+        | 'unsafe-url'
+        | false;
     permissionsPolicy?: Record<string, string[]>;
 }
 

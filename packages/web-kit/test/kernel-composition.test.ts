@@ -128,6 +128,34 @@ describe('Kernel composition guards', () => {
         expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=0');
     });
 
+    it('keeps a default security header whose option is undefined; only false turns it off', async () => {
+        // Regression: `{ ...defaults, ...securityHeaders }` let an option left
+        // undefined (an unset environment variable) remove the default header.
+        const unset = process.env.ISKRA_TEST_UNSET_VARIABLE;
+        const kernel = new Kernel({
+            logger: false,
+            securityHeaders: {
+                xFrameOptions: unset,
+                referrerPolicy: unset as undefined,
+                xContentTypeOptions: undefined,
+            },
+        });
+        await kernel.initialize();
+        kernel.getApp().get('/', (c) => c.text('ok'));
+        const res = await kernel.getApp().request('/');
+        expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+        expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+        expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+
+        const off = new Kernel({ logger: false, securityHeaders: { xFrameOptions: false, referrerPolicy: false } });
+        await off.initialize();
+        off.getApp().get('/', (c) => c.text('ok'));
+        const offRes = await off.getApp().request('/');
+        expect(offRes.headers.get('X-Frame-Options')).toBeNull();
+        expect(offRes.headers.get('Referrer-Policy')).toBeNull();
+        expect(offRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
     it('initializes optional dependencies first when they are registered, and needs none of them', async () => {
         const order: string[] = [];
         const feature = (name: string, optionalDependencies?: string[]): Feature => ({
