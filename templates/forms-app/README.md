@@ -51,6 +51,24 @@ El template esta pensado para escenarios donde hay miles de formularios abiertos
 
 En desarrollo se usa un solo nginx que rutea todo. Para produccion se desplegarian dos nginx separados (uno en DMZ, otro en la red interna).
 
+`docker-compose.yml` reproduce esas zonas con redes de Docker: cada servicio esta solo en
+las redes de lo que usa, asi que forms-api llega a nginx y a Redis y a nada mas (ni a
+Postgres ni a form-manager).
+
+| Red | Servicios |
+|-----|-----------|
+| `public` | nginx, forms-api |
+| `admin` | nginx, admin-api, admin-frontend |
+| `public-redis` | forms-api, Redis |
+| `redis` | Redis, form-manager, cron, answer-writer |
+| `db` | PostgreSQL, admin-api, form-manager, cron, answer-writer |
+| `control` | admin-api, cron, form-manager (su API `/internal`) |
+
+Solo nginx publica un puerto en todas las interfaces (80). Postgres y Redis se publican en
+`127.0.0.1` (5432 y 6379) para `create-admin` y el [flujo de desarrollo](#flujo-de-desarrollo);
+donde nada en la maquina los necesite, quita esos `ports`. Redis exige password
+(`REDIS_PASSWORD`).
+
 ## Kits utilizados
 
 - [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, DI, logger, event bus
@@ -89,6 +107,7 @@ cd templates/forms-app
 # Secretos: no tienen valores por defecto, sin ellos docker compose no arranca
 cat > .env <<EOF
 DB_PASSWORD=$(openssl rand -hex 32)
+REDIS_PASSWORD=$(openssl rand -hex 32)
 AUTH_SECRET=$(openssl rand -base64 32)
 CSRF_SECRET=$(openssl rand -base64 32)
 IP_HASH_SECRET=$(openssl rand -base64 32)
@@ -144,13 +163,15 @@ defecto: en produccion (las imagenes se construyen con `NODE_ENV=production`) un
 no arranca si le falta uno, si es mas corto de lo pedido o si es el valor de desarrollo.
 Fuera de produccion (`bun dev`) cada servicio usa un valor de desarrollo. Generalos con
 `openssl rand -base64 32`, salvo los passwords que van dentro de una URL de conexion
-(`DB_PASSWORD`): `openssl rand -hex 32`, porque la `/` y el `+` de base64 rompen la URL.
+(`DB_PASSWORD`, `REDIS_PASSWORD`): `openssl rand -hex 32`, porque la `/` y el `+` de
+base64 rompen la URL.
 
 **Secretos** (obligatorios):
 
 | Variable | Servicio | Descripcion |
 |----------|----------|-------------|
 | `DB_PASSWORD` | postgres y los servicios que lo usan | Password de PostgreSQL |
+| `REDIS_PASSWORD` | redis y los servicios que lo usan | Password de Redis (`requirepass`) |
 | `AUTH_SECRET` | admin-api | Firma las sesiones de Better Auth, 32+ caracteres. Con el cache de sesion en cookie, quien lo conoce puede fabricar la sesion de cualquier admin |
 | `CSRF_SECRET` | forms-api | Firma los tokens CSRF, 32+ caracteres |
 | `IP_HASH_SECRET` | forms-api | Clave del hash diario de IP de cada respuesta, 32+ caracteres y distinta de `CSRF_SECRET` (sin ella el hash se puede revertir probando todas las IPv4) |
@@ -165,7 +186,7 @@ Fuera de produccion (`bun dev`) cada servicio usa un valor de desarrollo. Genera
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
 | `DATABASE_URL` | URL de conexion a Postgres (compose la arma con `DB_PASSWORD`) | `postgresql://forms:<DB_PASSWORD>@postgres:5432/forms_app` |
-| `REDIS_URL` | URL de conexion a Redis | `redis://redis:6379` |
+| `REDIS_URL` | URL de conexion a Redis (compose la arma con `REDIS_PASSWORD`) | `redis://:<REDIS_PASSWORD>@redis:6379` |
 | `FORM_MANAGER_URL` | URL interna del form-manager | `http://form-manager:4001` |
 
 ## Estructura del proyecto
@@ -509,10 +530,15 @@ docker compose up -d forms-api
 ## Flujo de desarrollo
 
 ```bash
-# 1. Levantar infra
+# 1. Levantar infra (en 127.0.0.1:5432 y 127.0.0.1:6379, con los passwords de .env)
 docker compose up postgres redis -d
 
-# 2. Levantar servicios individualmente para desarrollo
+# 2. Las URLs hacia esa infra, en cada terminal donde corra un servicio
+set -a; . ./.env; set +a
+export DATABASE_URL="postgresql://forms:$DB_PASSWORD@localhost:5432/forms_app"
+export REDIS_URL="redis://:$REDIS_PASSWORD@localhost:6379"
+
+# 3. Levantar servicios individualmente para desarrollo
 cd services/admin-api && bun dev
 cd services/admin-frontend && bun dev  # (en otra terminal)
 cd services/form-manager && bun dev

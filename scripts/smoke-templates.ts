@@ -38,8 +38,12 @@ interface ComposeCase {
     file: string;
     /** Probed through the published nginx port. */
     probes: Probe[];
-    /** `service:port/path` probed from inside the nginx container (not published). */
-    internal: string[];
+    /**
+     * Unpublished services (`service:port/path`), each probed from inside a
+     * container on one of its networks: the stack is segmented, so nginx
+     * reaches only the services it proxies.
+     */
+    internal: { from: ProbeContainer; target: string }[];
     /**
      * Variables the compose file requires (`${VAR:?}`, its secrets): each run
      * gets random ones. Hex, since some go into connection URLs.
@@ -48,6 +52,16 @@ interface ComposeCase {
 }
 
 type Case = ImageCase | ComposeCase;
+
+/** Compose services with an HTTP client: nginx:alpine's busybox wget, form-manager's Bun. */
+type ProbeContainer = 'nginx' | 'form-manager';
+
+/** A command, run in `from`, that exits 0 when `url` answers with a 2xx. */
+function fetchCommand(from: ProbeContainer, url: string): string[] {
+    if (from === 'nginx') return ['wget', '-q', '-O', '/dev/null', url];
+    const fetchCall = `fetch(${JSON.stringify(url)}, { signal: AbortSignal.timeout(5000) })`;
+    return ['bun', '-e', `process.exit((await ${fetchCall}).ok ? 0 : 1)`];
+}
 
 const CASES: Case[] = [
     { kind: 'image', name: 'simple-server', port: 3000, probes: [{ path: '/', status: 200 }] },
@@ -92,8 +106,12 @@ const CASES: Case[] = [
             { path: '/formularios/health', status: 200 },
             { path: '/admin/', status: 200 },
         ],
-        internal: ['admin-api:4000/health', 'form-manager:4001/health', 'cron:4002/health'],
-        secrets: ['DB_PASSWORD', 'AUTH_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET', 'RECAPTCHA_SECRET'],
+        internal: [
+            { from: 'nginx', target: 'admin-api:4000/health' },
+            { from: 'form-manager', target: 'form-manager:4001/health' },
+            { from: 'form-manager', target: 'cron:4002/health' },
+        ],
+        secrets: ['DB_PASSWORD', 'REDIS_PASSWORD', 'AUTH_SECRET', 'CSRF_SECRET', 'IP_HASH_SECRET', 'RECAPTCHA_SECRET'],
     },
 ];
 
@@ -225,8 +243,8 @@ async function probeCompose(c: ComposeCase, compose: string[], env: NodeJS.Proce
         const failure = await waitForProbes('http://127.0.0.1:80', c.probes, () => exited() === '');
         if (failure) return `${failure}${exited() ? `; exited: ${exited().replace(/\n/g, ', ')}` : ''}`;
         // Services start at different speeds: retried until the same deadline.
-        const answers = (target: string) =>
-            docker([...compose, 'exec', '-T', 'nginx', 'wget', '-q', '-O', '/dev/null', `http://${target}`], {
+        const answers = ({ from, target }: ComposeCase['internal'][number]) =>
+            docker([...compose, 'exec', '-T', from, ...fetchCommand(from, `http://${target}`)], {
                 quiet: true,
                 allowFail: true,
                 env,
@@ -235,7 +253,7 @@ async function probeCompose(c: ComposeCase, compose: string[], env: NodeJS.Proce
         let pending = c.internal;
         while ((pending = pending.filter((t) => !answers(t))).length > 0) {
             if (exited()) return `services exited: ${exited().replace(/\n/g, ', ')}`;
-            if (Date.now() > deadline) return `no 200 from ${pending.map((t) => `http://${t}`).join(', ')}`;
+            if (Date.now() > deadline) return `no 200 from ${pending.map((t) => `http://${t.target}`).join(', ')}`;
             await sleep(1_000);
         }
         await sleep(SETTLE_MS);
