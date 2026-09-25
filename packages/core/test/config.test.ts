@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadAppConfig } from '../src/config/loader';
@@ -91,5 +91,55 @@ describe('loadAppConfig', () => {
     it('rejects a malformed kit section instead of dropping it', async () => {
         const dir = makeConfigDir(`export default { db: { driver: 'oracle', url: 'x' } };`);
         await expect(loadAppConfig(dir)).rejects.toThrow();
+    });
+});
+
+describe('loadAppConfig and the working directory', () => {
+    it('ignores a .apprc file', async () => {
+        const dir = makeConfigDir(`export default { name: 'FromAppConfig' };`);
+        writeFileSync(join(dir, '.apprc'), 'shutdownSignals=false\nprocesses.miner.command=/bin/sh\n');
+
+        const config = await loadAppConfig(dir);
+
+        expect(config.name).toBe('FromAppConfig');
+        expect(config.processes).toBeUndefined();
+        expect(config.shutdownSignals).toBeUndefined();
+    });
+
+    it('does not download remote `extends` layers', async () => {
+        let requests = 0;
+        const server = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch() {
+                requests++;
+                return new Response('not a tarball', { status: 404 });
+            },
+        });
+        const warn = console.warn;
+        console.warn = () => {};
+        try {
+            const dir = makeConfigDir(
+                `export default { name: 'Main', extends: ['http://127.0.0.1:${server.port}/layer.tar.gz'] };`,
+            );
+            const config = await loadAppConfig(dir);
+
+            expect(config.name).toBe('Main');
+            expect(requests).toBe(0);
+        } finally {
+            console.warn = warn;
+            server.stop(true);
+        }
+    });
+
+    it('still merges a local `extends` layer', async () => {
+        const dir = makeConfigDir(`export default { name: 'Main', extends: ['./base'] };`);
+        mkdirSync(join(dir, 'base'));
+        writeFileSync(join(dir, 'base', 'app.config.ts'), `export default { debug: true };`);
+
+        const config = await loadAppConfig(dir);
+
+        expect(config.name).toBe('Main');
+        expect(config.debug).toBe(true);
     });
 });
