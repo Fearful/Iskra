@@ -1,3 +1,4 @@
+import { RECAPTCHA_ACTION } from '@forms-app/shared';
 import { config } from '../../app.config.ts';
 
 interface RecaptchaResponse {
@@ -25,6 +26,19 @@ export class RecaptchaService {
 
             if (!data.success) {
                 console.warn('reCAPTCHA verification failed:', data['error-codes']);
+                return { valid: false, score: 0 };
+            }
+
+            // Only `success` and the score used to be checked, so a token the
+            // site key issued for another action, or on another site that uses
+            // the key, was accepted too.
+            if (data.action !== RECAPTCHA_ACTION) {
+                console.warn('reCAPTCHA token for another action:', data.action);
+                return { valid: false, score: 0 };
+            }
+            const { hostnames } = config.recaptcha;
+            if (hostnames.length > 0 && !hostnames.includes(String(data.hostname).toLowerCase())) {
+                console.warn('reCAPTCHA token from another hostname:', data.hostname);
                 return { valid: false, score: 0 };
             }
 

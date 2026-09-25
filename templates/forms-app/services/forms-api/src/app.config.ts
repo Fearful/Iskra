@@ -15,6 +15,8 @@ export const AppConfigSchema = z.object({
     recaptcha: z.object({
         secret: z.string(),
         minScore: z.number().default(0.5),
+        /** Hostnames a token may come from (RECAPTCHA_HOSTNAMES); empty: any. */
+        hostnames: z.array(z.string()).default([]),
     }),
     csrf: z.object({
         secret: z.string(),
@@ -38,6 +40,10 @@ export const config: AppConfig = AppConfigSchema.parse({
         // Issued by Google (https://www.google.com/recaptcha/admin), not generated.
         secret: secretFromEnv('RECAPTCHA_SECRET', 'your-secret-key', { minLength: 1 }),
         minScore: Number(process.env.RECAPTCHA_MIN_SCORE) || 0.5,
+        hostnames: (process.env.RECAPTCHA_HOSTNAMES ?? '')
+            .split(',')
+            .map((h) => h.trim().toLowerCase())
+            .filter(Boolean),
     },
     csrf: {
         secret: secretFromEnv('CSRF_SECRET', 'dev-csrf-secret-change-me-32-characters'),

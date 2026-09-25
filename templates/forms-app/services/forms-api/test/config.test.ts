@@ -48,5 +48,16 @@ describe('forms-api configuration in production', () => {
         const config = JSON.parse(stdout);
         expect(config.csrf.secret).toBe('c'.repeat(44));
         expect(config.ipHashSecret).toBe('i'.repeat(44));
+        expect(config.recaptcha.hostnames).toEqual([]);
+    });
+
+    it('reads the reCAPTCHA hostnames as a comma-separated list', () => {
+        const { stdout } = loadProductionConfig({
+            RECAPTCHA_SECRET: 'r',
+            CSRF_SECRET: 'c'.repeat(44),
+            IP_HASH_SECRET: 'i'.repeat(44),
+            RECAPTCHA_HOSTNAMES: ' Forms.Example.com, ,www.example.com',
+        });
+        expect(JSON.parse(stdout).recaptcha.hostnames).toEqual(['forms.example.com', 'www.example.com']);
     });
 });

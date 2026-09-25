@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { escapeHtml, generateFormHtml } from '../src/domain/prerender/html-template.ts';
 import { generateFormRuntime } from '../src/domain/prerender/form-runtime.ts';
+import { RECAPTCHA_ACTION } from '@forms-app/shared';
 
 // Form pages are public: admin-defined text must render as text.
 const XSS = '<img src=x onerror=alert(1)>"\'&';
@@ -64,5 +65,12 @@ describe('form runtime', () => {
         for (const literal of literals) expect(code).toContain(literal);
         const outside = literals.reduce((rest, literal) => rest.split(literal).join('""'), code);
         expect(outside).not.toContain('alert(');
+    });
+});
+
+describe('form runtime reCAPTCHA', () => {
+    it('requests its token for the action forms-api requires', () => {
+        const code = generateFormRuntime('form-1', 'space', 'form', 'site-key');
+        expect(code).toContain(`{ action: ${JSON.stringify(RECAPTCHA_ACTION)} }`);
     });
 });

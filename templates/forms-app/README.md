@@ -184,6 +184,7 @@ base64 rompen la URL.
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
 | `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
+| `RECAPTCHA_HOSTNAMES` | Hostnames (separados por coma) desde los que se sirven los formularios: forms-api rechaza los tokens de reCAPTCHA emitidos en otro sitio. Definila en produccion | vacio (cualquier hostname) |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
@@ -461,7 +462,7 @@ Proteccion via `CsrfFeature` de Iskra. El formulario pre-renderizado obtiene un 
 
 ### reCAPTCHA v3
 
-Verificacion invisible sin interaccion del usuario. Cada envio incluye un token que se verifica contra la API de Google. Se rechaza si el score es menor a 0.5 (configurable). El score se guarda con la respuesta para analisis posterior.
+Verificacion invisible sin interaccion del usuario. Cada envio incluye un token que se verifica contra la API de Google. forms-api lo rechaza si Google no lo valida, si fue emitido para otra accion que `submit` (la que pide el formulario), si viene de un hostname fuera de `RECAPTCHA_HOSTNAMES` (cuando esta definida) o si el score es menor a 0.5 (configurable); un error al consultar a Google tambien lo rechaza. El score se guarda con la respuesta para analisis posterior.
 
 ### Rate limiting
 

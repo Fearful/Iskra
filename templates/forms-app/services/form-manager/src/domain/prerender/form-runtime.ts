@@ -1,3 +1,5 @@
+import { RECAPTCHA_ACTION } from '@forms-app/shared';
+
 /**
  * Public path prefix of the forms: nginx routes /formularios/* to forms-api,
  * which serves each form at /<space>/<form>/ and its API at /api/*.
@@ -97,7 +99,7 @@ async function getCsrfToken() {
 async function getRecaptchaToken() {
     return new Promise((resolve) => {
         grecaptcha.ready(() => {
-            grecaptcha.execute(${js(recaptchaSiteKey)}, { action: 'submit' }).then(resolve);
+            grecaptcha.execute(${js(recaptchaSiteKey)}, { action: ${js(RECAPTCHA_ACTION)} }).then(resolve);
         });
     });
 }
