@@ -12,6 +12,10 @@ Template para crear plugins (Drivers) reutilizables para Iskra. Usa esto como pu
 # Desde la raiz del monorepo
 bun install
 
+# El plugin compila con NodeNext y resuelve @iskra-bun/core por su dist:
+# compila core primero
+(cd packages/core && bun run build)
+
 cd templates/plugin-starter
 
 # Compilar el plugin
