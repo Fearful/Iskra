@@ -66,6 +66,51 @@ describe('mapOidcProfile', () => {
     });
 });
 
+describe('mapOidcProfile: which flag vouches for the email', () => {
+    it('does not let the standard email_verified vouch for a different mapped email', () => {
+        // Regression: an IdP user who can edit `mail` would be linked to the
+        // local account with that address (better-auth links verified emails).
+        const user = mapOidcProfile(
+            {
+                sub: 'abc',
+                email: 'attacker@idp.com',
+                email_verified: true,
+                emailVerified: false,
+                mail: 'admin@corp.com',
+            },
+            { email: 'mail' },
+        );
+        expect(user).toMatchObject({ email: 'admin@corp.com', emailVerified: false });
+    });
+
+    it('does not fall back to email_verified when the mapped flag is missing', () => {
+        const user = mapOidcProfile(
+            {
+                sub: 'abc',
+                email: 'attacker@idp.com',
+                email_verified: true,
+                emailVerified: false,
+                mail: 'admin@corp.com',
+            },
+            { email: 'mail', emailVerified: 'mail_verified' },
+        );
+        expect(user.emailVerified).toBe(false);
+    });
+
+    it('keeps the standard flag when the mapped email is the standard one', () => {
+        const user = mapOidcProfile(
+            { sub: 'abc', email: 'a@b.c', email_verified: true, emailVerified: false, mail: 'a@b.c' },
+            { email: 'mail' },
+        );
+        expect(user.emailVerified).toBe(true);
+    });
+
+    it('pairs a mapped flag with the standard email when mapping.email is not set', () => {
+        const profile = { sub: 'abc', email: 'a@b.c', email_verified: false, emailVerified: false, verified: 'true' };
+        expect(mapOidcProfile(profile, { emailVerified: 'verified' }).emailVerified).toBe(true);
+    });
+});
+
 describe('oidcProviderConfig', () => {
     const base = { clientId: 'id', clientSecret: 'secret', issuer: 'https://idp.example.com' };
 

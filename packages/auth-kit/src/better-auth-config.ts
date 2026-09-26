@@ -166,17 +166,24 @@ export interface OidcClaimMapping {
 export function mapOidcProfile(profile: GenericOAuthUserInfo, mapping: OidcClaimMapping = {}) {
     const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
     const claim = (name: string | undefined) => (name ? profile[name] : undefined);
-    const verified = claim(mapping.emailVerified);
+    const isTrue = (v: unknown) => v === true || v === 'true';
+    const standardVerified = profile.emailVerified === true || isTrue(profile.email_verified);
+    const mappedEmail = str(claim(mapping.email));
+    // better-auth links a login to the local user with the same email when it
+    // is verified, so a flag must vouch for the address actually returned.
+    // A mapped flag pairs with the mapped email (or with the standard one when
+    // mapping.email is not set); the standard flag only vouches for the
+    // standard email.
+    const pairedFlag = mappedEmail !== undefined || !mapping.email ? claim(mapping.emailVerified) : undefined;
+    let emailVerified: boolean;
+    if (pairedFlag !== undefined && pairedFlag !== null) emailVerified = isTrue(pairedFlag);
+    else if (mappedEmail !== undefined) emailVerified = mappedEmail === profile.email && standardVerified;
+    else emailVerified = standardVerified;
     return {
-        email: str(claim(mapping.email)) ?? profile.email,
+        email: mappedEmail ?? profile.email,
         name: str(claim(mapping.name)) ?? (profile.name || str(profile.preferred_username)),
         image: str(claim(mapping.image)) ?? str(profile.picture) ?? profile.image,
-        emailVerified:
-            verified !== undefined && verified !== null
-                ? verified === true || verified === 'true'
-                : profile.emailVerified === true ||
-                  profile.email_verified === true ||
-                  profile.email_verified === 'true',
+        emailVerified,
     };
 }
 
