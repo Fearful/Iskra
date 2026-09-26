@@ -216,7 +216,7 @@ class HttpClientWrapper:
     @staticmethod
     def _check(resp: httpx.Response, ok_statuses: Collection[int]) -> httpx.Response:
         if resp.status_code >= 400 and resp.status_code not in ok_statuses:
-            raise IskraException.from_error_response(resp.status_code, parse_body(resp))
+            raise IskraException.from_error_response(resp.status_code, parse_body(resp), resp.headers)
         return resp
 
     @staticmethod

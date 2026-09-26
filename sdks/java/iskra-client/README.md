@@ -244,6 +244,7 @@ El SDK mapea automaticamente las respuestas de error de Iskra a excepciones Java
 
 ```java
 import dev.iskra.client.exception.*;
+import java.time.Duration;
 
 try {
     iskra.get("/api/recurso-inexistente", Object.class);
@@ -260,8 +261,9 @@ try {
     // HTTP 403
     System.out.println("Prohibido: " + e.getMessage());
 } catch (RateLimitException e) {
-    // HTTP 429
-    System.out.println("Limite de peticiones excedido");
+    // HTTP 429; getRetryAfter(): la espera segun Retry-After, si vino
+    System.out.println("Limite de peticiones excedido, reintentar en "
+            + e.getRetryAfter().map(Duration::getSeconds).orElse(null) + " s");
 } catch (IskraException e) {
     // Cualquier otro error
     System.out.println("Error " + e.getStatusCode() + ": " + e.getMessage());
@@ -283,7 +285,9 @@ try {
 El mensaje sale de `error` o `message` del cuerpo (los formatos de
 `ErrorHandlerFeature`, `errorResponse()` y Better Auth), `getErrorCode()` de `code` y
 `getDetails()` de `details`; un cuerpo de texto (por ejemplo, el `404 Not Found` de
-una ruta inexistente) queda como mensaje. Si el hilo se interrumpe durante una
+una ruta inexistente) queda como mensaje. En un 429, `getRetryAfter()` devuelve el
+header `Retry-After` (segundos o fecha HTTP) como `Optional<Duration>`, vacio si falta
+o es invalido. Si el hilo se interrumpe durante una
 peticion, se lanza `IskraException` y el hilo conserva la marca de interrupcion.
 
 ## Integracion con Spring MVC

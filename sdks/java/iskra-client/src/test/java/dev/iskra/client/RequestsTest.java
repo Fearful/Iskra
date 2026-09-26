@@ -11,10 +11,18 @@ import dev.iskra.client.exception.ValidationException;
 import dev.iskra.client.response.IskraResponse;
 import org.junit.jupiter.api.Test;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -108,6 +116,27 @@ class RequestsTest {
                 () -> iskra.get("/contract/rate-limited", Object.class));
         assertEquals("Too many requests", limited.getMessage());
         assertEquals(429, limited.getStatusCode());
+    }
+
+    @Test
+    void rateLimitExposesRetryAfter() {
+        assertEquals(Optional.of(Duration.ofSeconds(7)), rateLimited("").getRetryAfter());
+
+        String inTwoMinutes = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC).plusSeconds(120));
+        Duration delay = rateLimited("?retryAfter=" + URLEncoder.encode(inTwoMinutes, StandardCharsets.UTF_8))
+                .getRetryAfter().orElseThrow();
+        assertTrue(delay.getSeconds() > 100 && delay.getSeconds() <= 120, delay.toString());
+
+        String aMinuteAgo = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC).minusSeconds(60));
+        assertEquals(Optional.of(Duration.ZERO),
+                rateLimited("?retryAfter=" + URLEncoder.encode(aMinuteAgo, StandardCharsets.UTF_8)).getRetryAfter());
+        for (String absentOrInvalid : List.of("", "soon", "-5")) {
+            assertFalse(rateLimited("?retryAfter=" + absentOrInvalid).getRetryAfter().isPresent(), absentOrInvalid);
+        }
+    }
+
+    private RateLimitException rateLimited(String query) {
+        return assertThrows(RateLimitException.class, () -> iskra.get("/contract/rate-limited" + query, Object.class));
     }
 
     @Test

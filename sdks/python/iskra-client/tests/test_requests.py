@@ -83,6 +83,32 @@ def test_forbidden_conflict_and_rate_limit_are_typed(iskra: IskraClient):
     assert limited.value.status_code == 429
 
 
+def test_rate_limit_exposes_retry_after(iskra: IskraClient):
+    from email.utils import format_datetime
+    from datetime import datetime, timedelta, timezone
+
+    with pytest.raises(RateLimitException) as seconds:
+        iskra.get("/contract/rate-limited")
+    assert seconds.value.retry_after == 7.0
+
+    when = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=120), usegmt=True)
+    with pytest.raises(RateLimitException) as date:
+        iskra.get("/contract/rate-limited", params={"retryAfter": when})
+    assert date.value.retry_after is not None and 100 < date.value.retry_after <= 120
+
+    past = format_datetime(datetime.now(timezone.utc) - timedelta(seconds=60), usegmt=True)
+    for value, expected in (("", None), ("soon", None), ("-5", None), (past, 0.0)):
+        with pytest.raises(RateLimitException) as other:
+            iskra.get("/contract/rate-limited", params={"retryAfter": value})
+        assert other.value.retry_after == expected, value
+
+
+async def test_async_rate_limit_exposes_retry_after(iskra: IskraClient):
+    with pytest.raises(RateLimitException) as err:
+        await iskra.async_get("/contract/rate-limited")
+    assert err.value.retry_after == 7.0
+
+
 def test_plain_text_error_body(iskra: IskraClient):
     with pytest.raises(NotFoundException) as err:
         iskra.get("/contract/does-not-exist")

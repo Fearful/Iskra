@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.iskra.client.IskraConfig;
 import dev.iskra.client.exception.IskraException;
+import dev.iskra.client.exception.RateLimitException;
 import dev.iskra.client.response.ErrorResponse;
 import dev.iskra.client.response.IskraResponse;
 
@@ -19,6 +20,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -355,7 +357,10 @@ public class HttpClientWrapper {
                 error.setError(text);
             }
         }
-        return IskraException.fromErrorResponse(status, error);
+        Duration retryAfter = status == 429
+                ? RateLimitException.parseRetryAfter(response.headers().firstValue("Retry-After").orElse(null))
+                : null;
+        return IskraException.fromErrorResponse(status, error, retryAfter);
     }
 
     /** Accepts {@code "error": {"message", "code"}} as well as a string. */

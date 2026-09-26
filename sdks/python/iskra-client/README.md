@@ -283,8 +283,8 @@ except ForbiddenException as e:
     # HTTP 403
     print(f"Prohibido: {e}")
 except RateLimitException as e:
-    # HTTP 429
-    print("Limite de peticiones excedido")
+    # HTTP 429; retry_after: segundos a esperar segun Retry-After, o None
+    print(f"Limite de peticiones excedido, reintentar en {e.retry_after} s")
 except IskraException as e:
     # Cualquier otro error
     print(f"Error {e.status_code}: {e}")
@@ -305,7 +305,8 @@ except IskraException as e:
 El mensaje sale de `error` o `message` del cuerpo (los formatos de
 `ErrorHandlerFeature`, `errorResponse()` y Better Auth), `error_code` de `code` y
 `details` de `details`; un cuerpo de texto (por ejemplo, el `404 Not Found` de una
-ruta inexistente) queda como mensaje.
+ruta inexistente) queda como mensaje. En un 429, `retry_after` sale del header
+`Retry-After` (segundos o fecha HTTP) en segundos, y es `None` si falta o es invalido.
 
 ## Integracion con FastAPI
 

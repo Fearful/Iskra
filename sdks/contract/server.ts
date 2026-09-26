@@ -167,9 +167,11 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     app.post('/contract/conflict', () => {
         throw new ConflictError('Widget already exists');
     });
-    // Answers like RateLimitFeature, plus a Retry-After header.
+    // Answers like RateLimitFeature, plus a Retry-After header: 7 seconds, or
+    // `?retryAfter=` as given (an empty value leaves the header out).
     app.get('/contract/rate-limited', (c) => {
-        c.header('Retry-After', '7');
+        const retryAfter = c.req.query('retryAfter') ?? '7';
+        if (retryAfter) c.header('Retry-After', retryAfter);
         throw createHttpError(429, 'Too many requests');
     });
     app.get('/contract/me', (c) => {

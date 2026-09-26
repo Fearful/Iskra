@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Errors:** `RateLimitException.retry_after`: the seconds to wait from a 429's `Retry-After` header (delay in seconds or an HTTP-date), `None` when absent or invalid.
 - **Timeouts:** `timeout` bounds the whole request (connecting, sending, the headers and the body), sync and async. httpx's timeouts restart on every read, so a server trickling bytes held a call open indefinitely (`timeout=2.0` took 9 s against one). Sync requests run on a helper thread the caller stops waiting for at the deadline; `timeout=None` means no limit.
 - **Response size:** bodies are streamed and capped at `max_response_bytes` (new `IskraClient`/`IskraConfig` option, 10 MiB by default), counted after decompression and checked against `Content-Length` before reading; a larger body raises `IskraException` (status 0) instead of filling the caller's memory.
 - **Examples and docs:** the FastAPI example no longer returns Iskra's error text (its messages, the host and port of a failed connection) or the full health payload to anonymous callers: they go to the log and callers get a generic error and `{"status"}`. The READMEs no longer suggest `rateLimit: false` "and limit in this app" (the examples limit nothing): they say to raise the limit and add a per-user one. The storage section shows how to keep each user in their own folder, since an `authorize` that only checks for a session lets every user list, download and delete everyone's files.

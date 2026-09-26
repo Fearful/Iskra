@@ -138,6 +138,11 @@ iskra.auth().signOut(session);
   per user in the backend (by client IP or email), which the SDKs do not do.
   `rateLimit: false` leaves password guessing unthrottled: use it only when the
   backend already has such a limit.
+- A 429 raises `RateLimitException`. When the response has a `Retry-After` header
+  (seconds or an HTTP-date), the wait is in `e.retry_after` (Python, seconds as a
+  float) or `e.getRetryAfter()` (Java, `Optional<Duration>`); it is `None` / empty
+  when the header is absent or invalid, as with web-kit's own rate limits, which
+  do not send one.
 - The storage client calls UploadFeature's routes, which usually require a
   signed-in user: use it on `with_session(...)` / `withSession(...)`. Every user
   shares the project's files, so an `authorize` that only checks for a session lets
