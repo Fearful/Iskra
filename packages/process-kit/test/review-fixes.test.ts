@@ -180,6 +180,23 @@ describe.if(posix)('send()', () => {
 });
 
 describe('spawn errors', () => {
+    it('spawn() rejects before the manager is initialized, instead of resolving without a process', async () => {
+        const pm = new ProcessManager();
+        await expect(pm.spawn('early', { command: 'sleep', args: ['7708'], mode: 'daemon' } as any)).rejects.toThrow(
+            'ProcessManager is not initialized: register it on an App first',
+        );
+    });
+
+    it('spawn() rejects after stop()', async () => {
+        const { app, pm } = makeManager();
+        await app.start();
+        await app.stop();
+        await expect(pm.spawn('late', { command: 'sleep', args: ['7709'], mode: 'daemon' } as any)).rejects.toThrow(
+            'ProcessManager is stopped',
+        );
+        expect(count('^sleep 7709')).toBe(0);
+    });
+
     it('spawn() rejects when the command does not exist', async () => {
         const { app, pm } = makeManager();
         await app.start();

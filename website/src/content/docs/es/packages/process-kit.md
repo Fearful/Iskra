@@ -128,7 +128,7 @@ await pm.spawn('extra-worker', {
 });
 ```
 
-Lanza un error si ya existe un proceso con ese nombre. Usa `kill()` primero si necesitas reemplazarlo.
+Lanza un error si ya existe un proceso con ese nombre. Usa `kill()` primero si necesitas reemplazarlo. Tambien lanza un error si su App todavia no inicializo el manager (`ProcessManager is not initialized: register it on an App first`) o despues de `stop()` (`ProcessManager is stopped`); antes se resolvia sin lanzar nada.
 
 ### `kill(name, gracefulTimeoutMs?)`
 

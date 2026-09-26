@@ -172,10 +172,15 @@ export class ProcessManager implements Driver {
      * Spawn and register a new process at runtime. Reuses the existing internal
      * spawn logic and respects the process mode (stdio/daemon/oneshot).
      *
-     * @throws {Error} if a process with the given name is already registered,
-     *   or if it cannot be spawned (e.g. the command does not exist).
+     * @throws {Error} if the manager is not registered on an App or has been
+     *   stopped, if a process with the given name is already registered, or if
+     *   it cannot be spawned (e.g. the command does not exist).
      */
     async spawn(name: string, config: ProcessConfig): Promise<void> {
+        // spawnProcess() does nothing in either case: spawn() used to resolve
+        // as if the process had started.
+        if (!this.app) throw new Error('ProcessManager is not initialized: register it on an App first');
+        if (this.stopping) throw new Error('ProcessManager is stopped');
         if (this.processes.has(name) || this.restartTimers.has(name)) {
             throw new Error(`Process '${name}' is already registered. Kill it first or use a different name.`);
         }
