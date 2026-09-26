@@ -133,6 +133,48 @@ describe('S3StorageAdapter - mocked send', () => {
         expect(putInput.Body).toBeInstanceOf(Uint8Array);
     });
 
+    it('put rejects a stream longer than maxBytes, cancels it and uploads nothing', async () => {
+        const adapter = makeAdapter();
+        const sent: string[] = [];
+        mockSend(adapter, (cmd) => {
+            sent.push(cmd.constructor.name);
+            return {};
+        });
+        await adapter.connect();
+        sent.length = 0;
+
+        let cancelled = false;
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]));
+                controller.enqueue(new Uint8Array([4, 5, 6, 7, 8, 9, 10]));
+            },
+            cancel() {
+                cancelled = true;
+            },
+        });
+        const err = await adapter.put('big.bin', stream, { maxBytes: 4 }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(RangeError);
+        expect((err as Error).message).toBe('put(): stream exceeds maxBytes (4)');
+        expect(cancelled).toBe(true);
+        expect(sent).toEqual([]);
+    });
+
+    it('put accepts a stream of exactly maxBytes', async () => {
+        const adapter = makeAdapter();
+        let putInput: any;
+        mockSend(adapter, (cmd) => {
+            if (cmd.constructor.name === 'PutObjectCommand') putInput = cmd.input;
+            return {};
+        });
+        await adapter.connect();
+
+        const stream = new Response(new Uint8Array([1, 2, 3, 4])).body!;
+        const file = await adapter.put('four.bin', stream, { maxBytes: 4 });
+        expect(file.size).toBe(4);
+        expect(Array.from(putInput.Body as Uint8Array)).toEqual([1, 2, 3, 4]);
+    });
+
     it('get returns bytes from the response body', async () => {
         const adapter = makeAdapter();
         mockSend(adapter, (cmd) => {

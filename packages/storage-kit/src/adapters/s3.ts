@@ -13,6 +13,35 @@ type Presigner = typeof import('@aws-sdk/s3-request-presigner');
  * storage-kit or web-kit, even ones that only store files locally.
  */
 let sdk: S3Sdk | undefined;
+
+/** Default `maxBytes` of a streamed put: S3's limit for a single PutObject. */
+const DEFAULT_MAX_STREAM_BYTES = 5 * 1024 ** 3;
+
+/**
+ * Reads a stream to put, up to `maxBytes`: past it the stream is cancelled
+ * (so its source stops producing) instead of filling memory.
+ */
+async function readStream(stream: ReadableStream, maxBytes: number): Promise<Buffer> {
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = value as Uint8Array;
+            size += chunk.byteLength;
+            if (size > maxBytes) {
+                await reader.cancel().catch(() => {});
+                throw new RangeError(`put(): stream exceeds maxBytes (${maxBytes})`);
+            }
+            chunks.push(chunk);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    return Buffer.concat(chunks, size);
+}
 function loadSdk(): S3Sdk {
     // Synchronous on purpose: the constructor builds the client.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -97,13 +126,10 @@ export class S3StorageAdapter extends BaseStorageAdapter {
         this.ensureConnected();
         const key = this.sanitizePath(path);
 
-        let body: Uint8Array | Buffer;
-        if (data instanceof ReadableStream) {
-            const response = new Response(data);
-            body = new Uint8Array(await response.arrayBuffer());
-        } else {
-            body = data;
-        }
+        const body =
+            data instanceof ReadableStream
+                ? await readStream(data, options?.maxBytes ?? DEFAULT_MAX_STREAM_BYTES)
+                : data;
 
         const contentType = options?.contentType || this.getMimeType(key);
         try {

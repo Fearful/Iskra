@@ -37,6 +37,13 @@ export interface PutOptions {
      */
     overwrite?: boolean;
     metadata?: Record<string, string>;
+    /**
+     * Largest `ReadableStream` body the S3/MinIO adapter reads (it buffers the
+     * stream before uploading it): a longer stream is cancelled and `put()`
+     * rejects with a `RangeError`. Default: 5 GiB, S3's limit for one upload.
+     * The local adapter writes the stream to disk and ignores it.
+     */
+    maxBytes?: number;
     public?: boolean;
 }
 

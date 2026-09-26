@@ -67,7 +67,7 @@ const storage = await createStorageAdapter({
 
 ```typescript
 // Guardar un archivo
-// options: { contentType?, contentDisposition?, overwrite?, metadata? }
+// options: { contentType?, contentDisposition?, overwrite?, metadata?, maxBytes? }
 const file = await storage.put(path, data, options?);
 
 // Leer bytes
@@ -171,6 +171,20 @@ try {
 
 En S3 esto requiere escrituras condicionales (AWS S3 desde agosto de 2024; comprueba
 que tu MinIO o servidor compatible con S3 soporte `If-None-Match` en `PUT`).
+
+### Subidas de streams a S3
+
+El adaptador S3/MinIO lee en memoria el `ReadableStream` que recibe `put()` antes
+de subirlo. `maxBytes` lo acota: un stream mas largo se cancela y `put()` rechaza
+con un `RangeError` (`put(): stream exceeds maxBytes (N)`) sin subir nada. Por
+defecto es 5 GiB, el limite de S3 para una sola subida; ajustalo a lo que acepta
+la ruta cuando el stream viene del cuerpo de una peticion. El adaptador local
+escribe el stream directamente en disco e ignora `maxBytes`: acota el tamano antes
+de llamarlo.
+
+```typescript
+await storage.put('uploads/avatar.png', req.body!, { maxBytes: 5 * 1024 * 1024 });
+```
 
 ### Endpoints S3 seguros por defecto
 
