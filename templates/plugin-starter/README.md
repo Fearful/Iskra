@@ -25,6 +25,8 @@ bun run build
 bun test
 ```
 
+Si copias el template fuera del monorepo para publicarlo, cambia `"@iskra-bun/core": "workspace:*"` en `peerDependencies` y `devDependencies` por el rango de la version de core que uses (por ejemplo `"^0.1.1"`): npm publicaria `workspace:*` tal cual.
+
 ## Estructura del proyecto
 
 ```

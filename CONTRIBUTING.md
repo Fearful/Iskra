@@ -190,4 +190,6 @@ Please do **not** open public issues for security vulnerabilities. See
 ## License
 
 Iskra is licensed under **AGPL-3.0-or-later**. By contributing, you agree that
-your contributions will be licensed under the same terms.
+your contributions will be licensed under the same terms. The client SDKs
+under `sdks/` are the exception: they are MIT licensed, and contributions to
+them are licensed under MIT.

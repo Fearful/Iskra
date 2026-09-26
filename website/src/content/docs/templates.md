@@ -75,4 +75,4 @@ Cross-platform app targeting desktop and mobile from one codebase.
 
 ### plugin-starter
 Scaffolding for building reusable plugins/drivers you can register in any Iskra app.
-`cd templates/plugin-starter && bun run build`
+`(cd packages/core && bun run build) && cd templates/plugin-starter && bun run build` (the template builds against `@iskra-bun/core`'s published types, so build core first)

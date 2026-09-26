@@ -57,9 +57,10 @@ from changeset files.
 Packages depend on each other via `workspace:^`, which the release
 (`scripts/pin-workspace-deps.ts`) publishes as `^<version>`: a caret range lets
 an app with several kits share one copy of `@iskra-bun/core` instead of one
-exact version per kit. When a package bumps, Changesets
-bumps the recorded dependency range of its dependents by a **patch** by default
-(`updateInternalDependencies: "patch"` in `.changeset/config.json`).
+exact version per kit. A dependent is re-released only when a bump leaves the
+caret range it publishes (on 0.x, a minor bump of the dependency); its range
+is then raised by a **patch** release (`updateInternalDependencies: "patch"` in
+`.changeset/config.json`).
 
 ## What gets published
 
