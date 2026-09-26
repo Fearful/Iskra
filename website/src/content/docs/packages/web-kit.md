@@ -245,7 +245,7 @@ throw new HttpError(429, 'Demasiados requests', {
 });
 ```
 
-The `ErrorHandlerFeature` catches these errors automatically and returns them as JSON. It logs client errors (4xx) at `debug` level and server errors (5xx) at `error`: any client can cause as many 4xx as it likes, and they used to fill the error log.
+The `ErrorHandlerFeature` catches these errors automatically and returns them as JSON. It logs client errors (4xx) at `debug` level and server errors (5xx) at `error`: any client can cause as many 4xx as it likes, and they used to fill the error log. A 5xx `HttpError` keeps its message, but its `context` (which tends to describe the server: a DSN, a host) is only sent with `includeStack`.
 
 ## Rate limiting and client IP
 
