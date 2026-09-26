@@ -1,16 +1,17 @@
 import { forms, spaces } from '@forms-app/shared/db';
 import { eq, or } from 'drizzle-orm';
 import { FormStatus, REDIS_KEYS } from '@forms-app/shared';
+import type { FormsDb, FormsRedis } from '@forms-app/shared/db/client';
 
 export class RedisPopulatorService {
-    private static db: any;
-    private static redis: any;
+    private static db: FormsDb;
+    private static redis: Pick<FormsRedis, 'set' | 'del' | 'sadd'> | undefined;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 
-    static setRedis(redis: any) {
+    static setRedis(redis: Pick<FormsRedis, 'set' | 'del' | 'sadd'>) {
         this.redis = redis;
     }
 

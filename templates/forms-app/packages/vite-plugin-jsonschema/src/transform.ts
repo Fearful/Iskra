@@ -11,7 +11,7 @@
  * - errorMessage object per property (AJV ajv-errors format)
  */
 
-interface JsonSchemaProperty {
+export interface JsonSchemaProperty {
     type?: string;
     format?: string;
     minLength?: number;
@@ -26,7 +26,7 @@ interface JsonSchemaProperty {
     errorMessage?: Record<string, string>;
 }
 
-interface JsonSchema {
+export interface JsonSchema {
     type: 'object';
     properties: Record<string, JsonSchemaProperty>;
     required?: string[];

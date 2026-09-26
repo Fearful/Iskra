@@ -7,6 +7,7 @@ import { WriterService } from '../src/domain/writer/writer.service.ts';
 import { handleAnswerJob } from '../src/domain/answer-job.ts';
 import { SubmissionService } from '../../forms-api/src/domain/submission/submission.service.ts';
 import { generateJsonSchema } from '../../admin-api/src/domain/forms/schema-generator.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 const field = (o: Record<string, unknown>) => ({
     label: 'L',
@@ -90,13 +91,13 @@ describe('AnswerValidatorService.validate', () => {
         });
 
     it('passes an answer forms-api would accept', async () => {
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         expect(await AnswerValidatorService.validate(job())).toEqual(job());
     });
 
     it('fails, without retries, an answer that breaks the form schema', async () => {
         // Answers used to be stored as they came out of the queue.
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         for (const data of [
             { ...VALID, mail: 'not-an-email' },
             { ...VALID, age: 7 },
@@ -115,7 +116,7 @@ describe('AnswerValidatorService.validate', () => {
     });
 
     it('fails an answer for a form that does not exist or is not open', async () => {
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         for (const [formId, message] of [
             ['missing-form', 'Form not found'],
             ['draft-form', 'not accepting answers (draft)'],
@@ -129,7 +130,7 @@ describe('AnswerValidatorService.validate', () => {
     });
 
     it('stores answers still in the queue when their form closed a moment ago', async () => {
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         expect(CLOSE_GRACE_MS).toBeGreaterThan(60_000);
         expect(await AnswerValidatorService.validate(job({ formId: 'just-closed' }))).toEqual(
             job({ formId: 'just-closed' }),
@@ -137,7 +138,7 @@ describe('AnswerValidatorService.validate', () => {
     });
 
     it('fails a job without the shape forms-api enqueues', async () => {
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         for (const bad of [
             null,
             'text',
@@ -156,7 +157,7 @@ describe('AnswerValidatorService.validate', () => {
 
     it('reads a form from Postgres once per cache period', async () => {
         const fake = db();
-        AnswerValidatorService.setDb(fake);
+        AnswerValidatorService.setDb(fake as unknown as FormsDb);
         await AnswerValidatorService.validate(job());
         await AnswerValidatorService.validate(job());
         expect(fake.queries).toBe(1);
@@ -171,7 +172,7 @@ describe('AnswerValidatorService.validate', () => {
         // sent in the seconds after the form opened (or changed).
         const rows = { 'opening-form': { status: 'scheduled', endsAt: null, validationSchema: SCHEMA } };
         const fake = fakeDb(rows);
-        AnswerValidatorService.setDb(fake);
+        AnswerValidatorService.setDb(fake as unknown as FormsDb);
         await rejection(AnswerValidatorService.validate(job({ formId: 'opening-form' })));
 
         rows['opening-form'].status = 'open';
@@ -188,7 +189,7 @@ describe('AnswerValidatorService.validate', () => {
     });
 
     it('accepts exactly what forms-api accepts', async () => {
-        AnswerValidatorService.setDb(db());
+        AnswerValidatorService.setDb(db() as unknown as FormsDb);
         const samples = [
             VALID,
             { mail: 'ada@example.com', terms: true },
@@ -217,8 +218,8 @@ describe('handleAnswerJob', () => {
 
     it('stores a valid answer and never an invalid one', async () => {
         const db = fakeDb({ 'open-form': { status: 'open', endsAt: null, validationSchema: SCHEMA } });
-        AnswerValidatorService.setDb(db);
-        WriterService.setDb(db);
+        AnswerValidatorService.setDb(db as unknown as FormsDb);
+        WriterService.setDb(db as unknown as FormsDb);
 
         const invalid = await rejection(handleAnswerJob(job({ data: { ...VALID, injected: 'x' } })));
         expect(invalid).toBeInstanceOf(UnrecoverableError);

@@ -2,6 +2,7 @@ import { answers } from '@forms-app/shared/db';
 import { v4 as uuidv4 } from 'uuid';
 import type { AnswerJob } from '@forms-app/shared';
 import { config } from '../../app.config.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 interface AnswerRow {
     id: string;
@@ -28,11 +29,11 @@ interface PendingAnswer {
  * the buffer and fail every later batch with it, forever.
  */
 export class WriterService {
-    private static db: any;
+    private static db: FormsDb;
     private static buffer: PendingAnswer[] = [];
     private static flushTimer: ReturnType<typeof setInterval> | null = null;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 

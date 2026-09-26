@@ -12,7 +12,8 @@ import type {
 } from '@forms-app/shared';
 import { generateJsonSchema } from './schema-generator.ts';
 import { enforceConstraints } from '@forms-app/shared/validation';
-import type { FieldType } from '@forms-app/shared';
+import type { FieldType, FormStatus } from '@forms-app/shared';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 100;
@@ -32,9 +33,9 @@ export function normalizePagination(page: number, pageSize: number): { page: num
 }
 
 export class FormService {
-    private static db: any;
+    private static db: FormsDb;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 
@@ -105,7 +106,7 @@ export class FormService {
         };
 
         // One transaction: a failed field insert used to leave a form without fields.
-        await this.db.transaction(async (tx: any) => {
+        await this.db.transaction(async (tx) => {
             await tx.insert(forms).values(form);
             if (fieldRecords.length > 0) {
                 await tx.insert(formFields).values(fieldRecords);
@@ -164,7 +165,7 @@ export class FormService {
 
         // One transaction: the fields used to be deleted first, so a failed
         // insert left the form with none.
-        await this.db.transaction(async (tx: any) => {
+        await this.db.transaction(async (tx) => {
             if (fieldRecords) {
                 await tx.delete(formFields).where(eq(formFields.formId, id));
                 if (fieldRecords.length > 0) {
@@ -181,7 +182,7 @@ export class FormService {
         await this.db.delete(forms).where(eq(forms.id, id));
     }
 
-    static async setStatus(id: string, status: string): Promise<void> {
+    static async setStatus(id: string, status: FormStatus): Promise<void> {
         await this.db.update(forms).set({ status, updatedAt: new Date() }).where(eq(forms.id, id));
     }
 

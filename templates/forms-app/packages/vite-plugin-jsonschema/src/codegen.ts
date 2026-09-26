@@ -1,18 +1,14 @@
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { transformJsonSchemaToZod } from './transform.ts';
+import { transformJsonSchemaToZod, type JsonSchema } from './transform.ts';
 
 export interface SchemaEntry {
     id: string;
-    schema: {
-        type: 'object';
-        properties: Record<string, unknown>;
-        required?: string[];
-    };
+    schema: JsonSchema;
 }
 
 export function generateZodFile(entry: SchemaEntry, outputPath: string): string {
-    const zodSource = transformJsonSchemaToZod(entry.schema as any);
+    const zodSource = transformJsonSchemaToZod(entry.schema);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, zodSource, 'utf-8');
     return zodSource;

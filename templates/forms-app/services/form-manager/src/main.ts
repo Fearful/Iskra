@@ -7,6 +7,7 @@ import router from './interfaces/http/router.ts';
 import { PrerenderService } from './domain/prerender/prerender.service.ts';
 import { LifecycleService } from './domain/lifecycle/lifecycle.service.ts';
 import { Hono } from 'hono';
+import { asFormsDb } from '@forms-app/shared/db/client';
 
 const app = new App({ name: 'FormManager' });
 
@@ -41,10 +42,11 @@ async function setup() {
     const redis = app.context.get('kv')?.client;
     if (!redis) throw new Error('Redis client not available (KVManager with the redis driver)');
 
-    PrerenderService.setDb(dbDriver.db);
+    const db = asFormsDb(dbDriver.db);
+    PrerenderService.setDb(db);
     PrerenderService.setRedis(redis);
 
-    LifecycleService.setDb(dbDriver.db);
+    LifecycleService.setDb(db);
     LifecycleService.setRedis(redis);
 
     console.log('Form Manager services initialized');

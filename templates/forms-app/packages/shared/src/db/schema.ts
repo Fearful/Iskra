@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, integer, jsonb, pgEnum, uniqueIndex, boolean } from 'drizzle-orm/pg-core';
+import type { CreateFieldInput, FieldOption, JsonSchema } from '../types/form.ts';
 
 export const formStatusEnum = pgEnum('form_status', ['draft', 'scheduled', 'open', 'closed']);
 
@@ -31,8 +32,8 @@ export const forms = pgTable(
         title: text('title').notNull(),
         description: text('description'),
         slug: text('slug').notNull(),
-        schema: jsonb('schema'),
-        validationSchema: jsonb('validation_schema'),
+        schema: jsonb('schema').$type<CreateFieldInput[]>(),
+        validationSchema: jsonb('validation_schema').$type<JsonSchema>(),
         startsAt: timestamp('starts_at'),
         endsAt: timestamp('ends_at'),
         status: formStatusEnum('status').notNull().default('draft'),
@@ -52,7 +53,7 @@ export const formFields = pgTable('form_fields', {
     name: text('name').notNull(),
     position: integer('position').notNull().default(0),
     required: boolean('required').notNull().default(false),
-    options: jsonb('options'),
+    options: jsonb('options').$type<FieldOption[]>(),
     maxLength: integer('max_length'),
     min: integer('min'),
     max: integer('max'),
@@ -66,7 +67,7 @@ export const answers = pgTable('answers', {
     formId: text('form_id')
         .notNull()
         .references(() => forms.id, { onDelete: 'cascade' }),
-    data: jsonb('data').notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull(),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
     ipHash: text('ip_hash'),
     recaptchaScore: integer('recaptcha_score'),

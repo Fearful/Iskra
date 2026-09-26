@@ -3,6 +3,7 @@ import { eq, and, lte, or, isNull } from 'drizzle-orm';
 import { FormStatus } from '@forms-app/shared';
 import { internalApiHeaders } from '@forms-app/shared/internal-api';
 import { config } from '../app.config.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 /** A POST to form-manager's /internal API, which requires the internal token. */
 function formManager(path: string, body: unknown): Promise<Response> {
@@ -14,9 +15,9 @@ function formManager(path: string, body: unknown): Promise<Response> {
 }
 
 export class SchedulerService {
-    private static db: any;
+    private static db: FormsDb;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 

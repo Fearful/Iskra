@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
 import { WriterService } from '../src/domain/writer/writer.service';
 import { config } from '../src/app.config.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 function makeJob(formId = 'form-1') {
     return { formId, data: { name: 'x' }, ipHash: 'hash', recaptchaScore: 0.9 } as any;
@@ -59,7 +60,7 @@ describe('WriterService batching', () => {
 
     it('settles a job only once its answer is stored', async () => {
         const db = makeFakeDb();
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
 
         const pending = WriterService.bufferAnswer(makeJob('form-a'));
         // Buffered, not stored: the job must not complete yet (a crash here
@@ -77,7 +78,7 @@ describe('WriterService batching', () => {
 
     it('auto-flushes once the buffer reaches the configured max size', async () => {
         const db = makeFakeDb();
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
 
         const jobs = Array.from({ length: config.batch.maxSize }, () => WriterService.bufferAnswer(makeJob()));
         await Promise.all(jobs);
@@ -89,7 +90,7 @@ describe('WriterService batching', () => {
 
     it('flush is a no-op on an empty buffer', async () => {
         const db = makeFakeDb();
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
         await WriterService.flush();
         expect(db.calls).toBe(0);
     });
@@ -98,7 +99,7 @@ describe('WriterService batching', () => {
         // An answer queued before its form was deleted: its FK violation
         // failed the batch, which went back to the buffer and failed forever.
         const db = makeFakeDb('deleted-form');
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
 
         const bad = WriterService.bufferAnswer(makeJob('deleted-form'));
         const good = [WriterService.bufferAnswer(makeJob('live')), WriterService.bufferAnswer(makeJob('live'))];
@@ -124,7 +125,7 @@ describe('WriterService batching', () => {
         }) as any);
 
         const db = makeFakeDb();
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
         const pending = WriterService.bufferAnswer(makeJob());
 
         WriterService.startFlushTimer();
@@ -141,7 +142,7 @@ describe('WriterService batching', () => {
 
     it('shutdown stops the timer and flushes remaining answers', async () => {
         const db = makeFakeDb();
-        WriterService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
 
         const pending = WriterService.bufferAnswer(makeJob('final'));
         await WriterService.shutdown();

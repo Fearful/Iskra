@@ -165,8 +165,11 @@ app.post('/forms/:id/prerender', async (c) => {
         const res = await formManager(`prerender/${encodeURIComponent(id)}`);
         const data = await res.json();
         return c.json({ data });
-    } catch (err: any) {
-        return c.json({ error: 'Failed to trigger prerender', details: err.message }, 502);
+    } catch (err) {
+        return c.json(
+            { error: 'Failed to trigger prerender', details: err instanceof Error ? err.message : String(err) },
+            502,
+        );
     }
 });
 

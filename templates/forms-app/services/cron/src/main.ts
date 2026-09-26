@@ -6,6 +6,7 @@ import { config } from './app.config.ts';
 import { SchedulerService } from './domain/scheduler.service.ts';
 import { RedisPopulatorService } from './domain/redis-populator.service.ts';
 import { Hono } from 'hono';
+import { asFormsDb } from '@forms-app/shared/db/client';
 
 const app = new App({ name: 'Cron' });
 
@@ -39,8 +40,9 @@ async function setup() {
     const redis = app.context.get('kv')?.client;
     if (!redis) throw new Error('Redis client not available (KVManager with the redis driver)');
 
-    SchedulerService.setDb(dbDriver.db);
-    RedisPopulatorService.setDb(dbDriver.db);
+    const db = asFormsDb(dbDriver.db);
+    SchedulerService.setDb(db);
+    RedisPopulatorService.setDb(db);
     RedisPopulatorService.setRedis(redis);
 }
 
