@@ -87,7 +87,6 @@ Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permite
 
 Cabeceras permitidas:
 
-- `Reply-To`
 - `In-Reply-To`
 - `References`
 - `List-Unsubscribe`
@@ -95,6 +94,8 @@ Cabeceras permitidas:
 - `List-Id`
 - `X-Mailgun-Variables`
 - `X-Mailgun-Tag`
+
+`Reply-To` no esta entre ellas: se define con `replyTo`, cuya direccion se valida como la de un destinatario. Un `Reply-To` en `headers` lanza `Header "Reply-To" is not allowed: use message.replyTo`.
 
 ```typescript
 await mailer.send({

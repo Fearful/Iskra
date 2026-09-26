@@ -87,7 +87,6 @@ Headers passed in `headers` are not forwarded blindly: only an allowlist of name
 
 Allowed headers:
 
-- `Reply-To`
 - `In-Reply-To`
 - `References`
 - `List-Unsubscribe`
@@ -95,6 +94,8 @@ Allowed headers:
 - `List-Id`
 - `X-Mailgun-Variables`
 - `X-Mailgun-Tag`
+
+`Reply-To` is not one of them: set it with `replyTo`, whose address is checked like a recipient's. A `Reply-To` in `headers` throws `Header "Reply-To" is not allowed: use message.replyTo`.
 
 ```typescript
 await mailer.send({

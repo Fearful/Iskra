@@ -99,6 +99,14 @@ describe('SMTP', () => {
             adapter.send({ to: 'u@example.com', subject: 's', text: 't', headers: { 'X-Custom': 'v' } }),
         ).rejects.toThrow(/not allowed/);
     });
+
+    it('refuses Reply-To in headers, pointing to message.replyTo', async () => {
+        const { adapter, sent } = smtpAdapter();
+        await expect(
+            adapter.send({ to: 'u@example.com', subject: 's', text: 't', headers: { 'reply-to': 'a@evil.test' } }),
+        ).rejects.toThrow('Header "reply-to" is not allowed: use message.replyTo');
+        expect(sent).toEqual([]);
+    });
 });
 
 describe('SES', () => {
