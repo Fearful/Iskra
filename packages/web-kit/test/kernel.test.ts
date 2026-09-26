@@ -14,6 +14,7 @@ describe('Web-Kit Kernel', () => {
         kernel.registerFeature(requestId);
 
         await kernel.initialize();
+        expect(kernel.getFeatureNames()).toEqual(['cors', 'request-id']);
 
         const app = kernel.getApp();
         expect(app).toBeDefined();

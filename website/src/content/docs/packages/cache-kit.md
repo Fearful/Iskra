@@ -125,6 +125,8 @@ the longest-lived entry in it:
   keys are dropped on each write, and past 10,000 entries the oldest ones are
   deleted along with their data.
 
+If indexing a tag fails (the store errors), `set()` deletes the entry it just wrote and rejects with that error, so no entry is left that `invalidateTag()` would miss.
+
 Indexes written before this version (a JSON list per tag) are still read and
 deleted by `invalidateTag()`.
 

@@ -86,6 +86,59 @@ describe.if(posix)('process groups', () => {
         expect(await waitFor(() => count('^sleep 7703') === 0)).toBe(true);
         await (app as any).stop();
     });
+
+    it('restarts only once the children of the crashed instance are gone', async () => {
+        // The child left behind takes ~400 ms to exit on SIGTERM, far longer
+        // than the 50 ms backoff: the restart used to run next to it.
+        const child = `sh -c 'trap "sleep 0.4; exit 0" TERM; while :; do sleep 0.0771; done'`;
+        const { app } = makeManager({
+            slowchild: {
+                command: 'sh',
+                args: ['-c', `${child} & sleep 0.1; exit 1`],
+                mode: 'daemon',
+                restartOnCrash: true,
+                maxRestarts: 3,
+                restartBackoff: { initialMs: 50, factor: 1 },
+            },
+        });
+        let maxed = false;
+        app.events.on('process:max-restarts', () => {
+            maxed = true;
+        });
+        await app.start();
+
+        const pattern = '^sh -c trap .*sleep 0.0771';
+        let most = 0;
+        const deadline = Date.now() + 8000;
+        while (!(maxed && count(pattern) === 0) && Date.now() < deadline) {
+            most = Math.max(most, count(pattern));
+            await Bun.sleep(20);
+        }
+        expect(maxed).toBe(true);
+        expect(most).toBe(1);
+        expect(count(pattern)).toBe(0);
+        await (app as any).stop();
+    }, 10_000);
+
+    it('stop() waits for the children of a crashed process being terminated', async () => {
+        // Regression: stop() dropped the pending cleanup without waiting for
+        // it, so the child left behind outlived stop().
+        const child = `sh -c 'trap "sleep 0.4; exit 0" TERM; while :; do sleep 0.0772; done'`;
+        const { app } = makeManager({
+            leaver: { command: 'sh', args: ['-c', `${child} & sleep 0.1; exit 1`], mode: 'daemon' },
+        });
+        let exited = false;
+        app.events.on('process:exit', () => {
+            exited = true;
+        });
+        await app.start();
+
+        const pattern = '^sh -c trap .*sleep 0.0772';
+        expect(await waitFor(() => exited)).toBe(true);
+        expect(count(pattern)).toBe(1);
+        await (app as any).stop();
+        expect(count(pattern)).toBe(0);
+    });
 });
 
 describe.if(posix)('timers', () => {
@@ -147,6 +200,23 @@ describe.if(posix)('send()', () => {
 });
 
 describe('spawn errors', () => {
+    it('spawn() rejects before the manager is initialized, instead of resolving without a process', async () => {
+        const pm = new ProcessManager();
+        await expect(pm.spawn('early', { command: 'sleep', args: ['7708'], mode: 'daemon' } as any)).rejects.toThrow(
+            'ProcessManager is not initialized: register it on an App first',
+        );
+    });
+
+    it('spawn() rejects after stop()', async () => {
+        const { app, pm } = makeManager();
+        await app.start();
+        await app.stop();
+        await expect(pm.spawn('late', { command: 'sleep', args: ['7709'], mode: 'daemon' } as any)).rejects.toThrow(
+            'ProcessManager is stopped',
+        );
+        expect(count('^sleep 7709')).toBe(0);
+    });
+
     it('spawn() rejects when the command does not exist', async () => {
         const { app, pm } = makeManager();
         await app.start();

@@ -8,21 +8,31 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.iskra.client.IskraConfig;
 import dev.iskra.client.exception.IskraException;
+import dev.iskra.client.exception.RateLimitException;
 import dev.iskra.client.response.ErrorResponse;
 import dev.iskra.client.response.IskraResponse;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -89,6 +99,14 @@ public class HttpClientWrapper {
         return toResponse(send("GET", path, null, null), type(responseType));
     }
 
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, Class<T> responseType) {
+        return get(withQuery(path, query), responseType);
+    }
+
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, TypeReference<T> responseType) {
+        return get(withQuery(path, query), responseType);
+    }
+
     public <T> IskraResponse<T> post(String path, Object body, Class<T> responseType) {
         return toResponse(sendJson("POST", path, body), type(responseType));
     }
@@ -142,10 +160,11 @@ public class HttpClientWrapper {
 
         // The timeout covers the whole exchange: HttpRequest.timeout() stops
         // at the response headers, so a server that stalled mid-body blocked
-        // the caller forever.
+        // the caller forever. The body is read up to maxResponseBytes: an
+        // unbounded one filled the memory of the calling process.
         HttpResponse<byte[]> response;
         CompletableFuture<HttpResponse<byte[]>> future =
-                httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+                httpClient.sendAsync(builder.build(), limitedBody(config.getMaxResponseBytes()));
         try {
             response = future.get(config.getTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -157,6 +176,11 @@ public class HttpClientWrapper {
             throw new IskraException("HTTP request timed out after " + config.getTimeout().toMillis() + " ms", e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
+            for (Throwable t = cause; t != null; t = t.getCause()) {
+                if (t instanceof IskraException) {
+                    throw (IskraException) t;
+                }
+            }
             // A refused connection has no message, only its type.
             String reason = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
             throw new IskraException("HTTP request failed: " + reason, cause);
@@ -165,6 +189,80 @@ public class HttpClientWrapper {
             throw toException(response);
         }
         return response;
+    }
+
+    /**
+     * Reads the body into a byte array, failing with an {@link IskraException}
+     * as soon as it is known to exceed {@code limit}: from a larger declared
+     * Content-Length, or once the bytes received pass it.
+     */
+    static HttpResponse.BodyHandler<byte[]> limitedBody(long limit) {
+        return info -> new LimitedBodySubscriber(limit, info.headers().firstValueAsLong("Content-Length"));
+    }
+
+    private static IskraException tooLarge(long limit) {
+        return new IskraException("HTTP response larger than maxResponseBytes (" + limit + " bytes)", 0);
+    }
+
+    private static final class LimitedBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
+        private final long limit;
+        private final OptionalLong declaredLength;
+        private final CompletableFuture<byte[]> result = new CompletableFuture<>();
+        private final ByteArrayOutputStream body = new ByteArrayOutputStream();
+        private Flow.Subscription subscription;
+        private long received;
+
+        LimitedBodySubscriber(long limit, OptionalLong declaredLength) {
+            this.limit = limit;
+            this.declaredLength = declaredLength;
+        }
+
+        @Override
+        public CompletionStage<byte[]> getBody() {
+            return result;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            if (declaredLength.isPresent() && declaredLength.getAsLong() > limit) {
+                fail();
+                return;
+            }
+            subscription.request(Long.MAX_VALUE);
+        }
+
+        @Override
+        public void onNext(List<ByteBuffer> buffers) {
+            if (result.isDone()) {
+                return;
+            }
+            for (ByteBuffer buffer : buffers) {
+                received += buffer.remaining();
+                if (received > limit) {
+                    fail();
+                    return;
+                }
+                byte[] chunk = new byte[buffer.remaining()];
+                buffer.get(chunk);
+                body.write(chunk, 0, chunk.length);
+            }
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            result.completeExceptionally(error);
+        }
+
+        @Override
+        public void onComplete() {
+            result.complete(body.toByteArray());
+        }
+
+        private void fail() {
+            subscription.cancel();
+            result.completeExceptionally(tooLarge(limit));
+        }
     }
 
     public HttpResponse<byte[]> send(String method, String path, HttpRequest.BodyPublisher body, String contentType) {
@@ -269,7 +367,10 @@ public class HttpClientWrapper {
                 error.setError(text);
             }
         }
-        return IskraException.fromErrorResponse(status, error);
+        Duration retryAfter = status == 429
+                ? RateLimitException.parseRetryAfter(response.headers().firstValue("Retry-After").orElse(null))
+                : null;
+        return IskraException.fromErrorResponse(status, error, retryAfter);
     }
 
     /** Accepts {@code "error": {"message", "code"}} as well as a string. */
@@ -300,6 +401,39 @@ public class HttpClientWrapper {
 
     private JavaType type(TypeReference<?> type) {
         return objectMapper.getTypeFactory().constructType(type);
+    }
+
+    /**
+     * Appends {@code query} to {@code path} (after {@code &} when it already
+     * has a query), keys and values percent-encoded as UTF-8. Null values are
+     * left out, an {@link Iterable} or array repeats its key for each element,
+     * and anything else is sent as {@code String.valueOf(value)}.
+     */
+    static String withQuery(String path, Map<String, ?> query) {
+        if (query == null || query.isEmpty()) {
+            return path;
+        }
+        StringBuilder url = new StringBuilder(path);
+        String separator = !path.contains("?") ? "?" : path.endsWith("?") || path.endsWith("&") ? "" : "&";
+        for (Map.Entry<String, ?> entry : query.entrySet()) {
+            Object value = entry.getValue();
+            Iterable<?> values = value instanceof Iterable ? (Iterable<?>) value
+                    : value instanceof Object[] ? Arrays.asList((Object[]) value)
+                    : Collections.singletonList(value);
+            for (Object item : values) {
+                if (item == null) {
+                    continue;
+                }
+                url.append(separator).append(encode(entry.getKey()))
+                        .append('=').append(encode(String.valueOf(item)));
+                separator = "&";
+            }
+        }
+        return url.toString();
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private static String originOf(String url) {

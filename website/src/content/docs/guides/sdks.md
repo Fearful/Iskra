@@ -36,7 +36,7 @@ Client for Java 11+ compatible with Spring MVC, Spring Boot, Jakarta EE, and any
 - Automatic mapping of Iskra errors to typed Java exceptions
 - Single external dependency: Jackson (JSON)
 
-**Installation (Maven):**
+**Installation (Maven):** the SDK is not on Maven Central yet, so install it from source first (`mvn install` in `sdks/java/iskra-client` of a clone of this repository), then add:
 ```xml
 <dependency>
     <groupId>dev.iskra</groupId>
@@ -53,6 +53,7 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
 
 // Rutas personalizadas
 var resultado = iskra.post("/api/ordenes", datos, Orden.class);
+var pagina = iskra.get("/api/productos", Map.of("pagina", 2), List.class);  // ?pagina=2
 
 // Sub-clientes
 iskra.health().check();
@@ -74,9 +75,11 @@ Client for Python 3.9+ compatible with FastAPI, Django, Flask, and any Python ap
 - Context manager (`with` / `async with`)
 - Single external dependency: httpx
 
-**Installation:**
+**Installation:** the SDK is not on PyPI yet, so install it from source:
 ```bash
-pip install iskra-client
+pip install "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
+# or, from a clone of this repository:
+pip install -e sdks/python/iskra-client
 ```
 
 **Basic usage:**
@@ -90,6 +93,7 @@ iskra = IskraClient(
 
 # Rutas personalizadas
 resultado = iskra.post("/api/ordenes", json=datos)
+pagina = iskra.get("/api/productos", params={"pagina": 2})  # ?pagina=2
 
 # Sub-clientes
 iskra.health.check()
@@ -136,6 +140,11 @@ iskra.auth().signOut(session);
   per user in the backend (by client IP or email), which the SDKs do not do.
   `rateLimit: false` leaves password guessing unthrottled: use it only when the
   backend already has such a limit.
+- A 429 raises `RateLimitException`. When the response has a `Retry-After` header
+  (seconds or an HTTP-date), the wait is in `e.retry_after` (Python, seconds as a
+  float) or `e.getRetryAfter()` (Java, `Optional<Duration>`); it is `None` / empty
+  when the header is absent or invalid, as with web-kit's own rate limits, which
+  do not send one.
 - The storage client calls UploadFeature's routes, which usually require a
   signed-in user: use it on `with_session(...)` / `withSession(...)`. Every user
   shares the project's files, so an `authorize` that only checks for a session lets

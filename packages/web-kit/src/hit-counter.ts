@@ -39,6 +39,12 @@ export class HitCounter {
         return 1;
     }
 
+    /** When `key`'s current window ends (epoch ms), or undefined if it has none. */
+    resetAt(key: string): number | undefined {
+        const entry = this.hits.get(key);
+        return entry && Date.now() < entry.resetAt ? entry.resetAt : undefined;
+    }
+
     /** How many keys are tracked. */
     get size(): number {
         return this.hits.size;
@@ -55,4 +61,13 @@ export class HitCounter {
     dispose(): void {
         clearInterval(this.sweeper);
     }
+}
+
+/**
+ * The `Retry-After` value (whole seconds, at least 1) for a window ending at
+ * `resetAt` (epoch ms); `windowMs` from now when the end is not known.
+ */
+export function retryAfterSeconds(resetAt: number | undefined, windowMs: number): string {
+    const now = Date.now();
+    return String(Math.max(1, Math.ceil(((resetAt ?? now + windowMs) - now) / 1000)));
 }

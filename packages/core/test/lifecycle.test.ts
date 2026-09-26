@@ -4,10 +4,17 @@ import { App } from '../src/app';
 import { LifecycleError } from '../src/errors';
 import type { Driver } from '../src/types';
 
-function recorder(log: string[], name: string, opts: { failStart?: boolean; failStop?: boolean } = {}): Driver {
+function recorder(
+    log: string[],
+    name: string,
+    opts: { failInit?: boolean; failStart?: boolean; failStop?: boolean } = {},
+): Driver {
     return {
         name,
-        init: () => {},
+        init: () => {
+            if (opts.failInit) throw new Error(`${name} init failed`);
+            log.push(`init:${name}`);
+        },
         start: async () => {
             if (opts.failStart) throw new Error(`${name} failed`);
             log.push(`start:${name}`);
@@ -20,8 +27,9 @@ function recorder(log: string[], name: string, opts: { failStart?: boolean; fail
 }
 
 describe('App lifecycle', () => {
-    it('stops the drivers already started, in reverse, when one fails to start', async () => {
-        // Regression: Promise.all left the other drivers running (ports bound).
+    it('stops every driver, in reverse, when one fails to start', async () => {
+        // Regression: Promise.all left the other drivers running (ports bound),
+        // and the failing driver was not stopped although init() had opened it.
         const log: string[] = [];
         const app = new App({ name: 'Rollback', logger: { level: 'silent' } });
         app.register(recorder(log, 'db'))
@@ -29,11 +37,49 @@ describe('App lifecycle', () => {
             .register(recorder(log, 'queue', { failStart: true }));
 
         await expect(app.start()).rejects.toThrow('queue failed');
-        expect(log).toEqual(['start:db', 'start:web', 'stop:web', 'stop:db']);
+        expect(log.filter((e) => !e.startsWith('init:'))).toEqual([
+            'start:db',
+            'start:web',
+            'stop:queue',
+            'stop:web',
+            'stop:db',
+        ]);
 
         // A later stop() does not stop them a second time.
         await app.stop();
-        expect(log).toHaveLength(4);
+        expect(log).toHaveLength(8);
+    });
+
+    it('stops the drivers initialized so far, the failing one included, when init fails', async () => {
+        // Regression: a failing init() left the drivers before it with their
+        // connections open, and nothing stopped them.
+        const log: string[] = [];
+        const app = new App({ name: 'InitRollback', logger: { level: 'silent' } });
+        app.register(recorder(log, 'db'))
+            .register(recorder(log, 'cache'))
+            .register(recorder(log, 'web', { failInit: true }))
+            .register(recorder(log, 'queue'));
+
+        await expect(app.start()).rejects.toThrow('web init failed');
+        expect(log).toEqual(['init:db', 'init:cache', 'stop:web', 'stop:cache', 'stop:db']);
+
+        // A later stop() stops nothing more.
+        await app.stop();
+        expect(log).toHaveLength(5);
+    });
+
+    it('does not stop a driver without an init hook when a later init fails', async () => {
+        // Regression: the rollback took every driver up to the failing one,
+        // so a driver with no init() (never initialized) was stopped as well.
+        // `init` is required by the type, but a plain-JS driver can omit it.
+        const log: string[] = [];
+        const app = new App({ name: 'InitRollbackNoHook', logger: { level: 'silent' } });
+        app.register(recorder(log, 'db'))
+            .register({ name: 'plain', stop: async () => void log.push('stop:plain') } as unknown as Driver)
+            .register(recorder(log, 'web', { failInit: true }));
+
+        await expect(app.start()).rejects.toThrow('web init failed');
+        expect(log).toEqual(['init:db', 'stop:web', 'stop:db']);
     });
 
     it('stops drivers in reverse start order and reports every failure', async () => {
@@ -47,7 +93,7 @@ describe('App lifecycle', () => {
         const err = await app.stop().catch((e) => e);
         expect(err).toBeInstanceOf(LifecycleError);
         expect((err as LifecycleError).failures).toHaveLength(1);
-        expect(log.slice(3)).toEqual(['stop:socket', 'stop:web', 'stop:db']);
+        expect(log.slice(6)).toEqual(['stop:socket', 'stop:web', 'stop:db']);
     });
 
     it('makes a concurrent stop() wait for the stop already in progress', async () => {

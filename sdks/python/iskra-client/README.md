@@ -4,13 +4,20 @@ Cliente Python para interactuar con servicios Iskra a traves de HTTP. Compatible
 
 ## Instalacion
 
+El SDK todavia no esta publicado en PyPI: instalalo desde el codigo fuente.
+
 ```bash
-pip install iskra-client
+pip install "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
 ```
 
-O con Poetry:
+O desde un clon del repositorio:
 ```bash
-poetry add iskra-client
+pip install -e sdks/python/iskra-client
+```
+
+Con Poetry:
+```bash
+poetry add "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
 ```
 
 ## Requisitos
@@ -71,7 +78,9 @@ iskra = IskraClient(
 no de cada lectura: un servidor que manda un byte cada tanto ya no puede retener la
 llamada indefinidamente. `max_response_bytes` corta la lectura de un cuerpo mas grande
 (contado ya descomprimido); en los dos casos el SDK lanza `IskraException` con
-`status_code` 0. Para descargas grandes de storage, subi `max_response_bytes`.
+`status_code` 0. El limite tambien corta `storage.download()`: el default (10 MiB) es el
+mismo que el `maxFileSize` por defecto del UploadFeature, asi que si el servicio sube
+`maxFileSize`, subi `max_response_bytes` al menos a ese valor.
 
 Un solo `IskraClient` puede atender a todos los usuarios de tu backend: reutiliza
 conexiones y **nunca guarda cookies**, asi que la sesion de un usuario no se filtra
@@ -247,6 +256,9 @@ resp.message      # str | None
 resp.status_code  # int
 ```
 
+`params` se agrega a la query que ya tenga el path; los valores `None` se omiten y una
+lista repite la clave (`{"tag": ["a", "b"]}` → `?tag=a&tag=b`).
+
 ## Manejo de Errores
 
 El SDK mapea automaticamente las respuestas de error de Iskra a excepciones Python tipadas:
@@ -276,8 +288,8 @@ except ForbiddenException as e:
     # HTTP 403
     print(f"Prohibido: {e}")
 except RateLimitException as e:
-    # HTTP 429
-    print("Limite de peticiones excedido")
+    # HTTP 429; retry_after: segundos a esperar segun Retry-After, o None
+    print(f"Limite de peticiones excedido, reintentar en {e.retry_after} s")
 except IskraException as e:
     # Cualquier otro error
     print(f"Error {e.status_code}: {e}")
@@ -298,7 +310,8 @@ except IskraException as e:
 El mensaje sale de `error` o `message` del cuerpo (los formatos de
 `ErrorHandlerFeature`, `errorResponse()` y Better Auth), `error_code` de `code` y
 `details` de `details`; un cuerpo de texto (por ejemplo, el `404 Not Found` de una
-ruta inexistente) queda como mensaje.
+ruta inexistente) queda como mensaje. En un 429, `retry_after` sale del header
+`Retry-After` (segundos o fecha HTTP) en segundos, y es `None` si falta o es invalido.
 
 ## Integracion con FastAPI
 

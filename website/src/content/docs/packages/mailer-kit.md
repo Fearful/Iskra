@@ -87,7 +87,6 @@ Headers passed in `headers` are not forwarded blindly: only an allowlist of name
 
 Allowed headers:
 
-- `Reply-To`
 - `In-Reply-To`
 - `References`
 - `List-Unsubscribe`
@@ -95,6 +94,8 @@ Allowed headers:
 - `List-Id`
 - `X-Mailgun-Variables`
 - `X-Mailgun-Tag`
+
+`Reply-To` is not one of them: set it with `replyTo`, whose address is checked like a recipient's. A `Reply-To` in `headers` throws `Header "Reply-To" is not allowed: use message.replyTo`.
 
 ```typescript
 await mailer.send({
@@ -115,7 +116,7 @@ await mailer.send({
 
 ### SES
 
-Uses `@aws-sdk/client-sesv2`, lazily loaded only when sending:
+Uses `@aws-sdk/client-sesv2`, lazily loaded on the first send; the adapter builds one `SESv2Client` and reuses it for every later send:
 
 ```typescript
 const mailer = await createEmailAdapter({
@@ -166,7 +167,7 @@ await mailer.send({ to: 'a@example.com, b@example.com', subject: 'x', text: 't' 
 
 `checkRecipients(value)` applies the same rules, if you want to validate input yourself.
 
-The `from` display name (and a recipient's) is quoted (or encoded, when it is not ASCII) by every adapter, so it cannot add another address. A string attachment `content` is text; pass a `Uint8Array` for binary files.
+Every adapter except the mock requires a sender: the message's `from` or the config's, or `send()` throws `From address required` before contacting the provider (Mailgun used to send without one). The `from` display name (and a recipient's) is quoted (or encoded, when it is not ASCII) by every adapter, so it cannot add another address. A string attachment `content` is text; pass a `Uint8Array` for binary files.
 
 ### Templates (not supported yet)
 

@@ -11,7 +11,7 @@
  * - errorMessage object per property (AJV ajv-errors format)
  */
 
-interface JsonSchemaProperty {
+export interface JsonSchemaProperty {
     type?: string;
     format?: string;
     minLength?: number;
@@ -26,7 +26,7 @@ interface JsonSchemaProperty {
     errorMessage?: Record<string, string>;
 }
 
-interface JsonSchema {
+export interface JsonSchema {
     type: 'object';
     properties: Record<string, JsonSchemaProperty>;
     required?: string[];
@@ -139,9 +139,7 @@ function transformProperty(
                 }
 
                 if (prop.pattern) {
-                    const msg = msgs.pattern
-                        ? `, '${escapeString(msgs.pattern)}'`
-                        : '';
+                    const msg = msgs.pattern ? `, '${escapeString(msgs.pattern)}'` : '';
                     // new RegExp(<string literal>): spliced into a /literal/, a "/" in the
                     // pattern ended the regex and the rest ran as code.
                     chain += `.regex(new RegExp(${JSON.stringify(prop.pattern)})${msg})`;

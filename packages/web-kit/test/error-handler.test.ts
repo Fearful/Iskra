@@ -188,6 +188,37 @@ describe('Error Handler Feature', () => {
         await kernel.shutdown();
     });
 
+    it('keeps the context of a 5xx HttpError out of the response', async () => {
+        const kernel = await createKernelWithErrorHandler();
+        const app = kernel.getApp();
+
+        app.get('/down', () => {
+            throw new HttpError(503, 'Down', { context: { dsn: 'x' } });
+        });
+
+        const res = await app.request('/down');
+        expect(res.status).toBe(503);
+        const json = (await res.json()) as any;
+        expect(json.error).toBe('Down');
+        expect(json.context).toBeUndefined();
+
+        await kernel.shutdown();
+    });
+
+    it('includes the context of a 5xx HttpError with includeStack', async () => {
+        const kernel = await createKernelWithErrorHandler(true);
+        const app = kernel.getApp();
+
+        app.get('/down', () => {
+            throw new HttpError(503, 'Down', { context: { dsn: 'x' } });
+        });
+
+        const json = (await (await app.request('/down')).json()) as any;
+        expect(json.context).toEqual({ dsn: 'x' });
+
+        await kernel.shutdown();
+    });
+
     it('logs client errors (4xx) at debug level and server errors at error level', async () => {
         // Regression: every 4xx was logged as an error, so any client could
         // fill the error log (and page whoever watches it) with 404s and 401s.

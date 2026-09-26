@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach, setSystemTime } from 'bun:test';
 
 // Test for the MEDIUM "rate-limit auth routes" finding
 // (src/features/auth/index.ts). The auth feature must apply per-IP rate limiting
@@ -57,6 +57,34 @@ describe('AuthFeature — per-IP auth-route rate limiting', () => {
 
         // Once the budget is exhausted the IP must be throttled.
         expect(last).toBe(429);
+    });
+
+    it('tells a throttled client when to retry (Retry-After)', async () => {
+        // Regression: the 429 had no Retry-After.
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new FakeDbFeature() as any);
+        kernel.registerFeature(
+            new AuthFeature(
+                { secret: VALID_SECRET, basePath: '/api/sso', rateLimit: { max: 1, windowMs: 60_000 } } as any,
+                fakeCreateAuth,
+            ),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        const from = { requestIP: () => ({ address: '198.51.100.7', family: 'IPv4', port: 40000 }) };
+
+        const start = Date.now();
+        try {
+            setSystemTime(new Date(start));
+            await app.request('/api/sso/sign-in/email', { method: 'POST' }, from);
+            setSystemTime(new Date(start + 15_000));
+            const limited = await app.request('/api/sso/sign-in/email', { method: 'POST' }, from);
+            expect(limited.status).toBe(429);
+            expect(limited.headers.get('Retry-After')).toBe('45');
+        } finally {
+            setSystemTime();
+            await kernel.shutdown();
+        }
     });
 
     it('does not throttle a different IP (behind a trusted proxy)', async () => {

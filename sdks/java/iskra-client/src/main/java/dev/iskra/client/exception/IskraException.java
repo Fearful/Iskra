@@ -2,6 +2,8 @@ package dev.iskra.client.exception;
 
 import dev.iskra.client.response.ErrorResponse;
 
+import java.time.Duration;
+
 public class IskraException extends RuntimeException {
 
     private final int statusCode;
@@ -35,6 +37,14 @@ public class IskraException extends RuntimeException {
      * {@code message} (Better Auth, the Kernel's default handler).
      */
     public static IskraException fromErrorResponse(int statusCode, ErrorResponse response) {
+        return fromErrorResponse(statusCode, response, null);
+    }
+
+    /**
+     * Like {@link #fromErrorResponse(int, ErrorResponse)}; a 429 carries
+     * {@code retryAfter} (see {@link RateLimitException#getRetryAfter()}).
+     */
+    public static IskraException fromErrorResponse(int statusCode, ErrorResponse response, Duration retryAfter) {
         String message = response.getError() != null ? response.getError()
                 : response.getMessage() != null ? response.getMessage()
                 : "HTTP " + statusCode;
@@ -54,7 +64,7 @@ public class IskraException extends RuntimeException {
             case 409:
                 return new ConflictException(message, code, details, requestId);
             case 429:
-                return new RateLimitException(message, code, details, requestId);
+                return new RateLimitException(message, code, details, requestId, retryAfter);
             default:
                 return new IskraException(message, statusCode, code, details, requestId);
         }

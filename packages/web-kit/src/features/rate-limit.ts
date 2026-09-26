@@ -3,27 +3,39 @@ import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { clientIpKey, getClientIp, type ClientIpHeader, type TrustProxy } from '../client-ip';
-import { DEFAULT_MAX_KEYS, HitCounter } from '../hit-counter';
+import { DEFAULT_MAX_KEYS, HitCounter, retryAfterSeconds } from '../hit-counter';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { CacheAdapter } from './cache';
 
 interface RateLimitStore {
-    /** Counts a hit for `key` and returns the count in its current window of `ttl` ms. */
-    increment(key: string, ttl: number): Promise<number>;
+    /**
+     * Counts a hit for `key` and returns the count in its current window of
+     * `ttl` ms, and when that window ends (epoch ms) if the store knows it.
+     */
+    increment(key: string, ttl: number): Promise<{ count: number; resetAt?: number }>;
 }
 
 class MemoryStore implements RateLimitStore {
     constructor(private counter: HitCounter) {}
 
-    async increment(key: string, ttl: number): Promise<number> {
-        return this.counter.hit(key, ttl);
+    async increment(key: string, ttl: number): Promise<{ count: number; resetAt?: number }> {
+        const count = this.counter.hit(key, ttl);
+        return { count, resetAt: this.counter.resetAt(key) };
     }
 }
 
 class CacheStoreWrapper implements RateLimitStore {
     constructor(private cache: CacheAdapter) {}
 
-    async increment(key: string, ttl: number): Promise<number> {
+    async increment(key: string, ttl: number): Promise<{ count: number; resetAt?: number }> {
+        const count = await this.count(key, ttl);
+        // The cache does not report a key's expiry. The first hit starts the
+        // window, so it ends at now + ttl; for later hits the header falls
+        // back to now + windowMs, an upper bound of the real reset.
+        return { count, resetAt: count === 1 ? Date.now() + ttl : undefined };
+    }
+
+    private async count(key: string, ttl: number): Promise<number> {
         // Atomic increment that also guarantees an expiry (Redis: one Lua call).
         // A separate GET + INCR lets the key expire in between, and INCR then
         // recreates it without a TTL — blocking that client forever.
@@ -117,27 +129,17 @@ export class RateLimitFeature implements Feature {
             return;
         }
 
-        let store = this.store;
-        if (!store && this.config.store === 'cache') {
-            const cache = c.get('cache');
-            if (cache) {
-                store = new CacheStoreWrapper(cache);
-            } else {
-                this.store ??= this.memoryStore(); // Fallback
-                store = this.store;
-            }
-        }
-
-        if (!store) {
-            await next();
-            return;
-        }
+        // initialize() always sets it before registering this middleware.
+        const store = this.store!;
 
         const key = this.config.keyGenerator ? this.config.keyGenerator(c) : this.defaultKeyGenerator(c);
         const rlKey = `${this.keyPrefix}${key}`;
-        const count = await store.increment(rlKey, this.config.windowMs);
+        const { count, resetAt } = await store.increment(rlKey, this.config.windowMs);
 
         if (count > this.config.max) {
+            // Set on the context, so the error handler's response carries it
+            // (and a custom handler's, when it answers through `c`).
+            c.header('Retry-After', retryAfterSeconds(resetAt, this.config.windowMs));
             if (this.config.handler) return this.config.handler(c);
             throw new HTTPException(429, { message: 'Too many requests' });
         }
@@ -145,7 +147,7 @@ export class RateLimitFeature implements Feature {
         if (this.config.standardHeaders) {
             c.header('X-RateLimit-Limit', String(this.config.max));
             c.header('X-RateLimit-Remaining', String(Math.max(0, this.config.max - count)));
-            c.header('X-RateLimit-Reset', String(Math.ceil((Date.now() + this.config.windowMs) / 1000)));
+            c.header('X-RateLimit-Reset', String(Math.ceil((resetAt ?? Date.now() + this.config.windowMs) / 1000)));
         }
 
         await next();

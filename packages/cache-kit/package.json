@@ -50,8 +50,8 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
-        "@iskra-bun/kv-kit": "workspace:*"
+        "@iskra-bun/core": "workspace:^",
+        "@iskra-bun/kv-kit": "workspace:^"
     },
     "devDependencies": {
         "@types/bun": "^1.3.5",

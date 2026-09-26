@@ -63,7 +63,9 @@ export class ErrorHandlerFeature implements Feature {
                 response.details = err.details;
             }
 
-            if (Object.keys(err.context).length > 0) {
+            // A 5xx's context describes the server's internals (a DSN, a host),
+            // not the client's request: kept out unless includeStack is on.
+            if (Object.keys(err.context).length > 0 && (status < 500 || this.config.includeStack)) {
                 response.context = err.context;
             }
 

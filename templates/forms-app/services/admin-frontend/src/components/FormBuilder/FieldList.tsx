@@ -48,15 +48,22 @@ export function FieldList({ fields, editingField, onEdit, onRemove, onUpdate }: 
                             <span style={{ color: '#9ca3af', marginLeft: '0.5rem', fontSize: '0.875rem' }}>
                                 {field.fieldType}
                             </span>
-                            {field.required && (
-                                <span style={{ color: '#dc2626', marginLeft: '0.25rem' }}>*</span>
-                            )}
+                            {field.required && <span style={{ color: '#dc2626', marginLeft: '0.25rem' }}>*</span>}
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); onRemove(i); }}
-                                style={{ color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem' }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRemove(i);
+                                }}
+                                style={{
+                                    color: '#dc2626',
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem',
+                                }}
                             >
                                 Remove
                             </button>
@@ -65,10 +72,7 @@ export function FieldList({ fields, editingField, onEdit, onRemove, onUpdate }: 
 
                     {editingField === i && (
                         <div style={{ padding: '1rem', borderTop: '1px solid #e5e7eb', background: '#f9fafb' }}>
-                            <FieldEditor
-                                field={field}
-                                onChange={(updated) => onUpdate(i, updated)}
-                            />
+                            <FieldEditor field={field} onChange={(updated) => onUpdate(i, updated)} />
                         </div>
                     )}
                 </div>

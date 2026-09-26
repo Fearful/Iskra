@@ -22,6 +22,8 @@ describe('LifecycleService.removeForm', () => {
         const deleted: string[] = [];
         const removed: string[] = [];
         LifecycleService.setRedis({
+            set: async () => 'OK',
+            expire: async () => 1,
             del: async (...keys: string[]) => void deleted.push(...keys),
             srem: async (_set: string, member: string) => void removed.push(member),
         });

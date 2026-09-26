@@ -1,8 +1,9 @@
-import Ajv from 'ajv';
+import Ajv, { type SchemaObject } from 'ajv';
 import ajvErrors from 'ajv-errors';
 import addFormats from 'ajv-formats';
-import { REDIS_KEYS, FormStatus, QUEUE_NAMES, JOB_NAMES } from '@forms-app/shared';
-import type { FormMeta } from '@forms-app/shared';
+import { REDIS_KEYS, JOB_NAMES } from '@forms-app/shared';
+import type { AnswerJob, FormMeta } from '@forms-app/shared';
+import type { FormsRedis } from '@forms-app/shared/db/client';
 import { createHmac } from 'crypto';
 
 // addFormats registers the standard string formats (email, date, uri, ...).
@@ -13,25 +14,30 @@ addFormats(ajv);
 ajvErrors(ajv);
 
 // In-memory cache for form schemas (TTL-based)
-const schemaCache = new Map<string, { schema: any; schemaJson: string; meta: FormMeta; cachedAt: number }>();
+const schemaCache = new Map<string, { schema: SchemaObject; schemaJson: string; meta: FormMeta; cachedAt: number }>();
 const CACHE_TTL_MS = 30_000; // 30 seconds
 
-export class SubmissionService {
-    private static redis: any;
-    private static worker: any;
+/** Where answers are queued for answer-writer: worker-kit's WorkerManager. */
+interface AnswerQueue {
+    enqueue(name: string, data: AnswerJob): Promise<unknown>;
+}
 
-    static setRedis(redis: any) {
+export class SubmissionService {
+    private static redis: Pick<FormsRedis, 'get'> | undefined;
+    private static worker: AnswerQueue | undefined;
+
+    static setRedis(redis: Pick<FormsRedis, 'get'>) {
         this.redis = redis;
     }
 
-    static setWorker(worker: any) {
+    static setWorker(worker: AnswerQueue | undefined) {
         this.worker = worker;
     }
 
     static async getFormData(
         spaceSlug: string,
         formSlug: string,
-    ): Promise<{ schema: any; meta: FormMeta } | null> {
+    ): Promise<{ schema: SchemaObject; meta: FormMeta } | null> {
         const cacheKey = `${spaceSlug}:${formSlug}`;
         const cached = schemaCache.get(cacheKey);
 
@@ -61,7 +67,7 @@ export class SubmissionService {
     }
 
     static validateAnswer(
-        schema: any,
+        schema: SchemaObject,
         data: Record<string, unknown>,
     ): { valid: boolean; errors: Record<string, string> } {
         const validate = ajv.compile(schema);

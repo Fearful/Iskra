@@ -7,6 +7,7 @@ import { Kernel } from '../src/kernel';
 import { UploadFeature } from '../src/features/upload';
 import { UploadHelper } from '../src/features/upload/helper';
 import { StorageFeature } from '../src/features/storage';
+import { HttpError } from '../src/errors';
 import type { UploadAction, UploadConfig, UploadTarget } from '../src/types';
 
 const TEST_DIR = path.join(process.cwd(), 'test-upload-content-safety-storage');
@@ -86,10 +87,87 @@ describe('upload route: stored content type', () => {
 
     it('types uploadFromRequest() by extension too', async () => {
         const { adapter, puts } = s3Adapter();
-        const helper = new UploadHelper(adapter, 'p');
+        const helper = new UploadHelper(adapter, 'p', { allowedExtensions: ['.svg'] });
         const req = new Request('http://localhost/', { method: 'POST', body: form('logo.svg', '<svg/>') });
         await helper.uploadFromRequest(req, 'file');
         expect([puts[0].ContentType, puts[0].ContentDisposition]).toEqual(['application/octet-stream', 'attachment']);
+    });
+
+    it('uploadFromRequest() refuses active content, like the route', async () => {
+        // Regression: it had no extension check, so `.html` was stored.
+        const { adapter, puts } = s3Adapter();
+        const helper = new UploadHelper(adapter, 'p');
+        for (const name of ['invoice.html', 'logo.SVG', 'app.js']) {
+            const req = new Request('http://localhost/', { method: 'POST', body: form(name, '<script>') });
+            await expect(helper.uploadFromRequest(req, 'file')).rejects.toMatchObject({
+                status: 400,
+                message: 'Invalid extension',
+            });
+        }
+        const pdf = new Request('http://localhost/', { method: 'POST', body: form('report.pdf', '%PDF') });
+        await helper.uploadFromRequest(pdf, 'file');
+        expect(puts.map((p) => p.Key)).toEqual(['p/report.pdf']);
+    });
+
+    it('uploadFromRequest() answers a missing file field with a 400', async () => {
+        // Regression: it threw a plain Error, which the app served as a 500.
+        const { adapter, puts } = s3Adapter();
+        const helper = new UploadHelper(adapter, 'p');
+        const req = new Request('http://localhost/', { method: 'POST', body: form('report.pdf', '%PDF') });
+        const err = await helper.uploadFromRequest(req, 'other').catch((e) => e);
+        expect(err).toBeInstanceOf(HttpError);
+        expect(err).toMatchObject({ status: 400, message: 'No file found in field: other' });
+        expect(puts).toEqual([]);
+    });
+
+    it('uploadFromRequest() takes allowedExtensions', async () => {
+        const { adapter, puts } = s3Adapter();
+        const helper = new UploadHelper(adapter, 'p', { allowedExtensions: ['.PNG'] });
+        const pdf = new Request('http://localhost/', { method: 'POST', body: form('report.pdf', '%PDF') });
+        await expect(helper.uploadFromRequest(pdf, 'file')).rejects.toMatchObject({ status: 400 });
+        const png = new Request('http://localhost/', { method: 'POST', body: form('photo.png', 'x') });
+        await helper.uploadFromRequest(png, 'file');
+        expect(puts.map((p) => p.Key)).toEqual(['p/photo.png']);
+    });
+
+    it('uploadFromRequest() refuses a file over maxFileSize', async () => {
+        // Regression: it read any body whole, however large.
+        const { adapter, puts } = s3Adapter();
+        const helper = new UploadHelper(adapter, 'p', { maxFileSize: 1000 });
+        const big = new Request('http://localhost/', { method: 'POST', body: form('big.bin', 'x'.repeat(1001)) });
+        await expect(helper.uploadFromRequest(big, 'file')).rejects.toMatchObject({
+            status: 413,
+            message: 'File too large',
+        });
+
+        // A body far past the limit is cut off while it streams in.
+        const huge = new Request('http://localhost/', {
+            method: 'POST',
+            body: form('huge.bin', 'x'.repeat(1024 * 1024)),
+        });
+        huge.headers.delete('content-length');
+        await expect(helper.uploadFromRequest(huge, 'file')).rejects.toMatchObject({ status: 413 });
+        expect(puts).toEqual([]);
+    });
+
+    it("UploadFeature's helper uses its maxFileSize and allowedExtensions", async () => {
+        const { adapter, puts } = s3Adapter();
+        const kernel = await withAdapter(adapter, { maxFileSize: 1000, allowedExtensions: ['.txt'] });
+        const app = kernel.getApp();
+        app.post('/mine', async (c) => {
+            try {
+                await c.get('upload').uploadFromRequest(c.req.raw, 'file');
+                return c.text('ok');
+            } catch (err: any) {
+                return c.text(err.message, err.status);
+            }
+        });
+        expect((await app.request('/mine', { method: 'POST', body: form('a.bin', 'x') })).status).toBe(400);
+        const big = form('a.txt', 'x'.repeat(1001));
+        expect((await app.request('/mine', { method: 'POST', body: big })).status).toBe(413);
+        expect((await app.request('/mine', { method: 'POST', body: form('a.txt', 'x') })).status).toBe(200);
+        expect(puts.map((p) => p.Key)).toEqual(['p/a.txt']);
+        await kernel.shutdown();
     });
 
     it('serves downloads with those headers, sandboxed', async () => {

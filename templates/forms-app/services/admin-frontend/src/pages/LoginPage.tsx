@@ -43,7 +43,17 @@ export function LoginPage() {
                     required
                     style={inputStyle}
                 />
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                <button
+                    type="submit"
+                    style={{
+                        padding: '0.5rem 1rem',
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                    }}
+                >
                     Sign in
                 </button>
                 {error && <p style={{ color: '#dc2626', margin: 0 }}>{error}</p>}

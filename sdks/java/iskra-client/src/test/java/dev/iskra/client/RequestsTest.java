@@ -2,16 +2,29 @@ package dev.iskra.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.iskra.client.exception.AuthException;
+import dev.iskra.client.exception.ConflictException;
+import dev.iskra.client.exception.ForbiddenException;
 import dev.iskra.client.exception.IskraException;
 import dev.iskra.client.exception.NotFoundException;
+import dev.iskra.client.exception.RateLimitException;
 import dev.iskra.client.exception.ValidationException;
 import dev.iskra.client.response.IskraResponse;
 import org.junit.jupiter.api.Test;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,6 +71,30 @@ class RequestsTest {
     }
 
     @Test
+    void queryParametersAreEncoded() {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("q", "a b&c=d/ñ+");
+        query.put("tags", List.of("x", "y"));
+        query.put("ids", new Integer[] {1, 2});
+        query.put("skip", null);
+        query.put("flag", true);
+        query.put("n", 2);
+        TypeReference<Map<String, List<String>>> queries = new TypeReference<Map<String, List<String>>>() {};
+        assertEquals(Map.of(
+                "q", List.of("a b&c=d/ñ+"),
+                "tags", List.of("x", "y"),
+                "ids", List.of("1", "2"),
+                "flag", List.of("true"),
+                "n", List.of("2")), iskra.get("/contract/query", query, queries).getData());
+        assertEquals(Map.of("page", List.of("1"), "size", List.of("10")),
+                iskra.get("/contract/query?page=1", Map.of("size", 10), queries).getData());
+        assertEquals(Map.of("size", List.of("10")),
+                iskra.get("/contract/query?", Map.of("size", 10), Map.class).getData());
+        assertEquals(Map.of("page", List.of("1")),
+                iskra.get("/contract/query?page=1", Collections.emptyMap(), Map.class).getData());
+    }
+
+    @Test
     void apiKeyAndCustomHeadersAreSent() {
         IskraClient client = IskraClient.builder(ContractServer.baseUrl())
                 .apiKey("sk-test")
@@ -85,6 +122,47 @@ class RequestsTest {
     @Test
     void unauthenticatedRoute() {
         assertThrows(AuthException.class, () -> iskra.get("/contract/me", Object.class));
+    }
+
+    @Test
+    void forbiddenConflictAndRateLimitAreTyped() {
+        ForbiddenException forbidden = assertThrows(ForbiddenException.class,
+                () -> iskra.get("/contract/forbidden", Object.class));
+        assertEquals("Not your widget", forbidden.getMessage());
+        assertEquals(403, forbidden.getStatusCode());
+        assertEquals("FORBIDDEN", forbidden.getErrorCode());
+
+        ConflictException conflict = assertThrows(ConflictException.class,
+                () -> iskra.post("/contract/conflict", null, Object.class));
+        assertEquals("Widget already exists", conflict.getMessage());
+        assertEquals(409, conflict.getStatusCode());
+        assertEquals("CONFLICT", conflict.getErrorCode());
+
+        RateLimitException limited = assertThrows(RateLimitException.class,
+                () -> iskra.get("/contract/rate-limited", Object.class));
+        assertEquals("Too many requests", limited.getMessage());
+        assertEquals(429, limited.getStatusCode());
+    }
+
+    @Test
+    void rateLimitExposesRetryAfter() {
+        assertEquals(Optional.of(Duration.ofSeconds(7)), rateLimited("").getRetryAfter());
+
+        String inTwoMinutes = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC).plusSeconds(120));
+        Duration delay = rateLimited("?retryAfter=" + URLEncoder.encode(inTwoMinutes, StandardCharsets.UTF_8))
+                .getRetryAfter().orElseThrow();
+        assertTrue(delay.getSeconds() > 100 && delay.getSeconds() <= 120, delay.toString());
+
+        String aMinuteAgo = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC).minusSeconds(60));
+        assertEquals(Optional.of(Duration.ZERO),
+                rateLimited("?retryAfter=" + URLEncoder.encode(aMinuteAgo, StandardCharsets.UTF_8)).getRetryAfter());
+        for (String absentOrInvalid : List.of("", "soon", "-5")) {
+            assertFalse(rateLimited("?retryAfter=" + absentOrInvalid).getRetryAfter().isPresent(), absentOrInvalid);
+        }
+    }
+
+    private RateLimitException rateLimited(String query) {
+        return assertThrows(RateLimitException.class, () -> iskra.get("/contract/rate-limited" + query, Object.class));
     }
 
     @Test

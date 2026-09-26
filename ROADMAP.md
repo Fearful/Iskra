@@ -1,7 +1,7 @@
 # Roadmap
 
-Iskra is at **v0.1.0**. The core framework and kits are usable today; the items
-below are planned but not yet shipped. Contributions are welcome — see
+Iskra is pre-1.0: its packages are at **0.1.x–0.2.x**. The core framework and
+kits are usable today; the items below are planned but not yet shipped. Contributions are welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 > Status legend: 🟢 stable · 🟡 experimental · ⚪ planned / not started
@@ -23,9 +23,11 @@ The goal is to harden their APIs and graduate them to stable. See
 
 ## SDKs ⚪
 
+- **Python SDK** — publish to PyPI.
 - **Java SDK** — publishability to Maven Central (`distributionManagement`).
-- **Go and .NET SDKs** — not yet implemented; planned. The TypeScript, Python,
-  and Java clients are the currently available SDKs.
+- **Go and .NET SDKs** — not yet implemented; planned. Python and Java are the
+  currently available SDKs (TypeScript apps use the `@iskra-bun/*` packages
+  directly).
 
 ## Have an idea?
 

@@ -48,7 +48,7 @@ expect(logger.logs.info[0].args[0]).toBe('hello');
 logger.reset(); // limpia todas las entradas capturadas
 ```
 
-Arrays de captura disponibles: `logs.trace`, `logs.debug`, `logs.info`, `logs.warn`, `logs.error`, `logs.fatal`.
+Arrays de captura disponibles: `logs.trace`, `logs.debug`, `logs.info`, `logs.warn`, `logs.error`, `logs.fatal`. Todos los niveles están habilitados (`level` es `'trace'` e `isLevelEnabled()` devuelve `true`), así que también se capturan las llamadas protegidas con `isLevelEnabled()`.
 
 ### `createMockDriver(name?, hooks?)`
 

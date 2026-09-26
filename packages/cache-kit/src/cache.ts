@@ -214,7 +214,14 @@ export class Cache {
         await this.adapter.set(dataKey, serialized, effectiveTtl);
 
         if (tags && tags.length > 0) {
-            await this.indexTags(key, tags, effectiveTtl);
+            try {
+                await this.indexTags(key, tags, effectiveTtl);
+            } catch (err) {
+                // An entry its tags do not list would outlive invalidateTag():
+                // drop it and report the failure.
+                await this.adapter.del(dataKey).catch(() => {});
+                throw err;
+            }
         }
     }
 

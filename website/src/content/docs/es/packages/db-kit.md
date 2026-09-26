@@ -62,6 +62,20 @@ await app.start();
 const users = await db.db!.query.users.findMany({ where: eq(schema.users.active, true) });
 ```
 
+`app.context.get('db')` devuelve el mismo driver, pero tipado con el schema por
+defecto (`DbDriver | undefined`): el registro del contexto no puede conocer el
+schema que pasaste, asi que a traves de el `db.query.*` queda sin tipar. Guarda
+una referencia a la instancia tipada del driver y usala, o castea lo que devuelve
+el contexto:
+
+```typescript
+// Recomendado: exportar la instancia tipada e importarla donde haga falta
+export const db = new DbDriver<typeof schema>();
+
+// Donde solo tienes la app a mano
+const db = app.context.get('db') as DbDriver<typeof schema> | undefined;
+```
+
 Los tipos auxiliares `IskraDrizzleDb<TSchema>` e `IskraDrizzleTx<TSchema>` estan
 disponibles para anotar parametros de funciones:
 

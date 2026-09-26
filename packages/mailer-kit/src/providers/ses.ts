@@ -35,6 +35,7 @@ export class SesEmailAdapter implements EmailAdapter {
     private defaultFrom?: { name?: string; email: string };
     private injectedClient?: SesClient;
     private injectedCommand?: SesCommandFactory;
+    private sdk?: Promise<{ client: SesClient; command: SesCommandFactory }>;
 
     constructor(config: EmailConfig, deps: SesAdapterDeps = {}) {
         // The effective `from` address is validated at send time (it can come
@@ -45,11 +46,19 @@ export class SesEmailAdapter implements EmailAdapter {
         this.injectedCommand = deps.sendEmailCommand;
     }
 
-    private async resolveSdk(): Promise<{ client: SesClient; command: SesCommandFactory }> {
+    private resolveSdk(): Promise<{ client: SesClient; command: SesCommandFactory }> {
         if (this.injectedClient && this.injectedCommand) {
-            return { client: this.injectedClient, command: this.injectedCommand };
+            return Promise.resolve({ client: this.injectedClient, command: this.injectedCommand });
         }
+        // One client per adapter, built on the first send. A failed import is
+        // not cached, so the next send retries it.
+        return (this.sdk ??= this.loadSdk().catch((err: unknown) => {
+            this.sdk = undefined;
+            throw err;
+        }));
+    }
 
+    private async loadSdk(): Promise<{ client: SesClient; command: SesCommandFactory }> {
         // Lazy load only when actually sending so `tsc`/`bun test` stay green
         // without `@aws-sdk/client-sesv2` installed. The specifier is held in a
         // variable so TypeScript does not try to resolve the module at compile

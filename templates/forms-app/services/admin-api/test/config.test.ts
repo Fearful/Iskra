@@ -2,14 +2,19 @@ import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 
 const CONFIG = join(import.meta.dir, '..', 'src', 'app.config.ts');
+const DATABASE_URL = 'postgresql://forms:a-password-of-its-own@postgres:5432/forms_app';
 
-/** Loads app.config.ts in a production process with only the given secrets set. */
+/**
+ * Loads app.config.ts in a production process with only the given secrets set
+ * (and a DATABASE_URL of its own unless `secrets` overrides it).
+ */
 function loadProductionConfig(secrets: Record<string, string>) {
     const env: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
     delete env.AUTH_SECRET;
     delete env.INTERNAL_API_TOKEN;
+    delete env.DATABASE_URL;
     const code = `const { config } = await import(${JSON.stringify(CONFIG)}); console.log(JSON.stringify(config));`;
-    const proc = Bun.spawnSync([process.execPath, '-e', code], { env: { ...env, ...secrets } });
+    const proc = Bun.spawnSync([process.execPath, '-e', code], { env: { ...env, DATABASE_URL, ...secrets } });
     return { ok: proc.exitCode === 0, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
 }
 
@@ -28,6 +33,28 @@ describe('admin-api configuration in production', () => {
         expect(stderr).toContain('AUTH_SECRET must be set in production');
     });
 
+    it('refuses to start without DATABASE_URL', () => {
+        // It used to fall back to the development database URL, with the
+        // password written in this repository.
+        const { ok, stderr } = loadProductionConfig({
+            DATABASE_URL: '',
+            AUTH_SECRET: 'a'.repeat(44),
+            INTERNAL_API_TOKEN: 't'.repeat(44),
+        });
+        expect(ok).toBe(false);
+        expect(stderr).toContain('DATABASE_URL must be set in production');
+    });
+
+    it('refuses the development DATABASE_URL', () => {
+        const { ok, stderr } = loadProductionConfig({
+            DATABASE_URL: 'postgresql://forms:secret@localhost:5432/forms_app',
+            AUTH_SECRET: 'a'.repeat(44),
+            INTERNAL_API_TOKEN: 't'.repeat(44),
+        });
+        expect(ok).toBe(false);
+        expect(stderr).toContain('DATABASE_URL must be set in production');
+    });
+
     it("refuses to start without form-manager's INTERNAL_API_TOKEN", () => {
         const { ok, stderr } = loadProductionConfig({ AUTH_SECRET: 'a'.repeat(44) });
         expect(ok).toBe(false);
@@ -43,5 +70,6 @@ describe('admin-api configuration in production', () => {
         expect(ok).toBe(true);
         expect(JSON.parse(stdout).auth.secret).toBe('a'.repeat(44));
         expect(JSON.parse(stdout).internalApiToken).toBe('t'.repeat(44));
+        expect(JSON.parse(stdout).db.url).toBe(DATABASE_URL);
     });
 });

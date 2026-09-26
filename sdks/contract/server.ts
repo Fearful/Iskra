@@ -18,14 +18,17 @@ import { join } from 'node:path';
 import {
     AuthError,
     AuthFeature,
+    ConflictError,
     DbFeature,
     ErrorHandlerFeature,
+    ForbiddenError,
     HealthCheckFeature,
     Kernel,
     NotFoundError,
     StorageFeature,
     UploadFeature,
     ValidationError,
+    createHttpError,
     successResponse,
 } from '@iskra-bun/web-kit';
 
@@ -149,6 +152,7 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     app.post('/contract/echo', async (c) => c.json(await c.req.json()));
     app.put('/contract/echo', async (c) => c.json(await c.req.json()));
     app.delete('/contract/echo', (c) => c.body(null, 204));
+    app.get('/contract/query', (c) => c.json(c.req.queries()));
     app.get('/contract/headers', (c) =>
         c.json({ apiKey: c.req.header('x-api-key') ?? null, custom: c.req.header('x-custom') ?? null }),
     );
@@ -157,6 +161,19 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     });
     app.post('/contract/validate', () => {
         throw new ValidationError('Invalid widget', { field: 'name', issue: 'required' });
+    });
+    app.get('/contract/forbidden', () => {
+        throw new ForbiddenError('Not your widget');
+    });
+    app.post('/contract/conflict', () => {
+        throw new ConflictError('Widget already exists');
+    });
+    // Answers like RateLimitFeature, plus a Retry-After header: 7 seconds, or
+    // `?retryAfter=` as given (an empty value leaves the header out).
+    app.get('/contract/rate-limited', (c) => {
+        const retryAfter = c.req.query('retryAfter') ?? '7';
+        if (retryAfter) c.header('Retry-After', retryAfter);
+        throw createHttpError(429, 'Too many requests');
     });
     app.get('/contract/me', (c) => {
         const user = c.get('user');

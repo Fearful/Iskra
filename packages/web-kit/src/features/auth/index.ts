@@ -2,8 +2,8 @@ import type { AuthConfig, Feature, Kernel } from '../../types';
 import type { Context, Hono, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { clientIpKey, getClientIp } from '../../client-ip';
-import { HitCounter } from '../../hit-counter';
-import { type Auth, createBetterAuth } from '@iskra-bun/auth-kit';
+import { HitCounter, retryAfterSeconds } from '../../hit-counter';
+import { type Auth, createBetterAuth, resolveAuthBaseURL } from '@iskra-bun/auth-kit';
 import { z } from '@hono/zod-openapi';
 import type { User } from '@iskra-bun/auth-kit';
 import { consoleLogger, type KernelLogger } from '../../logging';
@@ -55,48 +55,6 @@ const SessionResponseSchema = z.object({
 const CLIENT_IP_HEADER = 'x-iskra-client-ip';
 
 /**
- * The origin better-auth runs on. It decides the cookies' `Secure` flag and
- * is a trusted origin, so production may not fall back to
- * `http://localhost:3000` (cookies without `Secure`, localhost trusted).
- */
-function resolveBaseURL(baseURL: string | undefined): string {
-    const resolved = baseURL || process.env.BETTER_AUTH_URL;
-    if (resolved) {
-        assertHttpsInProduction(resolved);
-        return resolved;
-    }
-    if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-            "AuthFeature: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, " +
-                'e.g. "https://app.example.com"; without it cookies are sent without Secure.',
-        );
-    }
-    return 'http://localhost:3000';
-}
-
-/** Hosts a production baseURL may reach over plain http (e.g. docker compose on one machine). */
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
-
-/**
- * better-auth marks the session cookies Secure only for an https baseURL, so
- * an http:// one in production sent them over plain HTTP as well.
- */
-function assertHttpsInProduction(baseURL: string): void {
-    if (process.env.NODE_ENV !== 'production') return;
-    let url: URL;
-    try {
-        url = new URL(baseURL);
-    } catch {
-        return; // reported by assertBaseURLMatchesBasePath
-    }
-    if (url.protocol === 'https:' || LOCAL_HOSTNAMES.has(url.hostname)) return;
-    throw new Error(
-        `AuthFeature: baseURL "${baseURL}" must use https in production: better-auth marks the session cookies ` +
-            'Secure only for an https baseURL. Plain http is allowed only for localhost, 127.0.0.1 and [::1].',
-    );
-}
-
-/**
  * better-auth ignores `basePath` when `baseURL` has a path and serves its
  * routes under that path instead, while the feature mounts them at
  * `basePath`: every auth request then 404s. A reverse-proxy prefix belongs in
@@ -137,7 +95,7 @@ export class AuthFeature implements Feature {
     // be restored, which would otherwise leak into auth-kit's own test suite).
     constructor(config: AuthConfig, createAuth: typeof createBetterAuth = createBetterAuth) {
         this.createAuth = createAuth;
-        const baseURL = resolveBaseURL(config.baseURL);
+        const baseURL = resolveAuthBaseURL(config.baseURL, 'AuthFeature');
         assertBaseURLMatchesBasePath(baseURL, config.basePath || '/api/sso');
         this.config = {
             ...config,
@@ -249,7 +207,9 @@ export class AuthFeature implements Feature {
             // a raw X-Forwarded-For is client-controlled and would let an
             // attacker rotate it to bypass the limit. IPv6 clients count by /64.
             const ip = this.clientIp(c);
-            if (hits.hit(ip ? clientIpKey(ip) : 'unknown', this.authRateLimitWindowMs) > this.authRateLimitMax) {
+            const key = ip ? clientIpKey(ip) : 'unknown';
+            if (hits.hit(key, this.authRateLimitWindowMs) > this.authRateLimitMax) {
+                c.header('Retry-After', retryAfterSeconds(hits.resetAt(key), this.authRateLimitWindowMs));
                 throw new HTTPException(429, { message: 'Too many authentication attempts' });
             }
             await next();
@@ -385,6 +345,13 @@ export class AuthFeature implements Feature {
 
 export function requireAuth(kernel: Kernel) {
     return async (c: Context, next: Next) => {
+        // The feature's global middleware already read the session for this
+        // request; reading it again cost a second DB lookup per request.
+        if (c.get('authUser')) {
+            await next();
+            return;
+        }
+
         const authFeature = kernel.getFeature('auth');
         if (!authFeature) throw new HTTPException(500, { message: 'Auth not initialized' });
 

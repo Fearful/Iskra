@@ -1,6 +1,6 @@
 import type { FieldType } from '@forms-app/shared';
 import { getErrorMessage } from '@forms-app/shared/validation';
-import type { FieldErrorMessages, JsonSchema, JsonSchemaProperty } from '@forms-app/shared';
+import type { JsonSchema, JsonSchemaProperty } from '@forms-app/shared';
 
 interface FieldDefinition {
     fieldType: FieldType;
@@ -29,18 +29,15 @@ function buildErrorMessages(field: FieldDefinition): Record<string, string> {
     }
 
     if (field.maxLength) {
-        msgs.maxLength = getErrorMessage(ft, 'maxLength', custom)
-            .replace('{max}', String(field.maxLength));
+        msgs.maxLength = getErrorMessage(ft, 'maxLength', custom).replace('{max}', String(field.maxLength));
     }
 
     if (field.min !== undefined && field.min !== null) {
-        msgs.minimum = getErrorMessage(ft, 'minimum', custom)
-            .replace('{min}', String(field.min));
+        msgs.minimum = getErrorMessage(ft, 'minimum', custom).replace('{min}', String(field.min));
     }
 
     if (field.max !== undefined && field.max !== null) {
-        msgs.maximum = getErrorMessage(ft, 'maximum', custom)
-            .replace('{max}', String(field.max));
+        msgs.maximum = getErrorMessage(ft, 'maximum', custom).replace('{max}', String(field.max));
     }
 
     if (ft === 'email') {

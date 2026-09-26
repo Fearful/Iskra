@@ -8,6 +8,7 @@ import { WriterService } from '../src/domain/writer/writer.service.ts';
 import { handleAnswerJob } from '../src/domain/answer-job.ts';
 import { SubmissionService } from '../../forms-api/src/domain/submission/submission.service.ts';
 import { generateJsonSchema } from '../../admin-api/src/domain/forms/schema-generator.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 // answer-writer's handler on a real BullMQ queue, with the retry options of
 // src/main.ts, and the database faked: gated behind Redis only.
@@ -69,8 +70,8 @@ function fakeDb() {
 
     beforeAll(async () => {
         (WriterService as any).buffer = [];
-        WriterService.setDb(db);
-        AnswerValidatorService.setDb(db);
+        WriterService.setDb(db as unknown as FormsDb);
+        AnswerValidatorService.setDb(db as unknown as FormsDb);
         wm = new WorkerManager({
             connection: REDIS_URL,
             queueName,

@@ -36,7 +36,7 @@ Cliente para Java 11+ compatible con Spring MVC, Spring Boot, Jakarta EE, y cual
 - Mapeo automatico de errores Iskra a excepciones Java tipadas
 - Unica dependencia externa: Jackson (JSON)
 
-**Instalacion (Maven):**
+**Instalacion (Maven):** el SDK todavia no esta en Maven Central, asi que primero instalalo desde el codigo fuente (`mvn install` en `sdks/java/iskra-client` de un clon de este repositorio) y despues agrega:
 ```xml
 <dependency>
     <groupId>dev.iskra</groupId>
@@ -53,6 +53,7 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
 
 // Rutas personalizadas
 var resultado = iskra.post("/api/ordenes", datos, Orden.class);
+var pagina = iskra.get("/api/productos", Map.of("pagina", 2), List.class);  // ?pagina=2
 
 // Sub-clientes
 iskra.health().check();
@@ -74,9 +75,11 @@ Cliente para Python 3.9+ compatible con FastAPI, Django, Flask, y cualquier apli
 - Context manager (`with` / `async with`)
 - Unica dependencia externa: httpx
 
-**Instalacion:**
+**Instalacion:** el SDK todavia no esta en PyPI, asi que instalalo desde el codigo fuente:
 ```bash
-pip install iskra-client
+pip install "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
+# o, desde un clon de este repositorio:
+pip install -e sdks/python/iskra-client
 ```
 
 **Uso basico:**
@@ -90,6 +93,7 @@ iskra = IskraClient(
 
 # Rutas personalizadas
 resultado = iskra.post("/api/ordenes", json=datos)
+pagina = iskra.get("/api/productos", params={"pagina": 2})  # ?pagina=2
 
 # Sub-clientes
 iskra.health.check()
@@ -137,6 +141,11 @@ iskra.auth().signOut(session);
   usuario en el backend (por IP del cliente o por email), que los SDKs no lo hacen.
   `rateLimit: false` deja los intentos de adivinar passwords sin freno: usalo solo si
   el backend ya tiene ese limite.
+- Un 429 lanza `RateLimitException`. Si la respuesta trae el header `Retry-After`
+  (segundos o una fecha HTTP), la espera queda en `e.retry_after` (Python, segundos
+  como float) o `e.getRetryAfter()` (Java, `Optional<Duration>`); es `None` / vacio
+  si el header falta o es invalido, como en los rate limits propios de web-kit, que
+  no lo envian.
 - El cliente de storage usa las rutas del UploadFeature, que normalmente exigen un
   usuario con sesion: usalo desde `with_session(...)` / `withSession(...)`. Todos los
   usuarios comparten los archivos del proyecto, asi que un `authorize` que solo pide

@@ -66,8 +66,10 @@ export function createMockLogger(): MockLogger {
             return mock as unknown as Logger;
         },
         // Minimal pino.Logger shape — fields tests never touch
-        level: 'error' as const,
-        isLevelEnabled: (_level: string) => false,
+        // Every level is enabled, so code that guards a log call with
+        // isLevelEnabled() still reaches the capture arrays.
+        level: 'trace' as const,
+        isLevelEnabled: (_level: string) => true,
         setBindings: (_bindings: Record<string, unknown>) => {},
         flush: (_cb?: (err?: Error) => void) => {},
         bindings: () => ({}) as Record<string, unknown>,

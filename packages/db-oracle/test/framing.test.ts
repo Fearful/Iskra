@@ -30,7 +30,8 @@ async function read(driver: OracleDriver, stream: ReadableStream<Uint8Array>, id
         ]),
     );
     const waiter = { resolve: () => {}, reject: () => {} };
-    await (driver as any).readStream(stream, pending, waiter);
+    // A stand-in for the bridge process: never the driver's own.
+    await (driver as any).readStream({}, stream, pending, waiter);
     return settled;
 }
 

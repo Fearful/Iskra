@@ -20,9 +20,9 @@ app.post('/internal/prerender/:formId', async (c) => {
     try {
         const result = await PrerenderService.prerenderForm(formId);
         return c.json({ data: result });
-    } catch (err: any) {
+    } catch (err) {
         console.error('Prerender failed:', err);
-        return c.json({ error: err.message }, 500);
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
 });
 
@@ -31,9 +31,9 @@ app.post('/internal/lifecycle/open', async (c) => {
     try {
         await LifecycleService.openForm(formId);
         return c.json({ data: { ok: true } });
-    } catch (err: any) {
+    } catch (err) {
         console.error('Open form failed:', err);
-        return c.json({ error: err.message }, 500);
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
 });
 
@@ -42,9 +42,9 @@ app.post('/internal/lifecycle/close', async (c) => {
     try {
         await LifecycleService.closeForm(formId);
         return c.json({ data: { ok: true } });
-    } catch (err: any) {
+    } catch (err) {
         console.error('Close form failed:', err);
-        return c.json({ error: err.message }, 500);
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
 });
 
@@ -53,9 +53,9 @@ app.post('/internal/lifecycle/remove', async (c) => {
     try {
         await LifecycleService.removeForm(String(spaceSlug), String(formSlug));
         return c.json({ data: { ok: true } });
-    } catch (err: any) {
+    } catch (err) {
         console.error('Remove form failed:', err);
-        return c.json({ error: err.message }, 500);
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
 });
 

@@ -265,6 +265,24 @@ describe.if(redisUp)('RedisAdapter clear() and expiring sets (requires Redis)', 
             await adapter.disconnect();
         }
     });
+
+    it('drains only the members that have not expired, as the memory adapter does', async () => {
+        const adapter = new RedisAdapter(url);
+        await adapter.connect();
+        try {
+            await adapter.sadd('mixed', 'long', 60);
+            await adapter.sadd('mixed', 'short', 0.03);
+            await adapter.sadd('mixed', 'forever');
+            await Bun.sleep(80);
+            // No sadd since the expiry, so the expired member is still stored.
+            expect((await raw.zrange('mixed', 0, -1)).sort()).toEqual(['forever', 'long', 'short']);
+            expect((await adapter.sdrain('mixed')).sort()).toEqual(['forever', 'long']);
+            expect(await raw.exists('mixed')).toBe(0);
+        } finally {
+            await raw.flushdb();
+            await adapter.disconnect();
+        }
+    });
 });
 
 describe('RedisAdapter / KVManager guards', () => {

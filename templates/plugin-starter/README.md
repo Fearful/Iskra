@@ -12,11 +12,20 @@ Template para crear plugins (Drivers) reutilizables para Iskra. Usa esto como pu
 # Desde la raiz del monorepo
 bun install
 
+# El plugin compila con NodeNext y resuelve @iskra-bun/core por su dist:
+# compila core primero
+(cd packages/core && bun run build)
+
 cd templates/plugin-starter
 
-# Compilar el plugin
+# Compilar el plugin (genera dist/, lo que publica el paquete)
 bun run build
+
+# Correr los tests
+bun test
 ```
+
+Si copias el template fuera del monorepo para publicarlo, cambia `"@iskra-bun/core": "workspace:*"` en `peerDependencies` y `devDependencies` por el rango de la version de core que uses (por ejemplo `"^0.1.1"`): npm publicaria `workspace:*` tal cual.
 
 ## Estructura del proyecto
 
@@ -24,6 +33,8 @@ bun run build
 src/
 ├── index.ts             # Re-exporta el driver
 └── driver.ts            # Implementacion del Driver
+test/
+└── driver.test.ts       # Registra el driver en una App y recorre su ciclo de vida
 ```
 
 ## Como funciona

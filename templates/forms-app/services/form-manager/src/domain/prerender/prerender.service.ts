@@ -2,13 +2,14 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { build } from 'vite';
-import jsonSchemaPlugin from '@forms-app/vite-plugin-jsonschema';
+import jsonSchemaPlugin, { type JsonSchema } from '@forms-app/vite-plugin-jsonschema';
 import { forms, formFields, spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
 import { generateFormHtml } from './html-template.ts';
 import { generateFormRuntime, publicFormBase } from './form-runtime.ts';
 import { config } from '../../app.config.ts';
 import { REDIS_KEYS } from '@forms-app/shared';
+import type { FormsDb, FormsRedis } from '@forms-app/shared/db/client';
 
 /**
  * Builds a form page (index.html + main.ts in `sourceDir`) into `outputDir`.
@@ -20,7 +21,7 @@ export async function buildFormBundle(opts: {
     sourceDir: string;
     outputDir: string;
     formId: string;
-    validationSchema: any;
+    validationSchema: JsonSchema;
     base: string;
 }): Promise<void> {
     await build({
@@ -54,14 +55,14 @@ export async function buildFormBundle(opts: {
 }
 
 export class PrerenderService {
-    private static db: any;
-    private static redis: any;
+    private static db: FormsDb;
+    private static redis: Pick<FormsRedis, 'set' | 'sadd'> | undefined;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 
-    static setRedis(redis: any) {
+    static setRedis(redis: Pick<FormsRedis, 'set' | 'sadd'>) {
         this.redis = redis;
     }
 
@@ -81,7 +82,7 @@ export class PrerenderService {
             .where(eq(formFields.formId, formId))
             .orderBy(formFields.position);
 
-        const validationSchema = form.validationSchema as any;
+        const validationSchema = form.validationSchema;
         if (!validationSchema) throw new Error('Form has no validation schema');
 
         const recaptchaSiteKey = process.env.RECAPTCHA_SITE_KEY || 'your-site-key';

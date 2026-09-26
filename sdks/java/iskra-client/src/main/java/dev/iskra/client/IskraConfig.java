@@ -7,6 +7,9 @@ import java.util.Map;
 
 public class IskraConfig {
 
+    /** Default {@link #getMaxResponseBytes()}: 10 MiB. */
+    public static final long DEFAULT_MAX_RESPONSE_BYTES = 10L * 1024 * 1024;
+
     private final String baseUrl;
     private final String apiKey;
     private final Duration timeout;
@@ -14,6 +17,7 @@ public class IskraConfig {
     private final String authBasePath;
     private final String origin;
     private final String storageRoutePrefix;
+    private final long maxResponseBytes;
 
     private IskraConfig(Builder builder) {
         this.baseUrl = builder.baseUrl;
@@ -24,6 +28,7 @@ public class IskraConfig {
         this.authBasePath = builder.authBasePath;
         this.origin = builder.origin;
         this.storageRoutePrefix = builder.storageRoutePrefix;
+        this.maxResponseBytes = builder.maxResponseBytes;
     }
 
     public String getBaseUrl() {
@@ -55,6 +60,11 @@ public class IskraConfig {
         return storageRoutePrefix;
     }
 
+    /** Largest response body read; a larger one throws IskraException. */
+    public long getMaxResponseBytes() {
+        return maxResponseBytes;
+    }
+
     public static Builder builder(String baseUrl) {
         return new Builder(baseUrl);
     }
@@ -67,6 +77,7 @@ public class IskraConfig {
         private String authBasePath = "/api/sso";
         private String origin;
         private String storageRoutePrefix = "/upload";
+        private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
 
         private Builder(String baseUrl) {
             if (baseUrl == null || baseUrl.isEmpty()) {
@@ -109,6 +120,19 @@ public class IskraConfig {
         /** The {@code routePrefix} of the service's UploadFeature (default /upload). */
         public Builder storageRoutePrefix(String storageRoutePrefix) {
             this.storageRoutePrefix = storageRoutePrefix;
+            return this;
+        }
+
+        /**
+         * Largest response body read, in bytes (default 10 MiB). A larger one
+         * throws {@code IskraException} instead of filling the memory of the
+         * calling process.
+         */
+        public Builder maxResponseBytes(long maxResponseBytes) {
+            if (maxResponseBytes <= 0) {
+                throw new IllegalArgumentException("maxResponseBytes must be positive");
+            }
+            this.maxResponseBytes = maxResponseBytes;
             return this;
         }
 

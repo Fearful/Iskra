@@ -50,7 +50,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/core": "workspace:^",
         "zod": "^3.24.1"
     },
     "devDependencies": {

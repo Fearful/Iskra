@@ -29,6 +29,7 @@ export type Authenticate = (req: Request) => unknown | Promise<unknown>;
 const RESERVED_EVENTS: ReadonlySet<string> = new Set(['connected', 'disconnected']);
 
 export interface SocketDriverOptions {
+    /** Port to listen on. Defaults to 3001; 0 picks a free port (read it from `driver.port`). */
     port?: number;
     router?: SocketRouter;
     /** Max inbound frame size in bytes. Defaults to 16 KiB. */
@@ -69,12 +70,14 @@ export class SocketDriver implements Driver {
     name = 'SocketDriver';
     private app: App | null = null;
     private router: SocketRouter;
-    private port: number;
+    private configuredPort: number;
     private runningServer: Server<SocketData> | null = null;
 
     public readonly maxPayloadLength: number;
     private readonly canJoin: CanJoin;
     private readonly canPublish: CanPublish;
+    /** Which authz hooks were left at their allow-all default (warned at start). */
+    private readonly openAuthz: readonly string[];
     private readonly allowedEvents: ReadonlySet<string> | null;
     private readonly allowedOrigins: ReadonlySet<string> | null;
     private readonly authenticate?: Authenticate;
@@ -85,11 +88,17 @@ export class SocketDriver implements Driver {
     private sockets: Map<string, ServerWebSocket<SocketData>> = new Map();
 
     constructor(options: SocketDriverOptions = {}) {
-        this.port = options.port || 3001;
+        // Not `??`: NaN (`Number(process.env.PORT)` with PORT unset) listened
+        // on a random port. 0 still picks a free one.
+        this.configuredPort = Number.isInteger(options.port) ? options.port! : 3001;
         this.router = options.router || new SocketRouter();
         this.maxPayloadLength = options.maxPayloadLength ?? DEFAULT_MAX_PAYLOAD_LENGTH;
         this.canJoin = options.canJoin ?? (() => true);
         this.canPublish = options.canPublish ?? (() => true);
+        this.openAuthz = [
+            ...(options.canJoin ? [] : ['any client can join any room (set canJoin)']),
+            ...(options.canPublish ? [] : ['any client can publish to any topic, global included (set canPublish)']),
+        ];
         this.allowedEvents = options.allowedEvents ? new Set(options.allowedEvents) : null;
         this.allowedOrigins = options.allowedOrigins ? new Set(options.allowedOrigins) : null;
         this.authenticate = options.authenticate;
@@ -97,21 +106,31 @@ export class SocketDriver implements Driver {
         this.rateWindowMs = options.rateWindowMs ?? DEFAULT_RATE_WINDOW_MS;
     }
 
+    /**
+     * The port the server listens on once started (the one the OS picked for
+     * `port: 0`); before start, the configured port.
+     */
+    get port(): number {
+        return this.runningServer?.port ?? this.configuredPort;
+    }
+
     init(app: App) {
         this.app = app;
     }
 
     start() {
-        this.app?.logger.info(`Starting SocketDriver on port ${this.port}...`);
         if (!this.allowedOrigins && !this.authenticate) {
             this.app?.logger.warn(
                 'SocketDriver accepts connections from any origin without authentication; ' +
                     'set allowedOrigins and/or authenticate to prevent cross-site WebSocket hijacking',
             );
         }
+        if (this.openAuthz.length > 0) {
+            this.app?.logger.warn(`SocketDriver authorization is open: ${this.openAuthz.join('; ')}`);
+        }
 
         this.runningServer = Bun.serve<SocketData>({
-            port: this.port,
+            port: this.configuredPort,
             fetch: async (req, server) => {
                 const origin = req.headers.get('origin');
                 if (this.allowedOrigins && origin && !this.allowedOrigins.has(origin)) {
@@ -168,6 +187,8 @@ export class SocketDriver implements Driver {
                 },
             },
         });
+        // The bound port: the one the OS picked for `port: 0`.
+        this.app?.logger.info(`SocketDriver listening on port ${this.port}`);
     }
 
     /**

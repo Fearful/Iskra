@@ -1,4 +1,84 @@
 import { contentTypeFor, type BaseStorageAdapter, type PutOptions } from '@iskra-bun/storage-kit';
+import { ErrorCodes } from '@iskra-bun/core';
+import { HttpError } from '../../errors';
+
+/** `UploadConfig.maxFileSize` and `UploadLimits.maxFileSize` unless set: 10 MiB. */
+export const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+// Room for multipart boundaries and part headers on top of the file itself.
+export const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+/**
+ * Refused unless `allowedExtensions` lists them: a browser runs these as a page
+ * wherever they are served inline (e.g. by a static server for the local
+ * adapter's folder), and a same-origin `.js` passes a `script-src 'self'` policy.
+ */
+export const ACTIVE_CONTENT_EXTENSIONS = new Set([
+    '.html',
+    '.htm',
+    '.shtml',
+    '.xhtml',
+    '.xht',
+    '.mht',
+    '.mhtml',
+    '.svg',
+    '.svgz',
+    '.xml',
+    '.xsl',
+    '.xslt',
+    '.js',
+    '.mjs',
+    '.cjs',
+]);
+
+/** `.png` for `photo.PNG`; '' without an extension. */
+function extensionOf(filename: string): string {
+    const dot = filename.lastIndexOf('.');
+    return dot === -1 ? '' : filename.slice(dot).toLowerCase();
+}
+
+/**
+ * Whether `filename` may be stored: with `allowedExtensions` (lowercase), only
+ * those; without, anything but {@link ACTIVE_CONTENT_EXTENSIONS}.
+ */
+export function extensionAllowed(filename: string, allowedExtensions: readonly string[]): boolean {
+    if (allowedExtensions.length > 0) return allowedExtensions.some((e) => filename.toLowerCase().endsWith(e));
+    return !ACTIVE_CONTENT_EXTENSIONS.has(extensionOf(filename));
+}
+
+/**
+ * Parses a multipart body, aborting as soon as more than `limit` bytes arrive
+ * instead of buffering an arbitrarily large request first. Returns null when
+ * the limit is exceeded.
+ */
+export async function readFormDataWithin(req: Request, limit: number): Promise<FormData | null> {
+    if (!req.body) return req.formData();
+    let received = 0;
+    let exceeded = false;
+    const counter = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            received += chunk.byteLength;
+            if (received > limit) {
+                exceeded = true;
+                controller.error(new Error('payload too large'));
+            } else {
+                controller.enqueue(chunk);
+            }
+        },
+    });
+    const limited = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body.pipeThrough(counter),
+        duplex: 'half',
+    } as RequestInit);
+    try {
+        return await limited.formData();
+    } catch (err) {
+        if (exceeded) return null;
+        throw err;
+    }
+}
 
 // Defense-in-depth: reduce an attacker-controlled filename to a safe basename
 // and strip it to an allowlisted charset so traversal segments ("../",
@@ -34,14 +114,27 @@ export interface UploadResult {
     uploadedAt: Date;
 }
 
+/** What `uploadFromRequest()` accepts; `UploadFeature` passes its own config. */
+export interface UploadLimits {
+    /** Largest file, in bytes (default 10 MiB). */
+    maxFileSize?: number;
+    /** Only these extensions (default: anything but active content such as `.html`, `.svg`, `.js`). */
+    allowedExtensions?: string[];
+}
+
 export class UploadHelper {
     private basePath: string;
+    private maxFileSize: number;
+    private allowedExtensions: string[];
 
     constructor(
         private storage: BaseStorageAdapter,
         private projectName: string,
+        limits: UploadLimits = {},
     ) {
         this.basePath = `${projectName}/`;
+        this.maxFileSize = limits.maxFileSize || DEFAULT_MAX_FILE_SIZE;
+        this.allowedExtensions = (limits.allowedExtensions || []).map((e) => e.toLowerCase());
     }
 
     getBasePath(): string {
@@ -82,20 +175,42 @@ export class UploadHelper {
         };
     }
 
-    // uploadFromRequest: Not implementing raw request reading here to avoid Node/Bun specific request stream issues unless necessary
-    // or implementing simplified Version
+    /**
+     * Stores the file of a multipart request's `fieldName`, with the upload
+     * route's rules: the body is cut off past `maxFileSize` (HttpError 413,
+     * 'File too large') and an extension it does not allow is refused
+     * (HttpError 400, 'Invalid extension'). A missing file field is an
+     * HttpError 400 too. It used to read any body whole.
+     */
     async uploadFromRequest(
         request: Request,
         fieldName: string,
         subfolder?: string,
         options?: UploadOptions,
     ): Promise<UploadResult> {
-        const formData = await request.formData();
+        const tooLarge = () => new HttpError(413, 'File too large', { code: ErrorCodes.BAD_REQUEST });
+        const limit = this.maxFileSize + MULTIPART_OVERHEAD_BYTES;
+        if (Number(request.headers.get('content-length')) > limit) throw tooLarge();
+        let formData: FormData | null;
+        try {
+            formData = await readFormDataWithin(request, limit);
+        } catch (err) {
+            throw new HttpError(400, 'Invalid multipart body', { code: ErrorCodes.BAD_REQUEST, cause: err as Error });
+        }
+        if (!formData) throw tooLarge();
+
         const file = formData.get(fieldName);
-        if (!file || !(file instanceof File)) throw new Error(`No file found in field: ${fieldName}`);
+        if (!file || !(file instanceof File)) {
+            throw new HttpError(400, `No file found in field: ${fieldName}`, { code: ErrorCodes.BAD_REQUEST });
+        }
+        if (file.size > this.maxFileSize) throw tooLarge();
+
+        const safeName = safeBasename(file.name);
+        if (!extensionAllowed(safeName, this.allowedExtensions)) {
+            throw new HttpError(400, 'Invalid extension', { code: ErrorCodes.BAD_REQUEST });
+        }
 
         const data = new Uint8Array(await file.arrayBuffer());
-        const safeName = safeBasename(file.name);
         // Not file.type: Bun derives it from the name, so `logo.svg` came in as
         // image/svg+xml and was stored as a page the browser runs.
         const opts = { ...options, contentType: options?.contentType || contentTypeFor(safeName) };

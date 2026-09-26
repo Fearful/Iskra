@@ -45,7 +45,7 @@ await app.start();
 
 El proceso corre en background de forma continua. Si `restartOnCrash: true`, se reinicia automaticamente cuando falla (codigo de salida distinto de 0 o muerto por una senal); una salida limpia con codigo 0 no se reinicia.
 
-Cada proceso se lanza en su propio grupo de procesos, asi que `kill()` y `stop()` envian las senales a todo el arbol: los hijos de un wrapper (`sh -c`, `npm run`, un script) tambien terminan. Esperan a que no quede ningun proceso del grupo, y le envian SIGKILL al grupo si algo sigue vivo pasado el timeout (un nieto que ignora SIGTERM, por ejemplo). Cuando un proceso falla, lo que dejo corriendo en su grupo se termina antes de reiniciarlo. Un `kill()` mientras el proceso espera su backoff de reinicio cancela ese reinicio. Como los grupos son propios, el Ctrl-C de la terminal no les llega: si la app sale antes de que `stop()` termine con ellos (el `shutdownTimeoutMs` del App, una segunda senal, cualquier `process.exit()`), a cada grupo que siga vivo se le envia SIGKILL al salir, asi que ningun hijo sobrevive a la app.
+Cada proceso se lanza en su propio grupo de procesos, asi que `kill()` y `stop()` envian las senales a todo el arbol: los hijos de un wrapper (`sh -c`, `npm run`, un script) tambien terminan. Esperan a que no quede ningun proceso del grupo, y le envian SIGKILL al grupo si algo sigue vivo pasado el timeout (un nieto que ignora SIGTERM, por ejemplo). Cuando un proceso falla, lo que dejo corriendo en su grupo se termina antes de reiniciarlo, y `stop()` tambien lo espera. Un `kill()` mientras el proceso espera su backoff de reinicio cancela ese reinicio. Como los grupos son propios, el Ctrl-C de la terminal no les llega: si la app sale antes de que `stop()` termine con ellos (el `shutdownTimeoutMs` del App, una segunda senal, cualquier `process.exit()`), a cada grupo que siga vivo se le envia SIGKILL al salir, asi que ningun hijo sobrevive a la app.
 
 Si un proceso no se puede lanzar (no existe su comando, por ejemplo), `spawn()` falla. En `app.start()` no hace fallar la app: se informa con `process:spawn-error` y, con `restartOnCrash`, se reintenta con el backoff de reinicio, igual que un reinicio que no lo puede lanzar; cada intento fallido cuenta para `maxRestarts`.
 
@@ -128,7 +128,7 @@ await pm.spawn('extra-worker', {
 });
 ```
 
-Lanza un error si ya existe un proceso con ese nombre. Usa `kill()` primero si necesitas reemplazarlo.
+Lanza un error si ya existe un proceso con ese nombre. Usa `kill()` primero si necesitas reemplazarlo. Tambien lanza un error si su App todavia no inicializo el manager (`ProcessManager is not initialized: register it on an App first`) o despues de `stop()` (`ProcessManager is stopped`); antes se resolvia sin lanzar nada.
 
 ### `kill(name, gracefulTimeoutMs?)`
 

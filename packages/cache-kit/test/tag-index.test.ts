@@ -65,6 +65,34 @@ describe('tag index', () => {
         expect(await cache.get('perm:1')).toBeUndefined();
         expect(await adapter.has('__cache_tag__:perms')).toBe(false);
     });
+
+    it('removes the entry when indexing its tags fails, so no invalidateTag() can miss it', async () => {
+        const inner = new MemoryAdapter();
+        const adapter = Object.assign(Object.create(inner) as MemoryAdapter, {
+            sadd: async () => {
+                throw new Error('index down');
+            },
+        });
+        const cache = new Cache(adapter);
+
+        await expect(cache.set('user:1', { name: 'a' }, { ttl: 60, tags: ['users'] })).rejects.toThrow('index down');
+        expect(await cache.has('user:1')).toBe(false);
+    });
+
+    it('still reports the index error when removing the entry fails too', async () => {
+        const inner = new MemoryAdapter();
+        const adapter = Object.assign(Object.create(inner) as MemoryAdapter, {
+            sadd: async () => {
+                throw new Error('index down');
+            },
+            del: async () => {
+                throw new Error('del down');
+            },
+        });
+        const cache = new Cache(adapter);
+
+        await expect(cache.set('user:1', 1, { tags: ['users'] })).rejects.toThrow('index down');
+    });
 });
 
 describe('tag index without adapter sets (JSON list)', () => {

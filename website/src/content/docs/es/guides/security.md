@@ -101,11 +101,13 @@ nodemailer.createTransport({
 });
 ```
 
-El proveedor de Mailgun aplica una allowlist estricta de headers y elimina CRLF de los valores para prevenir inyección de headers. Solo se aceptan estos headers: `reply-to`, `in-reply-to`, `references`, `list-unsubscribe`, `list-unsubscribe-post`, `list-id`, `x-mailgun-variables`, `x-mailgun-tag`. Cualquier otro tira error:
+El proveedor de Mailgun aplica una allowlist estricta de headers y elimina CRLF de los valores para prevenir inyección de headers. Solo se aceptan estos headers: `in-reply-to`, `references`, `list-unsubscribe`, `list-unsubscribe-post`, `list-id`, `x-mailgun-variables`, `x-mailgun-tag`. Cualquier otro tira error:
 
 ```typescript
 // tira: Header "x-evil" is not allowed
 ```
+
+Reply-To se define con `message.replyTo`, cuya dirección se valida como la de un destinatario; un `reply-to` en `headers` tira `Header "reply-to" is not allowed: use message.replyTo`.
 
 ## Almacenamiento
 

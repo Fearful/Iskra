@@ -4,6 +4,14 @@ Cliente Java para interactuar con servicios Iskra a traves de HTTP. Permite inte
 
 ## Instalacion
 
+El SDK todavia no esta publicado en Maven Central: instalalo en tu repositorio
+Maven local desde un clon de este repositorio y despues agrega la dependencia.
+
+```bash
+cd sdks/java/iskra-client
+mvn install
+```
+
 ### Maven
 
 ```xml
@@ -54,8 +62,15 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
     .authBasePath("/api/sso")                  // ruta base de autenticacion (default: /api/sso)
     .storageRoutePrefix("/upload")             // routePrefix del UploadFeature (default: /upload)
     .origin("https://app.ejemplo.com")         // Origin de las peticiones con sesion (default: el de la base URL)
+    .maxResponseBytes(10 * 1024 * 1024)        // tamano maximo del body de una respuesta (default: 10 MiB)
     .build();
 ```
+
+Una respuesta cuyo body supera `maxResponseBytes` (por su `Content-Length` o por los
+bytes recibidos) lanza `IskraException` en lugar de llenar la memoria del proceso.
+El limite tambien corta `storage().download()`: el default (10 MiB) es el mismo que el
+`maxFileSize` por defecto del UploadFeature, asi que si el servicio sube `maxFileSize`,
+subi `maxResponseBytes` al menos a ese valor.
 
 Un `IskraClient` es thread-safe y **nunca guarda cookies**: una sola instancia (por
 ejemplo, un bean singleton) puede atender a todos los usuarios sin que la sesion de
@@ -195,6 +210,9 @@ Para interactuar con rutas personalizadas de tu aplicacion Iskra:
 // GET
 IskraResponse<List> productos = iskra.get("/api/productos", List.class);
 
+// GET con query: /api/productos?pagina=2&tag=a&tag=b
+IskraResponse<List> pagina = iskra.get("/api/productos", Map.of("pagina", 2, "tag", List.of("a", "b")), List.class);
+
 // POST
 Map<String, Object> orden = Map.of("producto_id", 1, "cantidad", 3);
 IskraResponse<Map> resultado = iskra.post("/api/ordenes", orden, Map.class);
@@ -211,6 +229,9 @@ IskraResponse<Object> eliminado = iskra.delete("/api/ordenes/1", Object.class);
 los de las rutas de upload) tambien quedan en `getData()`. Una respuesta de texto se
 obtiene pidiendo `String.class` u `Object.class`. `getStatusCode()` devuelve el
 status HTTP.
+
+La query de `get(path, query, type)` se codifica en UTF-8 y se agrega a la que ya
+tenga `path`; los valores `null` se omiten y una coleccion o array repite la clave.
 
 ### Con tipos personalizados
 
@@ -232,6 +253,7 @@ El SDK mapea automaticamente las respuestas de error de Iskra a excepciones Java
 
 ```java
 import dev.iskra.client.exception.*;
+import java.time.Duration;
 
 try {
     iskra.get("/api/recurso-inexistente", Object.class);
@@ -248,8 +270,9 @@ try {
     // HTTP 403
     System.out.println("Prohibido: " + e.getMessage());
 } catch (RateLimitException e) {
-    // HTTP 429
-    System.out.println("Limite de peticiones excedido");
+    // HTTP 429; getRetryAfter(): la espera segun Retry-After, si vino
+    System.out.println("Limite de peticiones excedido, reintentar en "
+            + e.getRetryAfter().map(Duration::getSeconds).orElse(null) + " s");
 } catch (IskraException e) {
     // Cualquier otro error
     System.out.println("Error " + e.getStatusCode() + ": " + e.getMessage());
@@ -271,7 +294,9 @@ try {
 El mensaje sale de `error` o `message` del cuerpo (los formatos de
 `ErrorHandlerFeature`, `errorResponse()` y Better Auth), `getErrorCode()` de `code` y
 `getDetails()` de `details`; un cuerpo de texto (por ejemplo, el `404 Not Found` de
-una ruta inexistente) queda como mensaje. Si el hilo se interrumpe durante una
+una ruta inexistente) queda como mensaje. En un 429, `getRetryAfter()` devuelve el
+header `Retry-After` (segundos o fecha HTTP) como `Optional<Duration>`, vacio si falta
+o es invalido. Si el hilo se interrumpe durante una
 peticion, se lanza `IskraException` y el hilo conserva la marca de interrupcion.
 
 ## Integracion con Spring MVC

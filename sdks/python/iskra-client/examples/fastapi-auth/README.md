@@ -45,6 +45,7 @@ Cliente HTTP
 ## Instalacion
 
 ```bash
+# Desde este directorio: instala tambien el SDK de este repositorio (../..)
 pip install -r requirements.txt
 ```
 

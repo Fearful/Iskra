@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import answersRoutes from '../src/interfaces/http/answers.routes.ts';
 import { FormService } from '../src/domain/forms/form.service.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 /** A Drizzle-ish db that records the LIMIT and OFFSET of the answers query, as Postgres would reject them. */
 function fakeDb() {
@@ -36,7 +37,7 @@ function fakeDb() {
 describe('GET /forms/:id/answers', () => {
     const query = async (search: string) => {
         const db = fakeDb();
-        FormService.setDb(db);
+        FormService.setDb(db as unknown as FormsDb);
         const res = await answersRoutes.request(`/forms/form-1/answers${search}`);
         return { status: res.status, body: (await res.json()) as any, limit: db.limit, offset: db.offset };
     };

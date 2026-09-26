@@ -4,13 +4,16 @@
 const readline = require('readline');
 
 // FAKE_BRIDGE_MODE simulates startup failures: `fatal` (cannot connect),
-// `exit` (dies before ready), `silent` (never becomes ready).
+// `exit` (dies before ready), `silent` (never becomes ready), `ready-exit`
+// (says ready, then dies at once).
 const mode = process.env.FAKE_BRIDGE_MODE;
 if (mode === 'fatal') {
     process.stdout.write(JSON.stringify({ type: 'fatal', error: 'ORA-12541: no listener' }) + '\n');
     process.exit(1);
 } else if (mode === 'exit') {
     process.exit(1);
+} else if (mode === 'ready-exit') {
+    process.stdout.write(JSON.stringify({ type: 'ready' }) + '\n', () => process.exit(1));
 } else if (mode === 'silent') {
     setInterval(() => {}, 1000);
 } else {
