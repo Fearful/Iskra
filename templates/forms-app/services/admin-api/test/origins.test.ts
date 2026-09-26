@@ -17,6 +17,7 @@ async function signInStatuses(nodeEnv: string): Promise<Record<string, number>> 
                 NODE_ENV: nodeEnv,
                 CORS_ORIGINS: '',
                 AUTH_BASE_URL: '',
+                DATABASE_URL: `postgresql://forms:${randomBytes(16).toString('hex')}@localhost:5432/forms_app`,
                 AUTH_SECRET: randomBytes(32).toString('base64'),
                 INTERNAL_API_TOKEN: randomBytes(32).toString('base64'),
             },
