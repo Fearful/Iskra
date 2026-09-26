@@ -36,7 +36,7 @@ Cliente para Java 11+ compatible con Spring MVC, Spring Boot, Jakarta EE, y cual
 - Mapeo automatico de errores Iskra a excepciones Java tipadas
 - Unica dependencia externa: Jackson (JSON)
 
-**Instalacion (Maven):**
+**Instalacion (Maven):** el SDK todavia no esta en Maven Central, asi que primero instalalo desde el codigo fuente (`mvn install` en `sdks/java/iskra-client` de un clon de este repositorio) y despues agrega:
 ```xml
 <dependency>
     <groupId>dev.iskra</groupId>
@@ -74,9 +74,11 @@ Cliente para Python 3.9+ compatible con FastAPI, Django, Flask, y cualquier apli
 - Context manager (`with` / `async with`)
 - Unica dependencia externa: httpx
 
-**Instalacion:**
+**Instalacion:** el SDK todavia no esta en PyPI, asi que instalalo desde el codigo fuente:
 ```bash
-pip install iskra-client
+pip install "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
+# o, desde un clon de este repositorio:
+pip install -e sdks/python/iskra-client
 ```
 
 **Uso basico:**

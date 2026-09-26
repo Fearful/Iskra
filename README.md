@@ -131,8 +131,8 @@ Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**
 
 Iskra exposes its services over HTTP and provides client SDKs to integrate from other languages:
 
-- **Java** — `dev.iskra:iskra-client`
-- **Python** — `iskra-client` (sync and async)
+- **Java** — `dev.iskra:iskra-client` (install from source)
+- **Python** — `iskra-client` (sync and async; install from source)
 - **Go** and **.NET** — planned (see the [roadmap](./ROADMAP.md))
 
 More details in the [SDK documentation](https://iskra-docs.fly.dev/guides/sdks/).

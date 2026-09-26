@@ -122,8 +122,8 @@ bun dev
 
 Iskra expone sus servicios via HTTP, y provee SDKs cliente para integrar desde otros lenguajes:
 
-- **Java** — `dev.iskra:iskra-client`
-- **Python** — `iskra-client` (sync y async)
+- **Java** — `dev.iskra:iskra-client` (instalar desde el código fuente)
+- **Python** — `iskra-client` (sync y async; instalar desde el código fuente)
 - **Go** y **.NET** — planeados (ver el [roadmap](./ROADMAP.md))
 
 Mas detalles en la [documentacion de SDKs](https://iskra-docs.fly.dev/es/guides/sdks/).

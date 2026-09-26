@@ -4,6 +4,14 @@ Cliente Java para interactuar con servicios Iskra a traves de HTTP. Permite inte
 
 ## Instalacion
 
+El SDK todavia no esta publicado en Maven Central: instalalo en tu repositorio
+Maven local desde un clon de este repositorio y despues agrega la dependencia.
+
+```bash
+cd sdks/java/iskra-client
+mvn install
+```
+
 ### Maven
 
 ```xml

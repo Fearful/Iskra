@@ -1,3 +1,5 @@
 fastapi>=0.110.0
 uvicorn>=0.29.0
-iskra-client>=0.1.0
+# iskra-client is not on PyPI yet: the SDK from this repository
+# (paths are relative to this directory, where `pip install -r` runs).
+-e ../..

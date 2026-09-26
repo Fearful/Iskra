@@ -4,13 +4,20 @@ Cliente Python para interactuar con servicios Iskra a traves de HTTP. Compatible
 
 ## Instalacion
 
+El SDK todavia no esta publicado en PyPI: instalalo desde el codigo fuente.
+
 ```bash
-pip install iskra-client
+pip install "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
 ```
 
-O con Poetry:
+O desde un clon del repositorio:
 ```bash
-poetry add iskra-client
+pip install -e sdks/python/iskra-client
+```
+
+Con Poetry:
+```bash
+poetry add "git+https://github.com/fearful/iskra.git#subdirectory=sdks/python/iskra-client"
 ```
 
 ## Requisitos
