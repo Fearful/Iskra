@@ -18,14 +18,17 @@ import { join } from 'node:path';
 import {
     AuthError,
     AuthFeature,
+    ConflictError,
     DbFeature,
     ErrorHandlerFeature,
+    ForbiddenError,
     HealthCheckFeature,
     Kernel,
     NotFoundError,
     StorageFeature,
     UploadFeature,
     ValidationError,
+    createHttpError,
     successResponse,
 } from '@iskra-bun/web-kit';
 
@@ -157,6 +160,17 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     });
     app.post('/contract/validate', () => {
         throw new ValidationError('Invalid widget', { field: 'name', issue: 'required' });
+    });
+    app.get('/contract/forbidden', () => {
+        throw new ForbiddenError('Not your widget');
+    });
+    app.post('/contract/conflict', () => {
+        throw new ConflictError('Widget already exists');
+    });
+    // Answers like RateLimitFeature, plus a Retry-After header.
+    app.get('/contract/rate-limited', (c) => {
+        c.header('Retry-After', '7');
+        throw createHttpError(429, 'Too many requests');
     });
     app.get('/contract/me', (c) => {
         const user = c.get('user');

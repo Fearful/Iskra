@@ -2,8 +2,11 @@ package dev.iskra.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import dev.iskra.client.exception.AuthException;
+import dev.iskra.client.exception.ConflictException;
+import dev.iskra.client.exception.ForbiddenException;
 import dev.iskra.client.exception.IskraException;
 import dev.iskra.client.exception.NotFoundException;
+import dev.iskra.client.exception.RateLimitException;
 import dev.iskra.client.exception.ValidationException;
 import dev.iskra.client.response.IskraResponse;
 import org.junit.jupiter.api.Test;
@@ -85,6 +88,26 @@ class RequestsTest {
     @Test
     void unauthenticatedRoute() {
         assertThrows(AuthException.class, () -> iskra.get("/contract/me", Object.class));
+    }
+
+    @Test
+    void forbiddenConflictAndRateLimitAreTyped() {
+        ForbiddenException forbidden = assertThrows(ForbiddenException.class,
+                () -> iskra.get("/contract/forbidden", Object.class));
+        assertEquals("Not your widget", forbidden.getMessage());
+        assertEquals(403, forbidden.getStatusCode());
+        assertEquals("FORBIDDEN", forbidden.getErrorCode());
+
+        ConflictException conflict = assertThrows(ConflictException.class,
+                () -> iskra.post("/contract/conflict", null, Object.class));
+        assertEquals("Widget already exists", conflict.getMessage());
+        assertEquals(409, conflict.getStatusCode());
+        assertEquals("CONFLICT", conflict.getErrorCode());
+
+        RateLimitException limited = assertThrows(RateLimitException.class,
+                () -> iskra.get("/contract/rate-limited", Object.class));
+        assertEquals("Too many requests", limited.getMessage());
+        assertEquals(429, limited.getStatusCode());
     }
 
     @Test

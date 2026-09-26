@@ -2,8 +2,11 @@ import pytest
 
 from iskra_client import (
     AuthException,
+    ConflictException,
+    ForbiddenException,
     IskraClient,
     NotFoundException,
+    RateLimitException,
     ValidationException,
 )
 
@@ -59,6 +62,25 @@ def test_unauthenticated_route(iskra: IskraClient):
     with pytest.raises(AuthException) as err:
         iskra.get("/contract/me")
     assert err.value.status_code == 401
+
+
+def test_forbidden_conflict_and_rate_limit_are_typed(iskra: IskraClient):
+    with pytest.raises(ForbiddenException) as forbidden:
+        iskra.get("/contract/forbidden")
+    assert str(forbidden.value) == "Not your widget"
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.error_code == "FORBIDDEN"
+
+    with pytest.raises(ConflictException) as conflict:
+        iskra.post("/contract/conflict")
+    assert str(conflict.value) == "Widget already exists"
+    assert conflict.value.status_code == 409
+    assert conflict.value.error_code == "CONFLICT"
+
+    with pytest.raises(RateLimitException) as limited:
+        iskra.get("/contract/rate-limited")
+    assert str(limited.value) == "Too many requests"
+    assert limited.value.status_code == 429
 
 
 def test_plain_text_error_body(iskra: IskraClient):
