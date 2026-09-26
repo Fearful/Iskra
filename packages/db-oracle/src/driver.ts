@@ -22,6 +22,8 @@ type ReadyWaiter = { resolve: () => void; reject: (err: Error) => void };
 export class OracleDriver implements Driver {
     name = 'OracleDriver';
     private proc: Subprocess | null = null;
+    /** Bridge processes whose stdout has closed (they exited or are exiting). */
+    private endedProcs = new WeakSet<Subprocess>();
     private reqId = 0;
     // Replaced on every start(): each bridge process owns its own pending map,
     // so the reader of a previous (stopped) bridge can never reject queries
@@ -107,7 +109,7 @@ export class OracleDriver implements Driver {
                 },
             };
         });
-        this.readStream(proc.stdout as ReadableStream, pending, waiter);
+        this.readStream(proc, proc.stdout as ReadableStream, pending, waiter);
 
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -125,6 +127,12 @@ export class OracleDriver implements Driver {
             throw err;
         } finally {
             clearTimeout(timer);
+        }
+        // The bridge said ready and then exited before this line ran: its
+        // reader has already finished, so nothing would clear this.proc.
+        if (this.endedProcs.has(proc)) {
+            proc.kill();
+            throw new Error('Oracle bridge process exited');
         }
         this.proc = proc;
     }
@@ -201,7 +209,12 @@ export class OracleDriver implements Driver {
         });
     }
 
-    private async readStream(stream: ReadableStream, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {
+    private async readStream(
+        proc: Subprocess,
+        stream: ReadableStream,
+        pending: Map<number, PendingEntry>,
+        waiter: ReadyWaiter,
+    ) {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         // The line being read, as the chunks received since it began: each chunk
@@ -250,6 +263,13 @@ export class OracleDriver implements Driver {
             this.rejectAllPending(new Error('Oracle bridge stream error'), pending);
         } finally {
             reader.releaseLock();
+            this.endedProcs.add(proc);
+            // The bridge exited while running (stop() clears proc first): later
+            // queries fail at once instead of waiting for their timeout.
+            if (this.proc === proc) {
+                this.proc = null;
+                this.log('error', 'Oracle bridge process exited; queries fail until the driver is started again');
+            }
             waiter.reject(new Error('Oracle bridge process exited before it was ready'));
             this.rejectAllPending(new Error('Oracle bridge process exited'), pending);
         }

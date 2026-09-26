@@ -130,4 +130,60 @@ describe('OracleDriver pending-promise rejection on fatal/exit', () => {
             await driver.stop();
         }
     });
+
+    test('a query after the bridge exited rejects at once, not after its timeout', async () => {
+        process.env.ORA_CONN = 'fake://localhost/test';
+        const app = makeApp();
+        const errors: unknown[] = [];
+        (app.logger as any).error = (obj: unknown, msg?: string) => errors.push(msg ?? obj);
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(app);
+        await driver.start();
+        try {
+            await expect(driver.query('EXIT_TEST')).rejects.toThrow('Oracle bridge process exited');
+
+            const started = Date.now();
+            await expect(driver.query('SELECT 1 FROM dual')).rejects.toThrow('not started');
+            expect(Date.now() - started).toBeLessThan(1000);
+            expect(errors).toContain('Oracle bridge process exited; queries fail until the driver is started again');
+        } finally {
+            await driver.stop();
+        }
+    });
+
+    test('stop() does not report the exit it caused', async () => {
+        process.env.ORA_CONN = 'fake://localhost/test';
+        const app = makeApp();
+        const errors: unknown[] = [];
+        (app.logger as any).error = (obj: unknown, msg?: string) => errors.push(msg ?? obj);
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(app);
+        await driver.start();
+        await driver.stop();
+        await Bun.sleep(50);
+        expect(errors).toEqual([]);
+    });
+
+    test('a bridge that exits right after ready never leaves queries hanging', async () => {
+        process.env.ORA_CONN = 'fake://localhost/test';
+        process.env.FAKE_BRIDGE_MODE = 'ready-exit';
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(makeApp());
+        try {
+            // Either start() sees the exit, or the exit clears the driver
+            // after it: in both cases a query fails fast.
+            const startErr = await driver.start().then(
+                () => null,
+                (e: Error) => e,
+            );
+            if (startErr) expect(startErr.message).toBe('Oracle bridge process exited');
+            await Bun.sleep(100);
+            const started = Date.now();
+            await expect(driver.query('SELECT 1 FROM dual')).rejects.toThrow(/not started|exited/);
+            expect(Date.now() - started).toBeLessThan(1000);
+        } finally {
+            delete process.env.FAKE_BRIDGE_MODE;
+            await driver.stop();
+        }
+    });
 });
