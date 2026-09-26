@@ -39,7 +39,7 @@ await app.start();
 1. **`new App(config?)`** — Creates the instance. If you don't pass a config, it is loaded automatically with c12.
 2. **`app.register(driver)`** — Registers a driver (does not initialize it yet).
 3. **`app.use(plugin)`** — Installs a plugin immediately (if `install` is async, `start()` waits for it and propagates its error).
-4. **`app.start()`** — Calls `init()` on every driver, then `start()` one at a time in registration order. If a driver fails to start, the ones already started are stopped in reverse order and the error is rethrown.
+4. **`app.start()`** — Calls `init()` on every driver, then `start()` one at a time in registration order. If a driver's `init()` fails, the drivers initialized so far (the failing one included) are stopped in reverse order; if a driver fails to start, every driver is stopped in reverse order. In both cases OpenTelemetry is shut down, the error is rethrown, and a later `app.stop()` stops nothing more.
 5. **`app.stop()`** — Calls `stop()` in reverse start order (the web server before the database), continues past failures, and then throws a `LifecycleError` with all of them. OpenTelemetry is always shut down.
 
 #### Shutdown on signals

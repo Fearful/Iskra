@@ -39,7 +39,7 @@ await app.start();
 1. **`new App(config?)`** — Crea la instancia. Si no le pasas config, la carga automaticamente con c12.
 2. **`app.register(driver)`** — Registra un driver (no lo inicializa todavia).
 3. **`app.use(plugin)`** — Instala un plugin inmediatamente (si `install` es async, `start()` espera a que termine y propaga su error).
-4. **`app.start()`** — Llama `init()` en todos los drivers y despues `start()` de a uno, en orden de registro. Si un driver falla al arrancar, detiene en orden inverso los que ya arrancaron y relanza el error.
+4. **`app.start()`** — Llama `init()` en todos los drivers y despues `start()` de a uno, en orden de registro. Si el `init()` de un driver falla, detiene en orden inverso los drivers inicializados hasta ahi (incluido el que fallo); si un driver falla al arrancar, detiene todos los drivers en orden inverso. En ambos casos cierra OpenTelemetry, relanza el error y un `app.stop()` posterior ya no detiene nada.
 5. **`app.stop()`** — Llama `stop()` en orden inverso al de arranque (el servidor web antes que la base de datos), sigue aunque alguno falle y al final tira `LifecycleError` con todos los errores. Siempre cierra OpenTelemetry.
 
 #### Apagado por senales
