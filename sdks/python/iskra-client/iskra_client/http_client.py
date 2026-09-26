@@ -4,7 +4,7 @@ import contextvars
 import http.cookiejar
 import threading
 import weakref
-from typing import Any, Callable, Collection, Dict, Mapping, Optional, TypeVar
+from typing import Any, Callable, Collection, Dict, Mapping, Optional, TypeVar, Union
 from urllib.parse import urlsplit
 
 import httpx
@@ -129,7 +129,7 @@ class HttpClientWrapper:
         def send(cancelled: threading.Event) -> httpx.Response:
             try:
                 with self._transport.sync.stream(
-                    method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+                    method, _with_params(path, params), json=json, files=files, headers=self._extra_headers
                 ) as resp:
                     _check_declared_size(resp, limit)
                     body = bytearray()
@@ -178,7 +178,7 @@ class HttpClientWrapper:
         async def send() -> httpx.Response:
             try:
                 async with self._transport.async_client.stream(
-                    method, path, json=json, params=_clean(params), files=files, headers=self._extra_headers
+                    method, _with_params(path, params), json=json, files=files, headers=self._extra_headers
                 ) as resp:
                     _check_declared_size(resp, limit)
                     body = bytearray()
@@ -325,7 +325,10 @@ def _within(timeout: Optional[float], work: Callable[[threading.Event], _T]) -> 
     return outcome["value"]
 
 
-def _clean(params: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
-    if params is None:
-        return None
-    return {k: v for k, v in params.items() if v is not None}
+def _with_params(path: str, params: Optional[Mapping[str, Any]]) -> Union[str, httpx.URL]:
+    """`path` with `params` added to its query (None values left out). httpx's
+    own `params=` replaced a query already in the path."""
+    cleaned = {k: v for k, v in (params or {}).items() if v is not None}
+    if not cleaned:
+        return path
+    return httpx.URL(path).copy_merge_params(cleaned)

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Requests:** `get(path, query, type)` (with a `Class` or `TypeReference`) adds a query to the path: keys and values UTF-8 percent-encoded, null values left out, a collection or array repeats its key, appended with `&` when the path already has a query.
 - **Errors:** `RateLimitException.getRetryAfter()`: the wait from a 429's `Retry-After` header (delay in seconds or an HTTP-date) as `Optional<Duration>`, empty when absent or invalid.
 - **Examples and docs:** the Spring MVC example no longer returns Iskra's error text (its messages, the host and port of a failed connection) or the full health payload to anonymous callers: they go to the log and callers get a generic error and `{"status"}`. The READMEs no longer suggest `rateLimit: false` "and limit in this app" (the examples limit nothing): they say to raise the limit and add a per-user one. The storage section shows how to keep each user in their own folder, since an `authorize` that only checks for a session lets every user list, download and delete everyone's files.
 - **Storage:** a file name or subfolder segment `.` or `..` is rejected: URI normalization resolved it, so `download("x", "../contract")` left the upload routes and sent the API key and session cookie to another route.

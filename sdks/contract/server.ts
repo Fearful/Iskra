@@ -152,6 +152,7 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     app.post('/contract/echo', async (c) => c.json(await c.req.json()));
     app.put('/contract/echo', async (c) => c.json(await c.req.json()));
     app.delete('/contract/echo', (c) => c.body(null, 204));
+    app.get('/contract/query', (c) => c.json(c.req.queries()));
     app.get('/contract/headers', (c) =>
         c.json({ apiKey: c.req.header('x-api-key') ?? null, custom: c.req.header('x-custom') ?? null }),
     );

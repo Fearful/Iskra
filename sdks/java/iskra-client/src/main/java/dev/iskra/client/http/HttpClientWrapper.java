@@ -15,12 +15,14 @@ import dev.iskra.client.response.IskraResponse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,6 +97,14 @@ public class HttpClientWrapper {
 
     public <T> IskraResponse<T> get(String path, TypeReference<T> responseType) {
         return toResponse(send("GET", path, null, null), type(responseType));
+    }
+
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, Class<T> responseType) {
+        return get(withQuery(path, query), responseType);
+    }
+
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, TypeReference<T> responseType) {
+        return get(withQuery(path, query), responseType);
     }
 
     public <T> IskraResponse<T> post(String path, Object body, Class<T> responseType) {
@@ -391,6 +401,39 @@ public class HttpClientWrapper {
 
     private JavaType type(TypeReference<?> type) {
         return objectMapper.getTypeFactory().constructType(type);
+    }
+
+    /**
+     * Appends {@code query} to {@code path} (after {@code &} when it already
+     * has a query), keys and values percent-encoded as UTF-8. Null values are
+     * left out, an {@link Iterable} or array repeats its key for each element,
+     * and anything else is sent as {@code String.valueOf(value)}.
+     */
+    static String withQuery(String path, Map<String, ?> query) {
+        if (query == null || query.isEmpty()) {
+            return path;
+        }
+        StringBuilder url = new StringBuilder(path);
+        String separator = !path.contains("?") ? "?" : path.endsWith("?") || path.endsWith("&") ? "" : "&";
+        for (Map.Entry<String, ?> entry : query.entrySet()) {
+            Object value = entry.getValue();
+            Iterable<?> values = value instanceof Iterable ? (Iterable<?>) value
+                    : value instanceof Object[] ? Arrays.asList((Object[]) value)
+                    : Collections.singletonList(value);
+            for (Object item : values) {
+                if (item == null) {
+                    continue;
+                }
+                url.append(separator).append(encode(entry.getKey()))
+                        .append('=').append(encode(String.valueOf(item)));
+                separator = "&";
+            }
+        }
+        return url.toString();
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private static String originOf(String url) {

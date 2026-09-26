@@ -53,6 +53,7 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
 
 // Rutas personalizadas
 var resultado = iskra.post("/api/ordenes", datos, Orden.class);
+var pagina = iskra.get("/api/productos", Map.of("pagina", 2), List.class);  // ?pagina=2
 
 // Sub-clientes
 iskra.health().check();
@@ -92,6 +93,7 @@ iskra = IskraClient(
 
 # Rutas personalizadas
 resultado = iskra.post("/api/ordenes", json=datos)
+pagina = iskra.get("/api/productos", params={"pagina": 2})  # ?pagina=2
 
 # Sub-clientes
 iskra.health.check()

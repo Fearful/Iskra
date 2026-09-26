@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,6 +68,30 @@ class RequestsTest {
         assertTrue(deleted.isSuccess());
         assertNull(deleted.getData());
         assertEquals(204, deleted.getStatusCode());
+    }
+
+    @Test
+    void queryParametersAreEncoded() {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("q", "a b&c=d/ñ+");
+        query.put("tags", List.of("x", "y"));
+        query.put("ids", new Integer[] {1, 2});
+        query.put("skip", null);
+        query.put("flag", true);
+        query.put("n", 2);
+        TypeReference<Map<String, List<String>>> queries = new TypeReference<Map<String, List<String>>>() {};
+        assertEquals(Map.of(
+                "q", List.of("a b&c=d/ñ+"),
+                "tags", List.of("x", "y"),
+                "ids", List.of("1", "2"),
+                "flag", List.of("true"),
+                "n", List.of("2")), iskra.get("/contract/query", query, queries).getData());
+        assertEquals(Map.of("page", List.of("1"), "size", List.of("10")),
+                iskra.get("/contract/query?page=1", Map.of("size", 10), queries).getData());
+        assertEquals(Map.of("size", List.of("10")),
+                iskra.get("/contract/query?", Map.of("size", 10), Map.class).getData());
+        assertEquals(Map.of("page", List.of("1")),
+                iskra.get("/contract/query?page=1", Collections.emptyMap(), Map.class).getData());
     }
 
     @Test

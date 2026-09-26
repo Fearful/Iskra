@@ -254,6 +254,9 @@ resp.message      # str | None
 resp.status_code  # int
 ```
 
+`params` se agrega a la query que ya tenga el path; los valores `None` se omiten y una
+lista repite la clave (`{"tag": ["a", "b"]}` → `?tag=a&tag=b`).
+
 ## Manejo de Errores
 
 El SDK mapea automaticamente las respuestas de error de Iskra a excepciones Python tipadas:

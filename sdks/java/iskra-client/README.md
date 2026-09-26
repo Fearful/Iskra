@@ -207,6 +207,9 @@ Para interactuar con rutas personalizadas de tu aplicacion Iskra:
 // GET
 IskraResponse<List> productos = iskra.get("/api/productos", List.class);
 
+// GET con query: /api/productos?pagina=2&tag=a&tag=b
+IskraResponse<List> pagina = iskra.get("/api/productos", Map.of("pagina", 2, "tag", List.of("a", "b")), List.class);
+
 // POST
 Map<String, Object> orden = Map.of("producto_id", 1, "cantidad", 3);
 IskraResponse<Map> resultado = iskra.post("/api/ordenes", orden, Map.class);
@@ -223,6 +226,9 @@ IskraResponse<Object> eliminado = iskra.delete("/api/ordenes/1", Object.class);
 los de las rutas de upload) tambien quedan en `getData()`. Una respuesta de texto se
 obtiene pidiendo `String.class` u `Object.class`. `getStatusCode()` devuelve el
 status HTTP.
+
+La query de `get(path, query, type)` se codifica en UTF-8 y se agrega a la que ya
+tenga `path`; los valores `null` se omiten y una coleccion o array repite la clave.
 
 ### Con tipos personalizados
 

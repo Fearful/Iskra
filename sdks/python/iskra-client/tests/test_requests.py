@@ -38,6 +38,17 @@ def test_query_params(iskra: IskraClient):
     assert iskra.get("/contract/envelope", params={"page": 2}).success
 
 
+def test_query_params_are_encoded(iskra: IskraClient):
+    params = {"q": "a b&c=d/ñ+", "tags": ["x", "y"], "skip": None, "flag": True, "n": 2}
+    assert iskra.get("/contract/query", params=params).data == {
+        "q": ["a b&c=d/ñ+"],
+        "tags": ["x", "y"],
+        "flag": ["true"],
+        "n": ["2"],
+    }
+    assert iskra.get("/contract/query?page=1", params={"size": 10}).data == {"page": ["1"], "size": ["10"]}
+
+
 def test_api_key_and_custom_headers_are_sent(base_url: str):
     with IskraClient(base_url=base_url, api_key="sk-test", headers={"X-Custom": "yes"}) as client:
         assert client.get("/contract/headers").data == {"apiKey": "sk-test", "custom": "yes"}
