@@ -52,7 +52,7 @@ describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () 
     });
 
     afterAll(async () => {
-        for (const k of ['str', 'obj', 'ttl', 'ex', 'counter', 'xx']) {
+        for (const k of ['str', 'obj', 'ttl', 'ex', 'counter', 'xx', 'numstr', 'frac', 'raw']) {
             await cache.client.delete(prefix + k);
         }
         await kernel.shutdown();
@@ -61,6 +61,43 @@ describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () 
     it('stores and reads back a plain string', async () => {
         await cache.client.set(prefix + 'str', 'plain');
         expect(await cache.client.get(prefix + 'str')).toBe('plain');
+    });
+
+    it('reads back a numeric string as a string, like the memory adapter', async () => {
+        // Regression: strings were stored raw, so '123' came back as 123.
+        await cache.client.set(prefix + 'numstr', '123');
+        expect(await cache.client.get(prefix + 'numstr')).toBe('123');
+        await cache.client.set(prefix + 'numstr', 'true', 60);
+        expect(await cache.client.get(prefix + 'numstr')).toBe('true');
+    });
+
+    it('still reads a raw string an older version stored', async () => {
+        const redis = new Redis(REDIS_URL);
+        try {
+            await redis.set(prefix + 'raw', 'plain');
+        } finally {
+            redis.disconnect();
+        }
+        expect(await cache.client.get(prefix + 'raw')).toBe('plain');
+    });
+
+    it('takes a fractional TTL, as the memory adapter does', async () => {
+        // Regression: EX takes whole seconds, so 0.05 was an error.
+        await cache.client.set(prefix + 'frac', 'soon', 0.05);
+        expect(await cache.client.get(prefix + 'frac')).toBe('soon');
+        await new Promise((r) => setTimeout(r, 120));
+        expect(await cache.client.get(prefix + 'frac')).toBeNull();
+
+        await cache.client.set(prefix + 'frac', 'v', 60);
+        expect(await cache.client.setIfExists!(prefix + 'frac', 'w', 0.5)).toBe(true);
+        const redis = new Redis(REDIS_URL);
+        try {
+            const pttl = await redis.pttl(prefix + 'frac');
+            expect(pttl).toBeGreaterThan(0);
+            expect(pttl).toBeLessThanOrEqual(500);
+        } finally {
+            redis.disconnect();
+        }
     });
 
     it('round-trips an object through JSON', async () => {
