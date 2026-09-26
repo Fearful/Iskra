@@ -180,8 +180,12 @@ que tu MinIO o servidor compatible con S3 soporte `If-None-Match` en `PUT`).
 El adaptador S3/MinIO lee en memoria el `ReadableStream` que recibe `put()` antes
 de subirlo. `maxBytes` lo acota: un stream mas largo se cancela y `put()` rechaza
 con un `RangeError` (`put(): stream exceeds maxBytes (N)`) sin subir nada. Por
-defecto es 5 GiB, el limite de S3 para una sola subida; ajustalo a lo que acepta
-la ruta cuando el stream viene del cuerpo de una peticion. El adaptador local
+defecto es 5 GiB, el limite de S3 para una sola subida (o el Buffer mas grande
+que permite el runtime, si es menor); ajustalo a lo que acepta la ruta cuando el
+stream viene del cuerpo de una peticion. Tiene que ser un entero no negativo (si
+no, `put()` rechaza con un `TypeError` o `RangeError`). Los chunks pueden ser
+bytes (cualquier vista de `ArrayBuffer`), `ArrayBuffer`s o strings, que se
+guardan como UTF-8 y cuentan por sus bytes en UTF-8. El adaptador local
 escribe el stream directamente en disco e ignora `maxBytes`: acota el tamano antes
 de llamarlo.
 

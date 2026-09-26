@@ -177,8 +177,12 @@ or S3-compatible server supports `If-None-Match` on `PUT`).
 The S3/MinIO adapter reads a `ReadableStream` given to `put()` into memory before
 uploading it. `maxBytes` bounds that: a longer stream is cancelled and `put()`
 rejects with a `RangeError` (`put(): stream exceeds maxBytes (N)`) without
-uploading anything. The default is 5 GiB, S3's limit for a single upload; set it
-to what the route accepts when the stream comes from a request body. The local
+uploading anything. The default is 5 GiB, S3's limit for a single upload (or the
+largest Buffer the runtime allows, if smaller); set it to what the route accepts
+when the stream comes from a request body. It must be a non-negative integer
+(else `put()` rejects with a `TypeError` or `RangeError`). Chunks may be bytes
+(any `ArrayBuffer` view), `ArrayBuffer`s or strings, stored as UTF-8 and counted
+by their UTF-8 bytes. The local
 adapter writes a stream straight to disk and ignores `maxBytes`: bound the size
 before calling it.
 

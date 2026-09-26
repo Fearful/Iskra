@@ -1,3 +1,4 @@
+import { constants } from 'node:buffer';
 import { BaseStorageAdapter, FileExistsError } from '../base';
 import type { StorageConfig, StorageFile, PutOptions, UrlOptions } from '../base';
 import { dispositionFor } from '../content-type';
@@ -14,8 +15,28 @@ type Presigner = typeof import('@aws-sdk/s3-request-presigner');
  */
 let sdk: S3Sdk | undefined;
 
-/** Default `maxBytes` of a streamed put: S3's limit for a single PutObject. */
-const DEFAULT_MAX_STREAM_BYTES = 5 * 1024 ** 3;
+/**
+ * Default `maxBytes` of a streamed put: S3's limit for a single PutObject, or
+ * the largest Buffer this runtime can allocate when that is smaller.
+ */
+const DEFAULT_MAX_STREAM_BYTES = Math.min(5 * 1024 ** 3, constants.MAX_LENGTH);
+
+/** `maxBytes` as given, checked: a non-negative whole number of bytes. */
+function checkMaxBytes(maxBytes: unknown): number {
+    if (typeof maxBytes !== 'number') throw new TypeError('put(): maxBytes must be a number');
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+        throw new RangeError(`put(): maxBytes must be a non-negative integer, got ${maxBytes}`);
+    }
+    return maxBytes;
+}
+
+/** A stream chunk as bytes: strings are UTF-8, views keep only their own range. */
+function toBytes(value: unknown): Uint8Array {
+    if (typeof value === 'string') return Buffer.from(value, 'utf8');
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    throw new TypeError('put(): stream chunks must be strings, ArrayBuffers or ArrayBuffer views');
+}
 
 /**
  * Reads a stream to put, up to `maxBytes`: past it the stream is cancelled
@@ -29,19 +50,21 @@ async function readStream(stream: ReadableStream, maxBytes: number): Promise<Buf
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = value as Uint8Array;
+            // Counted once converted, so a string counts its UTF-8 bytes.
+            const chunk = toBytes(value);
             size += chunk.byteLength;
-            if (size > maxBytes) {
-                await reader.cancel().catch(() => {});
-                throw new RangeError(`put(): stream exceeds maxBytes (${maxBytes})`);
-            }
+            if (size > maxBytes) throw new RangeError(`put(): stream exceeds maxBytes (${maxBytes})`);
             chunks.push(chunk);
         }
+    } catch (err) {
+        await reader.cancel().catch(() => {});
+        throw err;
     } finally {
         reader.releaseLock();
     }
     return Buffer.concat(chunks, size);
 }
+
 function loadSdk(): S3Sdk {
     // Synchronous on purpose: the constructor builds the client.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -128,7 +151,10 @@ export class S3StorageAdapter extends BaseStorageAdapter {
 
         const body =
             data instanceof ReadableStream
-                ? await readStream(data, options?.maxBytes ?? DEFAULT_MAX_STREAM_BYTES)
+                ? await readStream(
+                      data,
+                      options?.maxBytes === undefined ? DEFAULT_MAX_STREAM_BYTES : checkMaxBytes(options.maxBytes),
+                  )
                 : data;
 
         const contentType = options?.contentType || this.getMimeType(key);
