@@ -86,6 +86,39 @@ describe.if(posix)('process groups', () => {
         expect(await waitFor(() => count('^sleep 7703') === 0)).toBe(true);
         await (app as any).stop();
     });
+
+    it('restarts only once the children of the crashed instance are gone', async () => {
+        // The child left behind takes ~400 ms to exit on SIGTERM, far longer
+        // than the 50 ms backoff: the restart used to run next to it.
+        const child = `sh -c 'trap "sleep 0.4; exit 0" TERM; while :; do sleep 0.0771; done'`;
+        const { app } = makeManager({
+            slowchild: {
+                command: 'sh',
+                args: ['-c', `${child} & sleep 0.1; exit 1`],
+                mode: 'daemon',
+                restartOnCrash: true,
+                maxRestarts: 3,
+                restartBackoff: { initialMs: 50, factor: 1 },
+            },
+        });
+        let maxed = false;
+        app.events.on('process:max-restarts', () => {
+            maxed = true;
+        });
+        await app.start();
+
+        const pattern = '^sh -c trap .*sleep 0.0771';
+        let most = 0;
+        const deadline = Date.now() + 8000;
+        while (!(maxed && count(pattern) === 0) && Date.now() < deadline) {
+            most = Math.max(most, count(pattern));
+            await Bun.sleep(20);
+        }
+        expect(maxed).toBe(true);
+        expect(most).toBe(1);
+        expect(count(pattern)).toBe(0);
+        await (app as any).stop();
+    }, 10_000);
 });
 
 describe.if(posix)('timers', () => {

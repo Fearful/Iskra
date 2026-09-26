@@ -114,6 +114,8 @@ export class ProcessManager implements Driver {
     private processes: Map<string, RunningProcess> = new Map();
     /** Restarts waiting out their backoff delay, so kill()/stop() can cancel them. */
     private restartTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+    /** Crashed instances whose leftover children are still being terminated, by name. */
+    private reaping: Map<string, Promise<void>> = new Map();
     private stopping = false;
     /**
      * Process groups this manager started that may still have members,
@@ -293,7 +295,14 @@ export class ProcessManager implements Driver {
         const pid = (proc as { pid?: number }).pid;
         if (!groupAlive(pid)) return this.untrackGroup(pid);
         this.app?.logger.warn(`Process ${name} crashed and left children behind; terminating them`);
-        void this.terminate(`${name} (leftover children)`, proc, gracefulTimeoutMs);
+        // A restart waits for this (see scheduleRestart), so the new instance
+        // never runs next to the old one's children.
+        const done: Promise<void> = this.terminate(`${name} (leftover children)`, proc, gracefulTimeoutMs).finally(
+            () => {
+                if (this.reaping.get(name) === done) this.reaping.delete(name);
+            },
+        );
+        this.reaping.set(name, done);
     }
 
     private async readStdOut(name: string, stream: ReadableStream) {
@@ -450,7 +459,14 @@ export class ProcessManager implements Driver {
 
         this.app?.logger.info(`Restarting process: ${name} (Attempt ${restarts}/${maxRestarts}) in ${delayMs}ms`);
 
-        const timer = setTimeout(() => {
+        const fire = () => {
+            // The crashed instance's children are still being terminated:
+            // check again shortly. The timer stays registered, so kill(),
+            // stop() and spawn()'s duplicate check still see the restart.
+            if (this.reaping.has(name)) {
+                this.restartTimers.set(name, setTimeout(fire, GROUP_POLL_MS));
+                return;
+            }
             this.restartTimers.delete(name);
             try {
                 this.spawnProcess(name, procInfo.config, restarts, delayMs);
@@ -464,8 +480,8 @@ export class ProcessManager implements Driver {
                     currentBackoffMs: delayMs,
                 });
             }
-        }, delayMs);
-        this.restartTimers.set(name, timer);
+        };
+        this.restartTimers.set(name, setTimeout(fire, delayMs));
     }
 
     /** Reports a process that could not be spawned; a supervised one is retried. */
@@ -651,6 +667,7 @@ export class ProcessManager implements Driver {
 
         for (const timer of this.restartTimers.values()) clearTimeout(timer);
         this.restartTimers.clear();
+        this.reaping.clear();
 
         const entries = [...this.processes.entries()];
         this.processes.clear();
