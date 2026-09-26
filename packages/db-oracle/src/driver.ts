@@ -268,6 +268,13 @@ export class OracleDriver implements Driver {
             // queries fail at once instead of waiting for their timeout.
             if (this.proc === proc) {
                 this.proc = null;
+                // A reader that failed (the catch above) leaves the bridge
+                // running: killed, so a later start() does not run a second one.
+                try {
+                    proc.kill();
+                } catch {
+                    // already gone
+                }
                 this.log('error', 'Oracle bridge process exited; queries fail until the driver is started again');
             }
             waiter.reject(new Error('Oracle bridge process exited before it was ready'));

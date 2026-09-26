@@ -151,6 +151,27 @@ describe('OracleDriver pending-promise rejection on fatal/exit', () => {
         }
     });
 
+    test('a reader that fails while the bridge runs kills the bridge', async () => {
+        // Regression: the driver dropped the process but left it running, so
+        // a later start() ran a second bridge next to it.
+        process.env.ORA_CONN = 'fake://localhost/test';
+        const driver = new OracleDriver(FAKE_BRIDGE);
+        await driver.init(makeApp());
+        await driver.start();
+        const proc = (driver as any).proc;
+        spyOn(driver as any, 'handleLine').mockImplementation(() => {
+            throw new Error('reader failed');
+        });
+        try {
+            await expect(driver.query('SELECT 1 FROM dual')).rejects.toThrow('Oracle bridge stream error');
+            const exited = await Promise.race([proc.exited.then(() => true), Bun.sleep(1000).then(() => false)]);
+            expect(exited).toBe(true);
+        } finally {
+            proc.kill();
+            await driver.stop();
+        }
+    });
+
     test('stop() does not report the exit it caused', async () => {
         process.env.ORA_CONN = 'fake://localhost/test';
         const app = makeApp();
