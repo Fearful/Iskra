@@ -150,3 +150,5 @@ A read-only mirror is available on Codeberg: [codeberg.org/fearful/iskra](https:
 ## License
 
 Licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE) (AGPL-3.0-or-later).
+
+The client SDKs under [`sdks/`](./sdks/) are MIT licensed ([Python](./sdks/python/iskra-client/LICENSE), [Java](./sdks/java/iskra-client/LICENSE)), so they can be used from applications under any license.
