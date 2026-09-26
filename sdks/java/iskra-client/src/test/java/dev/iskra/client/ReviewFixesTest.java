@@ -113,6 +113,38 @@ class ReviewFixesTest {
     }
 
     @Test
+    void aResponseOfExactlyMaxResponseBytesIsRead() throws Exception {
+        byte[] exact = new byte[1024];
+        java.util.Arrays.fill(exact, (byte) 'a');
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/declared", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, exact.length); // Content-Length: 1024
+            try (OutputStream body = exchange.getResponseBody()) {
+                body.write(exact);
+            }
+        });
+        server.createContext("/chunked", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, 0); // chunked: no Content-Length
+            try (OutputStream body = exchange.getResponseBody()) {
+                body.write(exact);
+            }
+        });
+        server.start();
+        try {
+            IskraClient iskra = IskraClient.builder("http://127.0.0.1:" + server.getAddress().getPort())
+                    .maxResponseBytes(1024)
+                    .build();
+            for (String path : new String[] {"/declared", "/chunked"}) {
+                assertEquals(1024, iskra.get(path, String.class).getData().length(), path);
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void maxResponseBytesMustBePositive() {
         assertEquals(10L * 1024 * 1024, IskraConfig.builder("http://localhost").build().getMaxResponseBytes());
         assertThrows(IllegalArgumentException.class, () -> IskraConfig.builder("http://localhost").maxResponseBytes(0));

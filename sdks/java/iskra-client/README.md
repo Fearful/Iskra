@@ -68,6 +68,9 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
 
 Una respuesta cuyo body supera `maxResponseBytes` (por su `Content-Length` o por los
 bytes recibidos) lanza `IskraException` en lugar de llenar la memoria del proceso.
+El limite tambien corta `storage().download()`: el default (10 MiB) es el mismo que el
+`maxFileSize` por defecto del UploadFeature, asi que si el servicio sube `maxFileSize`,
+subi `maxResponseBytes` al menos a ese valor.
 
 Un `IskraClient` es thread-safe y **nunca guarda cookies**: una sola instancia (por
 ejemplo, un bean singleton) puede atender a todos los usuarios sin que la sesion de

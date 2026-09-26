@@ -78,7 +78,9 @@ iskra = IskraClient(
 no de cada lectura: un servidor que manda un byte cada tanto ya no puede retener la
 llamada indefinidamente. `max_response_bytes` corta la lectura de un cuerpo mas grande
 (contado ya descomprimido); en los dos casos el SDK lanza `IskraException` con
-`status_code` 0. Para descargas grandes de storage, subi `max_response_bytes`.
+`status_code` 0. El limite tambien corta `storage.download()`: el default (10 MiB) es el
+mismo que el `maxFileSize` por defecto del UploadFeature, asi que si el servicio sube
+`maxFileSize`, subi `max_response_bytes` al menos a ese valor.
 
 Un solo `IskraClient` puede atender a todos los usuarios de tu backend: reutiliza
 conexiones y **nunca guarda cookies**, asi que la sesion de un usuario no se filtra
