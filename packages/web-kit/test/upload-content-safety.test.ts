@@ -7,6 +7,7 @@ import { Kernel } from '../src/kernel';
 import { UploadFeature } from '../src/features/upload';
 import { UploadHelper } from '../src/features/upload/helper';
 import { StorageFeature } from '../src/features/storage';
+import { HttpError } from '../src/errors';
 import type { UploadAction, UploadConfig, UploadTarget } from '../src/types';
 
 const TEST_DIR = path.join(process.cwd(), 'test-upload-content-safety-storage');
@@ -106,6 +107,17 @@ describe('upload route: stored content type', () => {
         const pdf = new Request('http://localhost/', { method: 'POST', body: form('report.pdf', '%PDF') });
         await helper.uploadFromRequest(pdf, 'file');
         expect(puts.map((p) => p.Key)).toEqual(['p/report.pdf']);
+    });
+
+    it('uploadFromRequest() answers a missing file field with a 400', async () => {
+        // Regression: it threw a plain Error, which the app served as a 500.
+        const { adapter, puts } = s3Adapter();
+        const helper = new UploadHelper(adapter, 'p');
+        const req = new Request('http://localhost/', { method: 'POST', body: form('report.pdf', '%PDF') });
+        const err = await helper.uploadFromRequest(req, 'other').catch((e) => e);
+        expect(err).toBeInstanceOf(HttpError);
+        expect(err).toMatchObject({ status: 400, message: 'No file found in field: other' });
+        expect(puts).toEqual([]);
     });
 
     it('uploadFromRequest() takes allowedExtensions', async () => {

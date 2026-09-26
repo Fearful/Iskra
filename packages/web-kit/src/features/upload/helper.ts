@@ -179,7 +179,8 @@ export class UploadHelper {
      * Stores the file of a multipart request's `fieldName`, with the upload
      * route's rules: the body is cut off past `maxFileSize` (HttpError 413,
      * 'File too large') and an extension it does not allow is refused
-     * (HttpError 400, 'Invalid extension'). It used to read any body whole.
+     * (HttpError 400, 'Invalid extension'). A missing file field is an
+     * HttpError 400 too. It used to read any body whole.
      */
     async uploadFromRequest(
         request: Request,
@@ -199,7 +200,9 @@ export class UploadHelper {
         if (!formData) throw tooLarge();
 
         const file = formData.get(fieldName);
-        if (!file || !(file instanceof File)) throw new Error(`No file found in field: ${fieldName}`);
+        if (!file || !(file instanceof File)) {
+            throw new HttpError(400, `No file found in field: ${fieldName}`, { code: ErrorCodes.BAD_REQUEST });
+        }
         if (file.size > this.maxFileSize) throw tooLarge();
 
         const safeName = safeBasename(file.name);
