@@ -47,6 +47,19 @@ if (!secret) throw new Error('AUTH_SECRET is not configured');
 const auth = createBetterAuth({ db, adapterType: 'postgres', secret });
 ```
 
+## Base URL
+
+`baseURL` is the app's public origin. It decides whether the session cookies are marked `Secure` (only for an https origin) and is always a trusted origin. If omitted, it is read from `BETTER_AUTH_URL`, and outside production it falls back to `http://localhost:3000`. With `NODE_ENV=production` construction **throws** when neither is set, or when the origin is plain `http://` on a host other than `localhost`, `127.0.0.1` or `[::1]`:
+
+```typescript
+// NODE_ENV=production
+createBetterAuth({ db, adapterType: 'postgres', secret });                                    // throws unless BETTER_AUTH_URL is set
+createBetterAuth({ db, adapterType: 'postgres', secret, baseURL: 'http://app.example.com' });  // throws: must use https
+createBetterAuth({ db, adapterType: 'postgres', secret, baseURL: 'https://app.example.com' }); // ok
+```
+
+The same rule is exported as `resolveAuthBaseURL(baseURL?, who?)`, which returns the origin to use and prefixes its errors with `who` (web-kit's `AuthFeature` uses it).
+
 ## Database adapters
 
 The factory takes a Drizzle instance plus an `adapterType`. It picks the matching schema and builds better-auth's Drizzle adapter:
@@ -159,4 +172,6 @@ On MySQL, `verification.value` is `text`: it holds the OAuth state, longer than 
 # At least 32 random characters, e.g. the output of: openssl rand -base64 32
 # (in production a sample value such as "change-me…" is refused)
 AUTH_SECRET=
+# The app's public origin when baseURL is not passed (https in production)
+BETTER_AUTH_URL=
 ```

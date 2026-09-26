@@ -35,10 +35,59 @@ function placeholderMarker(secret: string): string | undefined {
     return PLACEHOLDER_SECRET_MARKERS.find((marker) => normalized.includes(normalizeSecret(marker)));
 }
 
+/** Hosts a production baseURL may reach over plain http (e.g. docker compose on one machine). */
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The origin better-auth runs on: `baseURL`, else `BETTER_AUTH_URL`, else
+ * `http://localhost:3000` outside production. It decides the cookies'
+ * `Secure` flag and is a trusted origin, so production requires one and it
+ * must be https (plain http only for localhost, 127.0.0.1 and [::1]). `who`
+ * prefixes the error messages.
+ */
+export function resolveAuthBaseURL(baseURL?: string, who = 'createBetterAuth'): string {
+    const resolved = baseURL || process.env.BETTER_AUTH_URL;
+    if (resolved) {
+        assertHttpsInProduction(resolved, who);
+        return resolved;
+    }
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+            `${who}: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, ` +
+                'e.g. "https://app.example.com"; without it cookies are sent without Secure.',
+        );
+    }
+    return 'http://localhost:3000';
+}
+
+/**
+ * better-auth marks the session cookies Secure only for an https baseURL, so
+ * an http:// one in production sent them over plain HTTP as well.
+ */
+function assertHttpsInProduction(baseURL: string, who: string): void {
+    if (process.env.NODE_ENV !== 'production') return;
+    let url: URL;
+    try {
+        url = new URL(baseURL);
+    } catch {
+        return; // an invalid URL is reported by the caller
+    }
+    if (url.protocol === 'https:' || LOCAL_HOSTNAMES.has(url.hostname)) return;
+    throw new Error(
+        `${who}: baseURL "${baseURL}" must use https in production: better-auth marks the session cookies ` +
+            'Secure only for an https baseURL. Plain http is allowed only for localhost, 127.0.0.1 and [::1].',
+    );
+}
+
 export interface BetterAuthConfigOptions {
     db: AuthKitDrizzleDb;
     adapterType: 'postgres' | 'mysql' | 'sqlite';
     secret: string;
+    /**
+     * The app's public origin. Defaults to `BETTER_AUTH_URL`, then (outside
+     * production only) `http://localhost:3000`; must be https in production
+     * unless it is localhost. See `resolveAuthBaseURL`.
+     */
     baseURL?: string;
     basePath?: string;
     trustedOrigins?: string[];
@@ -160,7 +209,6 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         db,
         adapterType,
         secret,
-        baseURL = 'http://localhost:3000',
         basePath = '/api/auth',
         trustedOrigins = [],
         enableEmailPassword = true,
@@ -191,6 +239,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         );
     }
 
+    const baseURL = resolveAuthBaseURL(options.baseURL);
     const baseOrigin = new URL(baseURL).origin;
     const allTrustedOrigins = trustedOrigins.includes(baseOrigin) ? trustedOrigins : [baseOrigin, ...trustedOrigins];
 
