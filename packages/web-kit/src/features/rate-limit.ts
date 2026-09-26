@@ -3,7 +3,7 @@ import type { Kernel } from '../kernel';
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { clientIpKey, getClientIp, type ClientIpHeader, type TrustProxy } from '../client-ip';
-import { DEFAULT_MAX_KEYS, HitCounter } from '../hit-counter';
+import { DEFAULT_MAX_KEYS, HitCounter, retryAfterSeconds } from '../hit-counter';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { CacheAdapter } from './cache';
 
@@ -137,6 +137,9 @@ export class RateLimitFeature implements Feature {
         const { count, resetAt } = await store.increment(rlKey, this.config.windowMs);
 
         if (count > this.config.max) {
+            // Set on the context, so the error handler's response carries it
+            // (and a custom handler's, when it answers through `c`).
+            c.header('Retry-After', retryAfterSeconds(resetAt, this.config.windowMs));
             if (this.config.handler) return this.config.handler(c);
             throw new HTTPException(429, { message: 'Too many requests' });
         }

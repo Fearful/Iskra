@@ -2,7 +2,7 @@ import type { AuthConfig, Feature, Kernel } from '../../types';
 import type { Context, Hono, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { clientIpKey, getClientIp } from '../../client-ip';
-import { HitCounter } from '../../hit-counter';
+import { HitCounter, retryAfterSeconds } from '../../hit-counter';
 import { type Auth, createBetterAuth, resolveAuthBaseURL } from '@iskra-bun/auth-kit';
 import { z } from '@hono/zod-openapi';
 import type { User } from '@iskra-bun/auth-kit';
@@ -207,7 +207,9 @@ export class AuthFeature implements Feature {
             // a raw X-Forwarded-For is client-controlled and would let an
             // attacker rotate it to bypass the limit. IPv6 clients count by /64.
             const ip = this.clientIp(c);
-            if (hits.hit(ip ? clientIpKey(ip) : 'unknown', this.authRateLimitWindowMs) > this.authRateLimitMax) {
+            const key = ip ? clientIpKey(ip) : 'unknown';
+            if (hits.hit(key, this.authRateLimitWindowMs) > this.authRateLimitMax) {
+                c.header('Retry-After', retryAfterSeconds(hits.resetAt(key), this.authRateLimitWindowMs));
                 throw new HTTPException(429, { message: 'Too many authentication attempts' });
             }
             await next();

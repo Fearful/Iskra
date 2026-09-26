@@ -100,6 +100,45 @@ describe('Rate Limit Feature', () => {
         }
     });
 
+    it('answers a 429 with Retry-After until the window resets', async () => {
+        // Regression: the 429 said nothing about when to retry.
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new RateLimitFeature({ windowMs: 60_000, max: 1, keyGenerator: () => 'retry-test' }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/retry', (c) => c.text('ok'));
+
+        const start = Date.now();
+        try {
+            setSystemTime(new Date(start));
+            expect((await app.request('/retry')).headers.get('Retry-After')).toBeNull();
+            setSystemTime(new Date(start + 20_500));
+            const limited = await app.request('/retry');
+            expect(limited.status).toBe(429);
+            expect(limited.headers.get('Retry-After')).toBe('40');
+        } finally {
+            setSystemTime();
+            await kernel.shutdown();
+        }
+    });
+
+    it('falls back to windowMs for Retry-After when the store does not know the reset', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new CacheFeature({ adapter: 'memory' }));
+        kernel.registerFeature(
+            new RateLimitFeature({ windowMs: 30_000, max: 1, store: 'cache', keyGenerator: () => 'retry-cache' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/retry', (c) => c.text('ok'));
+
+        await app.request('/retry');
+        const limited = await app.request('/retry');
+        expect(limited.status).toBe(429);
+        expect(limited.headers.get('Retry-After')).toBe('30');
+        await kernel.shutdown();
+    });
+
     it('should skip rate limiting when skip function returns true', async () => {
         const kernel = new Kernel();
         kernel.registerFeature(

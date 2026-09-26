@@ -62,3 +62,12 @@ export class HitCounter {
         clearInterval(this.sweeper);
     }
 }
+
+/**
+ * The `Retry-After` value (whole seconds, at least 1) for a window ending at
+ * `resetAt` (epoch ms); `windowMs` from now when the end is not known.
+ */
+export function retryAfterSeconds(resetAt: number | undefined, windowMs: number): string {
+    const now = Date.now();
+    return String(Math.max(1, Math.ceil(((resetAt ?? now + windowMs) - now) / 1000)));
+}
