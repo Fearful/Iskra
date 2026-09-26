@@ -75,9 +75,13 @@ export class App {
         await Promise.all(this.pendingInstalls);
         this.pendingInstalls = [];
 
-        for (const [index, driver] of this.drivers.entries()) {
+        // Only the drivers whose init() ran are rolled back: one without an
+        // init hook was never initialized and has nothing to release yet.
+        const initialized: Driver[] = [];
+        for (const driver of this.drivers) {
             if (!driver.init) continue;
             this.logger.debug(`Initializing driver: ${driver.name}`);
+            initialized.push(driver);
             try {
                 await driver.init(this);
             } catch (err) {
@@ -87,7 +91,7 @@ export class App {
                     { err, driver: driver.name },
                     'Driver failed to initialize; stopping the drivers already initialized',
                 );
-                await this.rollback(this.drivers.slice(0, index + 1).reverse());
+                await this.rollback(initialized.reverse());
                 throw err;
             }
         }

@@ -68,6 +68,20 @@ describe('App lifecycle', () => {
         expect(log).toHaveLength(5);
     });
 
+    it('does not stop a driver without an init hook when a later init fails', async () => {
+        // Regression: the rollback took every driver up to the failing one,
+        // so a driver with no init() (never initialized) was stopped as well.
+        // `init` is required by the type, but a plain-JS driver can omit it.
+        const log: string[] = [];
+        const app = new App({ name: 'InitRollbackNoHook', logger: { level: 'silent' } });
+        app.register(recorder(log, 'db'))
+            .register({ name: 'plain', stop: async () => void log.push('stop:plain') } as unknown as Driver)
+            .register(recorder(log, 'web', { failInit: true }));
+
+        await expect(app.start()).rejects.toThrow('web init failed');
+        expect(log).toEqual(['init:db', 'stop:web', 'stop:db']);
+    });
+
     it('stops drivers in reverse start order and reports every failure', async () => {
         const log: string[] = [];
         const app = new App({ name: 'Reverse', logger: { level: 'silent' } });
