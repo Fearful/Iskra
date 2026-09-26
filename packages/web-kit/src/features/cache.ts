@@ -242,8 +242,7 @@ export class CacheFeature implements Feature {
     }
 
     async shutdown(): Promise<void> {
-        if (this.client.disconnect) {
-            await this.client.disconnect();
-        }
+        // No client when initialize() never ran (another feature failed first).
+        await this.client?.disconnect?.();
     }
 }

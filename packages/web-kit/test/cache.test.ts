@@ -3,6 +3,10 @@ import { Kernel } from '../src/kernel';
 import { CacheFeature } from '../src/features/cache';
 
 describe('Cache Feature', () => {
+    it('shuts down without having been initialized', async () => {
+        await expect(new CacheFeature().shutdown()).resolves.toBeUndefined();
+    });
+
     it('should init with memory adapter by default', async () => {
         const kernel = new Kernel();
         const cache = new CacheFeature();
