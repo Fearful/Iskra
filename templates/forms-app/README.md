@@ -166,6 +166,12 @@ https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
 `RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
 formulario, asi que re-publicalo despues de cambiarla).
 
+El token CSRF de forms-api viaja en la cookie `__Host-csrf`, que es `Secure`: el navegador
+solo la guarda y la envia por HTTPS, con la excepcion de `http://localhost`. Si servis los
+formularios por `http://` desde otro host (una IP de la LAN, un dominio sin TLS) todo envio
+se rechaza con 403 (CSRF). En produccion hace falta HTTPS: termina TLS en nginx o en un
+proxy delante de el (y defini `PUBLIC_ORIGINS` con el origen `https://`).
+
 ## Variables de entorno
 
 `docker compose` las lee de `.env` (ver `.env.example`). Los secretos no tienen valor por
