@@ -145,6 +145,12 @@ public class IskraClient {
             return this;
         }
 
+        /** See {@link IskraConfig.Builder#maxResponseBytes(long)}. */
+        public Builder maxResponseBytes(long maxResponseBytes) {
+            configBuilder.maxResponseBytes(maxResponseBytes);
+            return this;
+        }
+
         public IskraClient build() {
             return new IskraClient(configBuilder.build());
         }

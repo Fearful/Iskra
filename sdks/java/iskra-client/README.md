@@ -54,8 +54,12 @@ var iskra = IskraClient.builder("http://iskra-service:3000")
     .authBasePath("/api/sso")                  // ruta base de autenticacion (default: /api/sso)
     .storageRoutePrefix("/upload")             // routePrefix del UploadFeature (default: /upload)
     .origin("https://app.ejemplo.com")         // Origin de las peticiones con sesion (default: el de la base URL)
+    .maxResponseBytes(10 * 1024 * 1024)        // tamano maximo del body de una respuesta (default: 10 MiB)
     .build();
 ```
+
+Una respuesta cuyo body supera `maxResponseBytes` (por su `Content-Length` o por los
+bytes recibidos) lanza `IskraException` en lugar de llenar la memoria del proceso.
 
 Un `IskraClient` es thread-safe y **nunca guarda cookies**: una sola instancia (por
 ejemplo, un bean singleton) puede atender a todos los usuarios sin que la sesion de
