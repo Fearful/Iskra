@@ -39,6 +39,12 @@ export class HitCounter {
         return 1;
     }
 
+    /** When `key`'s current window ends (epoch ms), or undefined if it has none. */
+    resetAt(key: string): number | undefined {
+        const entry = this.hits.get(key);
+        return entry && Date.now() < entry.resetAt ? entry.resetAt : undefined;
+    }
+
     /** How many keys are tracked. */
     get size(): number {
         return this.hits.size;

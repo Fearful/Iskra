@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setSystemTime } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { RateLimitFeature } from '../src/features/rate-limit';
 import { CacheFeature } from '../src/features/cache';
@@ -68,6 +68,36 @@ describe('Rate Limit Feature', () => {
         expect(res.headers.get('X-RateLimit-Reset')).toBeDefined();
 
         await kernel.shutdown();
+    });
+
+    it('reports the window reset time, not now + windowMs on every request', async () => {
+        const kernel = new Kernel();
+        kernel.registerFeature(
+            new RateLimitFeature({
+                windowMs: 60_000,
+                max: 10,
+                keyGenerator: () => 'reset-test',
+            }),
+        );
+        await kernel.initialize();
+
+        const app = kernel.getApp();
+        app.get('/reset', (c) => c.text('ok'));
+
+        const start = Date.now();
+        try {
+            setSystemTime(new Date(start));
+            const first = await app.request('/reset');
+            setSystemTime(new Date(start + 20_000));
+            const second = await app.request('/reset');
+
+            expect(second.headers.get('X-RateLimit-Remaining')).toBe('8');
+            expect(second.headers.get('X-RateLimit-Reset')).toBe(first.headers.get('X-RateLimit-Reset'));
+            expect(first.headers.get('X-RateLimit-Reset')).toBe(String(Math.ceil((start + 60_000) / 1000)));
+        } finally {
+            setSystemTime();
+            await kernel.shutdown();
+        }
     });
 
     it('should skip rate limiting when skip function returns true', async () => {
