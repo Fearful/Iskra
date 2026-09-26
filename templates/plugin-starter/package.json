@@ -2,14 +2,21 @@
     "name": "my-iskra-plugin",
     "version": "0.1.0",
     "private": true,
-    "main": "src/index.ts",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
     "scripts": {
-        "build": "tsc"
+        "build": "tsc",
+        "test": "bun test"
     },
-    "dependencies": {
+    "peerDependencies": {
         "@iskra-bun/core": "workspace:*"
     },
     "devDependencies": {
+        "@iskra-bun/core": "workspace:*",
         "typescript": "^5.0.0"
     }
 }

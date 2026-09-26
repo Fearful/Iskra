@@ -480,11 +480,12 @@
     "templates/plugin-starter": {
       "name": "my-iskra-plugin",
       "version": "0.1.0",
-      "dependencies": {
-        "@iskra-bun/core": "workspace:*",
-      },
       "devDependencies": {
+        "@iskra-bun/core": "workspace:*",
         "typescript": "^5.0.0",
+      },
+      "peerDependencies": {
+        "@iskra-bun/core": "workspace:*",
       },
     },
     "templates/python-data-processor": {

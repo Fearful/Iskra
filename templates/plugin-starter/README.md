@@ -18,8 +18,11 @@ bun install
 
 cd templates/plugin-starter
 
-# Compilar el plugin
+# Compilar el plugin (genera dist/, lo que publica el paquete)
 bun run build
+
+# Correr los tests
+bun test
 ```
 
 ## Estructura del proyecto
@@ -28,6 +31,8 @@ bun run build
 src/
 ├── index.ts             # Re-exporta el driver
 └── driver.ts            # Implementacion del Driver
+test/
+└── driver.test.ts       # Registra el driver en una App y recorre su ciclo de vida
 ```
 
 ## Como funciona
