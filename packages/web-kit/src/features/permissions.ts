@@ -28,7 +28,13 @@ function stringList(value: unknown): string[] {
 export class PermissionsFeature implements Feature {
     name = 'permissions';
     private log: KernelLogger = consoleLogger;
-    dependencies = ['auth'];
+    /**
+     * Its middleware reads the user (auth or session) and the cache, so those
+     * features' middleware must run first whatever the registration order.
+     * None is required: without them every request is anonymous.
+     */
+    dependencies: string[] = [];
+    optionalDependencies = ['auth', 'session', 'cache'];
     private config: Required<PermissionsConfig>;
     private roles: Map<string, Role> = new Map();
     private kernel?: Kernel;
