@@ -672,18 +672,22 @@ export class ProcessManager implements Driver {
 
         for (const timer of this.restartTimers.values()) clearTimeout(timer);
         this.restartTimers.clear();
+        // Awaited below: cleared without waiting, a crashed process's leftover
+        // children could still be running once stop() resolved.
+        const reaps = [...this.reaping.values()];
         this.reaping.clear();
 
         const entries = [...this.processes.entries()];
         this.processes.clear();
 
-        await Promise.all(
-            entries.map(async ([name, info]) => {
+        await Promise.all([
+            ...reaps,
+            ...entries.map(async ([name, info]) => {
                 const proc = info.process;
                 if (proc.killed) return;
                 await this.terminate(name, proc, gracefulTimeoutMs);
             }),
-        );
+        ]);
     }
 }
 

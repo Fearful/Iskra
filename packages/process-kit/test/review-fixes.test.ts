@@ -119,6 +119,26 @@ describe.if(posix)('process groups', () => {
         expect(count(pattern)).toBe(0);
         await (app as any).stop();
     }, 10_000);
+
+    it('stop() waits for the children of a crashed process being terminated', async () => {
+        // Regression: stop() dropped the pending cleanup without waiting for
+        // it, so the child left behind outlived stop().
+        const child = `sh -c 'trap "sleep 0.4; exit 0" TERM; while :; do sleep 0.0772; done'`;
+        const { app } = makeManager({
+            leaver: { command: 'sh', args: ['-c', `${child} & sleep 0.1; exit 1`], mode: 'daemon' },
+        });
+        let exited = false;
+        app.events.on('process:exit', () => {
+            exited = true;
+        });
+        await app.start();
+
+        const pattern = '^sh -c trap .*sleep 0.0772';
+        expect(await waitFor(() => exited)).toBe(true);
+        expect(count(pattern)).toBe(1);
+        await (app as any).stop();
+        expect(count(pattern)).toBe(0);
+    });
 });
 
 describe.if(posix)('timers', () => {
