@@ -354,6 +354,7 @@ new SessionFeature({
 - After login, call `await c.get('regenerateSession')()` to issue a new ID and invalidate the old one (prevents session fixation). With `CsrfFeature` it also issues a new CSRF token.
 - A session destroyed by one request (logout, `regenerateSession`) is not re-created by another request that loaded it and finishes later. The save of a stored session writes it only if it still exists, checked and written in one step: in memory at once, on Redis with `SET ... XX`, in a database with an `UPDATE` of its row. It used to check (`get`) and then write (`set`), and on Redis or a database a logout landing between the two was undone. A custom `CacheAdapter` gets this with `setIfExists()`; without it the check is still a separate read. Each request works on its own copy of the session data, with the memory store too, so session data must be structured-cloneable (it already had to be JSON for the other stores).
 - `c.get('sessionPersisted')` tells whether `sessionId` names a stored session: false for a new one, which is stored at the end of the request only if the handler puts data in it.
+- With `store: 'db'`, a database error reading, writing or deleting a session fails the request (500, and no cookie is set). It used to be only logged: the client got a cookie for a session that was never stored, and a failed logout looked like a successful one.
 - The cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production (`new Kernel({ environment: 'production' })` or `NODE_ENV=production`); `cookieOptions.secure` overrides it.
 
 ## CSRF

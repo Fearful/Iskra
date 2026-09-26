@@ -289,7 +289,7 @@ class DbSessionStore implements SessionStore {
             return JSON.parse(row.data) as SessionData;
         } catch (err) {
             this.log.error('[session] Failed to read session', err);
-            return null;
+            throw err;
         }
     }
 
@@ -303,7 +303,10 @@ class DbSessionStore implements SessionStore {
             await this.table.remove(id);
             await this.table.insert(row);
         } catch (err) {
+            // Rethrown: swallowed, the request went on to set a cookie for a
+            // session that was never stored.
             this.log.error('[session] Failed to write session', err);
+            throw err;
         }
     }
 
@@ -315,7 +318,7 @@ class DbSessionStore implements SessionStore {
             return await this.table.update({ id, data: JSON.stringify(data), expiresAt: Date.now() + ttl * 1000 });
         } catch (err) {
             this.log.error('[session] Failed to write session', err);
-            return false;
+            throw err;
         }
     }
 
@@ -323,7 +326,9 @@ class DbSessionStore implements SessionStore {
         try {
             await this.table.remove(id);
         } catch (err) {
+            // Rethrown: swallowed, a failed logout looked like a successful one.
             this.log.error('[session] Failed to destroy session', err);
+            throw err;
         }
     }
 }

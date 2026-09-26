@@ -191,6 +191,40 @@ describe('DB session store — concurrent logout', () => {
         await kernel.shutdown();
     });
 });
+describe('DB session store — write failures', () => {
+    it('answers 500 with no cookie when the session cannot be stored', async () => {
+        // Regression: the store logged the error and went on, so the client
+        // got a cookie for a session that was never saved.
+        const sqlite = new Database(':memory:');
+        let failInsert = false;
+        const db = drizzle(sqlite, {
+            logger: {
+                // Called right before each statement runs.
+                logQuery(query) {
+                    if (failInsert && /^insert\b/i.test(query)) throw new Error('disk full');
+                },
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature({ name: 'db', db, adapter: 'sqlite', async initialize() {} } as Feature);
+        kernel.registerFeature(
+            new SessionFeature({ store: 'db', secret: 'db-session-secret-0123456789abcdef0123456789abcdef' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/set', (c) => {
+            c.get('session').value = 'x';
+            return c.json({ ok: true });
+        });
+
+        failInsert = true;
+        const res = await app.request('/set');
+        expect(res.status).toBe(500);
+        expect(res.headers.get('Set-Cookie')).toBeNull();
+        await kernel.shutdown();
+    });
+});
+
 runSuite(pgUp, 'DB session store — postgres (requires Postgres)', {
     adapter: 'postgres',
     connection: { connectionString: PG_URL },
