@@ -44,6 +44,7 @@ export interface PutOptions {
      * The local adapter writes the stream to disk and ignores it.
      */
     maxBytes?: number;
+    /** @deprecated Ignored by every adapter: make objects public with a bucket policy (S3) or serve them from your app (local). */
     public?: boolean;
 }
 

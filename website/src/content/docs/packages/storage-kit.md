@@ -99,6 +99,9 @@ await storage.delete(path);
 const isDir = await storage.isDirectory(path);
 ```
 
+`PutOptions.public` is deprecated and ignored by every adapter: to make objects
+public, use a bucket policy (S3/MinIO) or serve them from your app (local).
+
 ## Security
 
 ### Path traversal protection
