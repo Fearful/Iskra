@@ -278,18 +278,26 @@ class DbSessionStore implements SessionStore {
 
     async get(id: string): Promise<SessionData | null> {
         await this.ensureTable();
+        let row: Awaited<ReturnType<typeof this.table.find>>;
         try {
-            const row = await this.table.find(id);
+            row = await this.table.find(id);
             if (!row) return null;
 
             if (Date.now() > Number(row.expiresAt)) {
                 await this.destroy(id);
                 return null;
             }
-            return JSON.parse(row.data) as SessionData;
         } catch (err) {
             this.log.error('[session] Failed to read session', err);
             throw err;
+        }
+        // Outside the rethrowing path: a corrupt row is no session, not a 500
+        // on every request until it expires.
+        try {
+            return JSON.parse(row.data) as SessionData;
+        } catch (err) {
+            this.log.error('[session] Discarding a corrupt session row', err);
+            return null;
         }
     }
 
