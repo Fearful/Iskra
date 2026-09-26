@@ -28,6 +28,8 @@ app.register(new SocketDriver({ port: 3001, router }));
 await app.start();
 ```
 
+`port` defaults to `3001`; `port: 0` picks a free port, which `driver.port` returns once the app has started (useful in tests).
+
 ## SocketRouter
 
 The router maps events to handlers:

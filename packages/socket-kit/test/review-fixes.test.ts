@@ -67,4 +67,25 @@ describe('SocketDriver review fixes', () => {
         expect(event.code).not.toBe(1006);
         expect(event.reason).toBe('Server shutting down');
     });
+
+    it('port 0 listens on a free port that driver.port reports', async () => {
+        const app = new App({ name: 'SocketPortZero', logger: { level: 'silent' } });
+        const driver = new SocketDriver({ port: 0 });
+        expect(driver.port).toBe(0);
+        app.register(driver);
+        await app.start();
+        try {
+            expect(driver.port).toBeGreaterThan(0);
+            const ws = await open(driver.port);
+            expect(ws.readyState).toBe(WebSocket.OPEN);
+            ws.close();
+        } finally {
+            await app.stop();
+        }
+    });
+
+    it('reports the configured port before start, and 3001 by default', () => {
+        expect(new SocketDriver({ port: 4321 }).port).toBe(4321);
+        expect(new SocketDriver().port).toBe(3001);
+    });
 });
