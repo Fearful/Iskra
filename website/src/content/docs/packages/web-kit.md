@@ -336,7 +336,7 @@ new AuthFeature({
 - Auth attempts (`POST` requests to `{basePath}/*` other than sign-out: sign-in, sign-up, password reset…) are rate-limited per IP by default (20 / 15 min, IPv6 clients by /64) to throttle credential stuffing; session reads and OAuth callbacks are not counted. In production Better Auth also applies its own, stricter per-path limits. Tune the first with `rateLimit: { max, windowMs, maxKeys }`, or pass `rateLimit: false` to turn both off when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
 - The client IP (for these limiters, the sessions' `ipAddress` and `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so the forwarded address is used (`X-Forwarded-For`, or `X-Real-IP` with `clientIpHeader: 'x-real-ip'`: see [Rate limiting and client IP](#rate-limiting-and-client-ip)); otherwise these headers are ignored, since any client can forge them.
 - Sessions are checked against a signed cookie cache without a database lookup, so a session revoked by sign-out keeps working until that cache expires: `cookieCacheMaxAge` (seconds, default 300) sets how long.
-- Use `requireAuth(kernel)` as middleware to protect routes that require a session.
+- Use `requireAuth(kernel)` as middleware to protect routes that require a session. It reuses the session the feature already read for the request (`c.get("authUser")`) instead of reading it again.
 
 ## Sessions
 

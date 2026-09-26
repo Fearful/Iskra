@@ -385,6 +385,13 @@ export class AuthFeature implements Feature {
 
 export function requireAuth(kernel: Kernel) {
     return async (c: Context, next: Next) => {
+        // The feature's global middleware already read the session for this
+        // request; reading it again cost a second DB lookup per request.
+        if (c.get('authUser')) {
+            await next();
+            return;
+        }
+
         const authFeature = kernel.getFeature('auth');
         if (!authFeature) throw new HTTPException(500, { message: 'Auth not initialized' });
 
