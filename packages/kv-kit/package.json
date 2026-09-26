@@ -51,7 +51,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/core": "workspace:^",
         "ioredis": "^5.4.1"
     },
     "devDependencies": {

@@ -54,7 +54,10 @@ from changeset files.
 
 ## Internal dependencies
 
-Packages depend on each other via `workspace:*`. When a package bumps, Changesets
+Packages depend on each other via `workspace:^`, which the release
+(`scripts/pin-workspace-deps.ts`) publishes as `^<version>`: a caret range lets
+an app with several kits share one copy of `@iskra-bun/core` instead of one
+exact version per kit. When a package bumps, Changesets
 bumps the recorded dependency range of its dependents by a **patch** by default
 (`updateInternalDependencies: "patch"` in `.changeset/config.json`).
 

@@ -51,7 +51,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/core": "workspace:^",
         "@aws-sdk/client-sesv2": "^3.600.0",
         "@sendgrid/mail": "^8.1.0",
         "nodemailer": "^10.0.10"

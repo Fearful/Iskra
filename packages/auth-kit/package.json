@@ -50,7 +50,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*",
+        "@iskra-bun/core": "workspace:^",
         "better-auth": "^1.6.33",
         "drizzle-orm": "^0.45.2"
     },
