@@ -10,8 +10,7 @@
  */
 
 import { Kernel } from '../src/kernel';
-import { ApiKeyFeature, requireApiKey, requireScope } from '../src/features/api-key';
-import { CacheFeature } from '../src/features/cache';
+import { ApiKeyFeature, requireApiKey } from '../src/features/api-key';
 
 // ============================================================================
 // Example 1: Basic Static API Keys

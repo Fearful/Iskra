@@ -4,7 +4,6 @@ import { forms, spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
 import { config } from '../../app.config.ts';
 import { REDIS_KEYS, FormStatus } from '@forms-app/shared';
-import { PrerenderService } from '../prerender/prerender.service.ts';
 
 export class LifecycleService {
     private static db: any;

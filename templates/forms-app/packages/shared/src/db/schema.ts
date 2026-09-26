@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, jsonb, pgEnum, uniqueIndex, boolean, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, jsonb, pgEnum, uniqueIndex, boolean } from 'drizzle-orm/pg-core';
 
 export const formStatusEnum = pgEnum('form_status', ['draft', 'scheduled', 'open', 'closed']);
 

@@ -1,5 +1,5 @@
 import { Kernel } from '../src/kernel';
-import { CsrfFeature, requireCsrf } from '../src/features/csrf';
+import { CsrfFeature } from '../src/features/csrf';
 import { SessionFeature } from '../src/features/session';
 
 // At least 32 random characters, from the environment (e.g. `openssl rand -base64 32`);

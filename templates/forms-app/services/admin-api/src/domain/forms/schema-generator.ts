@@ -1,6 +1,6 @@
 import type { FieldType } from '@forms-app/shared';
 import { getErrorMessage } from '@forms-app/shared/validation';
-import type { FieldErrorMessages, JsonSchema, JsonSchemaProperty } from '@forms-app/shared';
+import type { JsonSchema, JsonSchemaProperty } from '@forms-app/shared';
 
 interface FieldDefinition {
     fieldType: FieldType;

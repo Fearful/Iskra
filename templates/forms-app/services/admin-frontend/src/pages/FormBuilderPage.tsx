@@ -1,10 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { formsApi } from '../api/client';
-import { FieldEditor } from '../components/FormBuilder/FieldEditor';
 import { FieldList } from '../components/FormBuilder/FieldList';
-
-const FIELD_TYPES = ['text', 'number', 'email', 'select', 'checkbox', 'radio', 'textarea', 'date'] as const;
 
 interface Field {
     fieldType: string;

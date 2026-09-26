@@ -2,7 +2,7 @@ import { Kernel } from '../src/kernel';
 import { DbFeature } from '../src/features/db';
 import { CacheFeature } from '../src/features/cache';
 import { StorageFeature } from '../src/features/storage';
-import { OpenAPIFeature, z } from '../src/features/openapi';
+import { OpenAPIFeature } from '../src/features/openapi';
 
 /**
  * Example 1: Auto-generate from all features
@@ -51,9 +51,8 @@ async function example1_AutoGenerateAll() {
 }
 
 if (import.meta.main) {
-    const kernel = await example1_AutoGenerateAll();
-    // await kernel.start(); // This would block.
+    await example1_AutoGenerateAll();
+    // Starting the returned kernel (`await kernel.start()`) would block.
     // For now, just initialization demonstration.
     console.log('Server initialized. Access docs at http://localhost:8000/docs (if started)');
-    // await kernel.start();
 }

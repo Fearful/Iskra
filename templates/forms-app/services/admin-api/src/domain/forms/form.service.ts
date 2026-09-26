@@ -1,5 +1,5 @@
 import { forms, formFields, answers } from '@forms-app/shared/db';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, sql, desc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type {
     Form,
