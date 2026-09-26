@@ -106,7 +106,7 @@ const auth = createBetterAuth({
 });
 ```
 
-Los endpoints que no indiques salen del documento de discovery del issuer (`discoveryEndpoint`, por defecto `${issuer}/.well-known/openid-configuration`), así que cualquier proveedor que siga el estándar (Keycloak, Auth0, Okta, Entra ID, …) funciona solo con el `issuer`. Indica un endpoint solo para reemplazar el descubierto.
+Los endpoints que no indiques salen del documento de discovery del issuer (`discoveryEndpoint`, por defecto `${issuer}/.well-known/openid-configuration`), así que cualquier proveedor que siga el estándar (Keycloak, Auth0, Okta, Entra ID, …) funciona solo con el `issuer`. Indica un endpoint solo para reemplazar el descubierto. El discovery ocurre una vez al arrancar: si en ese momento no se puede obtener el documento (por ejemplo, el IdP arranca después que la app), better-auth registra el error y deja el proveedor afuera hasta que la app se reinicie, así que indica los tres endpoints si el IdP puede no estar disponible cuando arranca la app.
 
 Los campos del usuario salen de los claims estándar (`email`, `name` o `preferred_username`, `picture`, `email_verified`). Si tu proveedor usa otros nombres de claim, indícalos en `mapping`; si el perfil no trae un claim mapeado se usa el estándar, y un claim `emailVerified` mapeado cuenta como verificado cuando es `true` o `"true"`. Un email mapeado solo lo verifica su claim `emailVerified` mapeado (o `email_verified` cuando es la misma dirección que `email`), porque better-auth vincula un email verificado con el usuario local existente:
 

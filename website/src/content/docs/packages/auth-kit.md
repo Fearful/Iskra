@@ -106,7 +106,7 @@ const auth = createBetterAuth({
 });
 ```
 
-The endpoints you don't set come from the issuer's discovery document (`discoveryEndpoint`, by default `${issuer}/.well-known/openid-configuration`), so any standards-compliant provider (Keycloak, Auth0, Okta, Entra ID, …) works with just the `issuer`. Set an endpoint only to override the discovered one.
+The endpoints you don't set come from the issuer's discovery document (`discoveryEndpoint`, by default `${issuer}/.well-known/openid-configuration`), so any standards-compliant provider (Keycloak, Auth0, Okta, Entra ID, …) works with just the `issuer`. Set an endpoint only to override the discovered one. Discovery happens once at startup: if the document cannot be fetched then (e.g. the IdP starts after the app), better-auth logs the error and leaves the provider out until the app restarts, so set the three endpoints explicitly if the IdP may be unavailable when the app boots.
 
 The user's fields come from the standard claims (`email`, `name` or `preferred_username`, `picture`, `email_verified`). If your provider uses other claim names, set them in `mapping`; a mapped claim missing from the profile falls back to the standard one, and a mapped `emailVerified` claim counts as verified when it is `true` or `"true"`. A mapped email is verified only by its mapped `emailVerified` claim (or by `email_verified` when it is the same address as `email`), because better-auth links a verified email to the existing local user:
 
