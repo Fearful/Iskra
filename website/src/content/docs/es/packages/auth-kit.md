@@ -95,6 +95,17 @@ const auth = createBetterAuth({
 
 Los endpoints que no indiques salen del documento de discovery del issuer (`discoveryEndpoint`, por defecto `${issuer}/.well-known/openid-configuration`), así que cualquier proveedor que siga el estándar (Keycloak, Auth0, Okta, Entra ID, …) funciona solo con el `issuer`. Indica un endpoint solo para reemplazar el descubierto.
 
+Los campos del usuario salen de los claims estándar (`email`, `name` o `preferred_username`, `picture`, `email_verified`). Si tu proveedor usa otros nombres de claim, indícalos en `mapping`; si el perfil no trae un claim mapeado se usa el estándar, y un claim `emailVerified` mapeado cuenta como verificado cuando es `true` o `"true"`:
+
+```typescript
+oidcConfig: {
+    clientId, clientSecret, issuer,
+    mapping: { email: 'mail', name: 'displayName', image: 'avatar', emailVerified: 'mail_verified' },
+},
+```
+
+`jwksEndpoint`, `mapping.id` y `mapping.extraFields` están deprecados y se ignoran: better-auth toma el JWKS solo del `jwks_uri` del documento de discovery, la identidad de la cuenta siempre sale del claim `sub` verificado, y los campos extra del usuario necesitarían `user.additionalFields` de better-auth.
+
 PKCE viene **activado por defecto** (`pkce: true`) para el proveedor OAuth/OIDC genérico. Esto protege contra la interceptación e inyección del código de autorización. Solo se desactiva con un `false` explícito:
 
 ```typescript

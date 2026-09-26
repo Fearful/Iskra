@@ -95,6 +95,17 @@ const auth = createBetterAuth({
 
 The endpoints you don't set come from the issuer's discovery document (`discoveryEndpoint`, by default `${issuer}/.well-known/openid-configuration`), so any standards-compliant provider (Keycloak, Auth0, Okta, Entra ID, …) works with just the `issuer`. Set an endpoint only to override the discovered one.
 
+The user's fields come from the standard claims (`email`, `name` or `preferred_username`, `picture`, `email_verified`). If your provider uses other claim names, set them in `mapping`; a mapped claim missing from the profile falls back to the standard one, and a mapped `emailVerified` claim counts as verified when it is `true` or `"true"`:
+
+```typescript
+oidcConfig: {
+    clientId, clientSecret, issuer,
+    mapping: { email: 'mail', name: 'displayName', image: 'avatar', emailVerified: 'mail_verified' },
+},
+```
+
+`jwksEndpoint`, `mapping.id` and `mapping.extraFields` are deprecated and ignored: better-auth takes the JWKS only from the discovery document's `jwks_uri`, the account's identity always comes from the verified `sub` claim, and extra user fields would need better-auth's `user.additionalFields`.
+
 PKCE is **enabled by default** (`pkce: true`) for the generic OAuth/OIDC provider. This protects against authorization-code interception and injection. It is only turned off with an explicit `false`:
 
 ```typescript

@@ -30,6 +30,40 @@ describe('mapOidcProfile', () => {
     it('returns no id: the account identity comes from the verified sub', () => {
         expect('id' in mapOidcProfile({ sub: 'abc', id: 7, emailVerified: false })).toBe(false);
     });
+
+    it('reads the claims named in mapping instead of the standard ones', () => {
+        const mapping = { email: 'mail', name: 'displayName', image: 'avatar', emailVerified: 'mail_verified' };
+        const profile = {
+            sub: 'abc',
+            email: 'std@b.c',
+            name: 'Std',
+            picture: 'https://img/std.png',
+            email_verified: false,
+            emailVerified: false,
+            mail: 'custom@b.c',
+            displayName: 'Custom',
+            avatar: 'https://img/custom.png',
+            mail_verified: 'true',
+        };
+        expect(mapOidcProfile(profile, mapping)).toEqual({
+            email: 'custom@b.c',
+            name: 'Custom',
+            image: 'https://img/custom.png',
+            emailVerified: true,
+        });
+        // A mapped emailVerified claim that is not true / "true" is not verified.
+        expect(mapOidcProfile({ ...profile, email_verified: true, mail_verified: false }, mapping).emailVerified).toBe(
+            false,
+        );
+    });
+
+    it('falls back to the standard claims when a mapped claim is missing', () => {
+        const user = mapOidcProfile(
+            { sub: 'abc', email: 'std@b.c', name: 'Std', email_verified: true, emailVerified: false },
+            { email: 'mail', name: 'displayName', emailVerified: 'mail_verified' },
+        );
+        expect(user).toEqual({ email: 'std@b.c', name: 'Std', image: undefined, emailVerified: true });
+    });
 });
 
 describe('oidcProviderConfig', () => {
@@ -58,5 +92,19 @@ describe('oidcProviderConfig', () => {
         expect(config.tokenUrl).toBe('https://idp.example.com/token');
         expect(config.userInfoUrl).toBe('https://idp.example.com/userinfo');
         expect(config.discoveryUrl).toBe('https://idp.example.com/custom/discovery');
+    });
+
+    it('maps the profile with the configured claim mapping', async () => {
+        // Regression: `mapping` was accepted but never read.
+        const config = oidcProviderConfig({ ...base, mapping: { email: 'mail', emailVerified: 'mail_verified' } });
+        const user = await config.mapProfileToUser({
+            sub: 'abc',
+            email: 'std@b.c',
+            mail: 'custom@b.c',
+            mail_verified: true,
+            emailVerified: false,
+        });
+        expect(user.email).toBe('custom@b.c');
+        expect(user.emailVerified).toBe(true);
     });
 });

@@ -1,0 +1,6 @@
+---
+"@iskra-bun/auth-kit": patch
+"@iskra-bun/web-kit": patch
+---
+
+`oidcConfig.mapping` is now applied: `email`, `name`, `image` and `emailVerified` name the claims the user's fields are read from, falling back to the standard claims when the profile lacks them (a mapped `emailVerified` claim counts as verified when it is `true` or `"true"`). It was accepted but never read, so a provider with non-standard claim names created users without them. `mapOidcProfile(profile, mapping?)` takes the mapping as an optional second argument. `jwksEndpoint`, `mapping.id` and `mapping.extraFields` are marked `@deprecated` and still ignored: better-auth takes the JWKS only from the discovery document's `jwks_uri`, the account's identity always comes from the verified `sub`, and extra user fields need better-auth `user.additionalFields`.

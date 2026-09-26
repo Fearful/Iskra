@@ -74,34 +74,60 @@ export interface BetterAuthConfigOptions {
         authorizationEndpoint?: string;
         tokenEndpoint?: string;
         userinfoEndpoint?: string;
+        /**
+         * @deprecated Ignored: better-auth takes the JWKS only from the
+         * discovery document's `jwks_uri`; point `discoveryEndpoint` at a
+         * document that has the right one instead.
+         */
         jwksEndpoint?: string;
         discoveryEndpoint?: string;
         scopes?: string[];
         pkce?: boolean;
-        mapping?: {
-            id?: string;
-            email?: string;
-            emailVerified?: string;
-            name?: string;
-            image?: string;
-            extraFields?: Record<string, string>;
-        };
+        /** Claim names to read the user's fields from, instead of the standard ones. */
+        mapping?: OidcClaimMapping;
     };
+}
+
+/** Claim names `mapOidcProfile` reads the user's fields from. */
+export interface OidcClaimMapping {
+    /**
+     * @deprecated Ignored: better-auth always takes the account's identity
+     * from the verified `sub` claim.
+     */
+    id?: string;
+    email?: string;
+    /** The claim is read as verified when it is `true` or `"true"`. */
+    emailVerified?: string;
+    name?: string;
+    image?: string;
+    /**
+     * @deprecated Ignored: extra user fields need better-auth
+     * `user.additionalFields`, which `createBetterAuth` does not declare.
+     */
+    extraFields?: Record<string, string>;
 }
 
 /**
  * The local user fields for an OIDC login (standard claims, with the common
- * non-standard fallbacks). No `id`: better-auth takes the account's identity
- * from the verified `sub` (accountSubject) and ignores one returned here.
+ * non-standard fallbacks). A claim named in `mapping` is read instead of the
+ * standard one when the profile has it. No `id`: better-auth takes the
+ * account's identity from the verified `sub` (accountSubject) and ignores one
+ * returned here.
  */
-export function mapOidcProfile(profile: GenericOAuthUserInfo) {
+export function mapOidcProfile(profile: GenericOAuthUserInfo, mapping: OidcClaimMapping = {}) {
     const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+    const claim = (name: string | undefined) => (name ? profile[name] : undefined);
+    const verified = claim(mapping.emailVerified);
     return {
-        email: profile.email,
-        name: profile.name || str(profile.preferred_username),
-        image: str(profile.picture) ?? profile.image,
+        email: str(claim(mapping.email)) ?? profile.email,
+        name: str(claim(mapping.name)) ?? (profile.name || str(profile.preferred_username)),
+        image: str(claim(mapping.image)) ?? str(profile.picture) ?? profile.image,
         emailVerified:
-            profile.emailVerified === true || profile.email_verified === true || profile.email_verified === 'true',
+            verified !== undefined && verified !== null
+                ? verified === true || verified === 'true'
+                : profile.emailVerified === true ||
+                  profile.email_verified === true ||
+                  profile.email_verified === 'true',
     };
 }
 
@@ -125,7 +151,7 @@ export function oidcProviderConfig(oidcConfig: NonNullable<BetterAuthConfigOptio
         // Secure default: PKCE on. Disabling exposes auth-code
         // interception/injection and requires an explicit false.
         pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
-        mapProfileToUser: mapOidcProfile,
+        mapProfileToUser: (profile: GenericOAuthUserInfo) => mapOidcProfile(profile, oidcConfig.mapping),
     };
 }
 
