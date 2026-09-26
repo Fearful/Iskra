@@ -76,6 +76,8 @@ export class SocketDriver implements Driver {
     public readonly maxPayloadLength: number;
     private readonly canJoin: CanJoin;
     private readonly canPublish: CanPublish;
+    /** Which authz hooks were left at their allow-all default (warned at start). */
+    private readonly openAuthz: readonly string[];
     private readonly allowedEvents: ReadonlySet<string> | null;
     private readonly allowedOrigins: ReadonlySet<string> | null;
     private readonly authenticate?: Authenticate;
@@ -91,6 +93,10 @@ export class SocketDriver implements Driver {
         this.maxPayloadLength = options.maxPayloadLength ?? DEFAULT_MAX_PAYLOAD_LENGTH;
         this.canJoin = options.canJoin ?? (() => true);
         this.canPublish = options.canPublish ?? (() => true);
+        this.openAuthz = [
+            ...(options.canJoin ? [] : ['any client can join any room (set canJoin)']),
+            ...(options.canPublish ? [] : ['any client can publish to any topic, global included (set canPublish)']),
+        ];
         this.allowedEvents = options.allowedEvents ? new Set(options.allowedEvents) : null;
         this.allowedOrigins = options.allowedOrigins ? new Set(options.allowedOrigins) : null;
         this.authenticate = options.authenticate;
@@ -117,6 +123,9 @@ export class SocketDriver implements Driver {
                 'SocketDriver accepts connections from any origin without authentication; ' +
                     'set allowedOrigins and/or authenticate to prevent cross-site WebSocket hijacking',
             );
+        }
+        if (this.openAuthz.length > 0) {
+            this.app?.logger.warn(`SocketDriver authorization is open: ${this.openAuthz.join('; ')}`);
         }
 
         this.runningServer = Bun.serve<SocketData>({

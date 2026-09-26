@@ -159,9 +159,11 @@ Out of the box the driver is open: it is meant to be locked down with these opti
 | What | Default | Option to restrict it |
 | --- | --- | --- |
 | Who can connect | any origin, no authentication (a warning is logged at start) | `allowedOrigins`, `authenticate` |
-| Which rooms a client can join | any | `canJoin` |
-| Which topics a client can publish to | any, `global` (every socket) included | `canPublish` |
+| Which rooms a client can join | any (a warning is logged at start) | `canJoin` |
+| Which topics a client can publish to | any, `global` (every socket) included (a warning is logged at start) | `canPublish` |
 | Which unhandled events reach the app bus | all, as `socket:<event>` | `allowedEvents` |
+
+A client-driven `ctx.broadcast(topic, data)` sends the topic as the frame's `event`, so a client that may publish to a topic can send its subscribers any event named after it; to send a distinct event to a room, call `driver.broadcastTo(room, event, payload)` from the server.
 
 Frame size (`maxPayloadLength`) and message rate (`rateLimit`) are bounded by default; see [DoS Protection](#dos-protection).
 

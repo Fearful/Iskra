@@ -159,9 +159,11 @@ De fabrica el driver esta abierto: esta pensado para cerrarlo con estas opciones
 | Que | Default | Opcion para restringirlo |
 | --- | --- | --- |
 | Quien puede conectarse | cualquier origen, sin autenticacion (se registra un warning al arrancar) | `allowedOrigins`, `authenticate` |
-| A que salas puede unirse un cliente | a cualquiera | `canJoin` |
-| En que topicos puede publicar un cliente | en cualquiera, `global` (todos los sockets) incluido | `canPublish` |
+| A que salas puede unirse un cliente | a cualquiera (se registra un warning al arrancar) | `canJoin` |
+| En que topicos puede publicar un cliente | en cualquiera, `global` (todos los sockets) incluido (se registra un warning al arrancar) | `canPublish` |
 | Que eventos sin handler llegan al bus de la app | todos, como `socket:<evento>` | `allowedEvents` |
+
+Un `ctx.broadcast(topic, data)` iniciado por el cliente envia el topico como `event` del frame, asi que un cliente que puede publicar en un topico puede mandar a sus suscriptores cualquier evento con ese nombre; para enviar a una sala un evento distinto, llama a `driver.broadcastTo(room, event, payload)` desde el servidor.
 
 El tamano de frame (`maxPayloadLength`) y la tasa de mensajes (`rateLimit`) si estan acotados por defecto; ver [Proteccion contra DoS](#proteccion-contra-dos).
 
