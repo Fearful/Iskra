@@ -28,7 +28,7 @@ app.register(new SocketDriver({ port: 3001, router }));
 await app.start();
 ```
 
-`port` defaults to `3001`; `port: 0` picks a free port, which `driver.port` returns once the app has started (useful in tests).
+`port` defaults to `3001`, also for a value that is not an integer (`NaN` from `Number(process.env.PORT)` with `PORT` unset); `port: 0` picks a free port, which `driver.port` returns once the app has started (useful in tests).
 
 ## SocketRouter
 

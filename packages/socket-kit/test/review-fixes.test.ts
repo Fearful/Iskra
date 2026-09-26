@@ -88,4 +88,26 @@ describe('SocketDriver review fixes', () => {
         expect(new SocketDriver({ port: 4321 }).port).toBe(4321);
         expect(new SocketDriver().port).toBe(3001);
     });
+
+    it('uses 3001 for a port that is not an integer (an unset env variable)', () => {
+        // Regression: `Number(undefined)` is NaN, which `??` kept, and Bun
+        // then listened on a random port.
+        expect(new SocketDriver({ port: Number(undefined) }).port).toBe(3001);
+        expect(new SocketDriver({ port: 3001.5 }).port).toBe(3001);
+        expect(new SocketDriver({ port: 0 }).port).toBe(0);
+    });
+
+    it('logs the port it listens on, not the configured 0', async () => {
+        const app = new App({ name: 'SocketPortLog', logger: { level: 'silent' } });
+        const driver = new SocketDriver({ port: 0 });
+        app.register(driver);
+        const infos: string[] = [];
+        (app.logger as any).info = (msg: unknown) => void infos.push(String(msg));
+        await app.start();
+        try {
+            expect(infos).toContain(`SocketDriver listening on port ${driver.port}`);
+        } finally {
+            await app.stop();
+        }
+    });
 });

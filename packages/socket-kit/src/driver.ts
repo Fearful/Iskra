@@ -88,7 +88,9 @@ export class SocketDriver implements Driver {
     private sockets: Map<string, ServerWebSocket<SocketData>> = new Map();
 
     constructor(options: SocketDriverOptions = {}) {
-        this.configuredPort = options.port ?? 3001;
+        // Not `??`: NaN (`Number(process.env.PORT)` with PORT unset) listened
+        // on a random port. 0 still picks a free one.
+        this.configuredPort = Number.isInteger(options.port) ? options.port! : 3001;
         this.router = options.router || new SocketRouter();
         this.maxPayloadLength = options.maxPayloadLength ?? DEFAULT_MAX_PAYLOAD_LENGTH;
         this.canJoin = options.canJoin ?? (() => true);
@@ -117,7 +119,6 @@ export class SocketDriver implements Driver {
     }
 
     start() {
-        this.app?.logger.info(`Starting SocketDriver on port ${this.configuredPort}...`);
         if (!this.allowedOrigins && !this.authenticate) {
             this.app?.logger.warn(
                 'SocketDriver accepts connections from any origin without authentication; ' +
@@ -186,6 +187,8 @@ export class SocketDriver implements Driver {
                 },
             },
         });
+        // The bound port: the one the OS picked for `port: 0`.
+        this.app?.logger.info(`SocketDriver listening on port ${this.port}`);
     }
 
     /**
