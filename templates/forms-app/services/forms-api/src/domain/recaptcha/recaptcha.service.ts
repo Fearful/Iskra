@@ -48,7 +48,16 @@ export class RecaptchaService {
                 score,
             };
         } catch (err) {
-            console.error('reCAPTCHA verification error:', err);
+            // The message and code only: the error object printed a stack trace
+            // (and, from Bun, the source around it) for every submission. Bun
+            // puts the code on the error, Node's fetch on its cause.
+            const e = err as { code?: unknown; cause?: { code?: unknown } } | undefined;
+            const code = e?.code ?? e?.cause?.code;
+            console.error(
+                'reCAPTCHA verification error:',
+                err instanceof Error ? err.message : String(err),
+                ...(code ? [`(${String(code)})`] : []),
+            );
             return { valid: false, score: 0 };
         }
     }

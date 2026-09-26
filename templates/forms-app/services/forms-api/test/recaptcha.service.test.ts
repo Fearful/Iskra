@@ -81,7 +81,27 @@ describe('RecaptchaService.verify', () => {
         errorSpy = spyOn(console, 'error').mockImplementation(() => {}) as any;
         fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down')) as any;
         expect(await RecaptchaService.verify('tok')).toEqual({ valid: false, score: 0 });
-        expect(errorSpy).toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledWith('reCAPTCHA verification error:', 'network down');
+    });
+
+    it('logs the message and the cause code of a network error, not the error object', async () => {
+        errorSpy = spyOn(console, 'error').mockImplementation(() => {}) as any;
+        const err = new Error('Unable to connect', { cause: { code: 'ConnectionRefused' } });
+        fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(err) as any;
+        expect(await RecaptchaService.verify('tok')).toEqual({ valid: false, score: 0 });
+        expect(errorSpy).toHaveBeenCalledWith(
+            'reCAPTCHA verification error:',
+            'Unable to connect',
+            '(ConnectionRefused)',
+        );
+        // As Bun's fetch reports it.
+        fetchSpy.mockRejectedValue(Object.assign(new Error('Unable to connect'), { code: 'ConnectionRefused' }));
+        await RecaptchaService.verify('tok');
+        expect(errorSpy).toHaveBeenLastCalledWith(
+            'reCAPTCHA verification error:',
+            'Unable to connect',
+            '(ConnectionRefused)',
+        );
     });
 
     it("posts the secret and token to Google's siteverify endpoint", async () => {
