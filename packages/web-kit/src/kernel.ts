@@ -285,6 +285,11 @@ export class Kernel {
         return this.features.get(name);
     }
 
+    /** The names of the registered features, in registration order. */
+    getFeatureNames(): string[] {
+        return Array.from(this.features.keys());
+    }
+
     private server: ReturnType<typeof Bun.serve> | null = null;
 
     async start(): Promise<void> {
