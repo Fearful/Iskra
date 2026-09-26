@@ -22,6 +22,11 @@ export interface CacheAdapter {
     setIfExists?(key: string, value: unknown, ttl?: number): Promise<boolean>;
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
+    /**
+     * Increments a counter, creating it at 1. Store a counter as a number
+     * (`set(key, 5)`): on Redis the string `'5'` is stored as JSON (`"5"`),
+     * which `INCR` refuses.
+     */
     increment?(key: string): Promise<number>;
     /**
      * Atomically increments a counter, creating it with `ttlMs` expiry when it

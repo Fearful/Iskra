@@ -127,6 +127,14 @@ describe.if(redisUp)('CacheFeature with the Redis adapter (requires Redis)', () 
         expect(await cache.client.increment!(prefix + 'counter')).toBe(2);
     });
 
+    it('increments a counter stored as a number, like the memory adapter', async () => {
+        // Values are stored as JSON, so a counter must be a number: set(k, '5')
+        // would store "5", which INCR refuses.
+        await cache.client.set(prefix + 'counter', 5);
+        expect(await cache.client.increment!(prefix + 'counter')).toBe(6);
+        expect(await cache.client.get(prefix + 'counter')).toBe(6);
+    });
+
     it('setIfExists writes only a key that exists, keeping a TTL', async () => {
         // The session store's save: a deleted session must not come back.
         const key = prefix + 'xx';
