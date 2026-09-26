@@ -37,6 +37,38 @@ Para un analisis mas detallado de las capas, interfaces y patrones de diseno, re
 | `@iskra-bun/mobile-kit` | Placeholder experimental para apps moviles (todavia sin integracion con plataformas) | [Mobile Kit](https://iskra-docs.fly.dev/es/packages/mobile-kit/) |
 | `create-iskra` | CLI de andamiaje de proyectos (`bun create iskra`). | [create-iskra](https://iskra-docs.fly.dev/es/packages/create-iskra/) |
 
+## Inicio rapido
+
+Agrega el core y el web kit a tu proyecto:
+
+```bash
+bun add @iskra-bun/core @iskra-bun/web-kit
+```
+
+Una aplicacion minima:
+
+```typescript
+import { App } from '@iskra-bun/core';
+import { WebDriver } from '@iskra-bun/web-kit';
+
+const app = new App({ name: 'MiApp' });
+
+app.register(new WebDriver({
+    port: 3000,
+    routes: [
+        {
+            method: 'GET',
+            path: '/',
+            handler: () => ({ message: 'Hola desde Iskra!' }),
+        },
+    ],
+}));
+
+app.start().catch(console.error);
+```
+
+Correla con `bun run index.ts` y visita `http://localhost:3000`.
+
 ## Templates
 
 Templates listos para usar como punto de partida. Cada uno incluye su propio README con instrucciones detalladas.
@@ -61,15 +93,15 @@ Templates listos para usar como punto de partida. Cada uno incluye su propio REA
 
 ### Requisitos
 
-- [Bun](https://bun.sh) v1.0 o superior
+- [Bun](https://bun.sh) v1.3 o superior (la version que usa CI esta fijada en [`.bun-version`](./.bun-version))
 - [Node.js](https://nodejs.org) v18+ (para algunas dependencias nativas)
-- [Redis](https://redis.io) (solo si usas `worker-kit` o `kv-kit` con adaptador Redis)
+- [Redis](https://redis.io) (solo si usas `worker-kit`, o `kv-kit` con su adaptador Redis)
 
 ### Instalacion
 
 ```bash
-git clone <tu-repo> iskra-app
-cd iskra-app
+git clone https://github.com/fearful/iskra.git
+cd iskra
 bun install
 ```
 
@@ -118,3 +150,11 @@ Mas detalles en la [documentacion de SDKs](https://iskra-docs.fly.dev/es/guides/
 ```bash
 bun test
 ```
+
+## Mirror
+
+Hay un mirror de solo lectura en Codeberg: [codeberg.org/fearful/iskra](https://codeberg.org/fearful/iskra).
+
+## Licencia
+
+Distribuido bajo la [GNU Affero General Public License v3.0 o posterior](./LICENSE) (AGPL-3.0-or-later).

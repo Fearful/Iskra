@@ -42,6 +42,12 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | `@iskra-bun/mobile-kit` | Experimental placeholder for mobile apps (no platform integration yet) | [Mobile Kit](https://iskra-docs.fly.dev/packages/mobile-kit/) |
 | `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](https://iskra-docs.fly.dev/packages/create-iskra/) |
 
+## Requirements
+
+- [Bun](https://bun.sh) v1.3 or later (the version CI uses is pinned in [`.bun-version`](./.bun-version))
+- [Node.js](https://nodejs.org) v18+ (for some native dependencies)
+- [Redis](https://redis.io) (only if you use `worker-kit`, or `kv-kit` with its Redis adapter)
+
 ## Quick start
 
 Add the core and the web kit to your project:
@@ -104,7 +110,7 @@ bun start
 
 ## Documentation
 
-Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**. You can also browse the [`docs/`](./docs/) directory:
+Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**. Its sources are in [`website/src/content/docs/`](./website/src/content/docs/):
 
 | Document | What it covers |
 | :--- | :--- |
