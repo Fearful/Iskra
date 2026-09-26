@@ -155,7 +155,9 @@ export class WorkerManager implements Driver {
                         cause: err instanceof Error ? err : new Error(String(err)),
                         context: { jobId: job.id, jobName: job.name, attemptsMade: job.attemptsMade },
                     });
-                    this.app?.logger.error({ err: jobErr }, jobErr.message);
+                    // Debug only: BullMQ then emits `failed`, and onFailed logs
+                    // the failure once at error level.
+                    this.app?.logger.debug({ err: jobErr }, jobErr.message);
                     throw err; // Re-throw para que BullMQ maneje el retry
                 }
             },
@@ -364,7 +366,10 @@ export class WorkerManager implements Driver {
      * `worker:dead-letter` en el bus de eventos de la App.
      */
     private onFailed(job: BullJob | undefined, err: Error) {
-        this.app?.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'Job failed');
+        this.app?.logger.error(
+            { jobId: job?.id, jobName: job?.name, attemptsMade: job?.attemptsMade, err },
+            'Job failed',
+        );
 
         if (!this.options.deadLetter || !job) return;
 
