@@ -85,7 +85,7 @@ export class PrerenderService {
         const validationSchema = form.validationSchema;
         if (!validationSchema) throw new Error('Form has no validation schema');
 
-        const recaptchaSiteKey = process.env.RECAPTCHA_SITE_KEY || 'your-site-key';
+        const recaptchaSiteKey = process.env.RECAPTCHA_SITE_KEY || '';
 
         // 2. A private build directory (mode 0700, random name). The fixed
         // /tmp/form-builds/<formId> could be made first by another user of

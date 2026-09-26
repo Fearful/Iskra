@@ -49,6 +49,14 @@ describe('prerendered form HTML', () => {
         expect(html).toContain(escapeHtml(XSS));
         expect(html).toContain('<title>&lt;img src=x onerror=alert(1)&gt;&quot;&#39;&amp;</title>');
     });
+
+    it('loads reCAPTCHA only with a site key', () => {
+        // Without one it loaded api.js?render=your-site-key on every page.
+        expect(generateFormHtml('T', null, [], 'form-1', 'site-key')).toContain(
+            'https://www.google.com/recaptcha/api.js?render=site-key',
+        );
+        expect(generateFormHtml('T', null, [], 'form-1', '')).not.toContain('recaptcha');
+    });
 });
 
 describe('form runtime', () => {
@@ -72,5 +80,13 @@ describe('form runtime reCAPTCHA', () => {
     it('requests its token for the action forms-api requires', () => {
         const code = generateFormRuntime('form-1', 'space', 'form', 'site-key');
         expect(code).toContain(`{ action: ${JSON.stringify(RECAPTCHA_ACTION)} }`);
+    });
+
+    it('sends no token, instead of throwing, when the reCAPTCHA script is missing', async () => {
+        const code = generateFormRuntime('form-1', 'space', 'form', '');
+        const fn = code.match(/async function getRecaptchaToken\(\) \{[\s\S]*?\n\}/)?.[0];
+        expect(fn).toBeDefined();
+        // No `grecaptcha` global here, as on a page rendered without a site key.
+        expect(await new Function(`${fn}; return getRecaptchaToken();`)()).toBe('');
     });
 });

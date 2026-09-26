@@ -123,7 +123,8 @@ docker compose up --build
 
 Las claves de reCAPTCHA las emite Google (ver
 [Envios de formularios y reCAPTCHA](#envios-de-formularios-y-recaptcha)); hasta que las
-pongas el stack arranca, pero todo envio se rechaza con 403.
+pongas el stack arranca, pero todo envio se rechaza (400 sin `RECAPTCHA_SITE_KEY`, 403
+con claves que Google no valida).
 
 En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
 de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
@@ -157,7 +158,9 @@ Despues inicia sesion en http://localhost/admin/login.
 ### Envios de formularios y reCAPTCHA
 
 forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que sin claves reales
-(como en el inicio rapido) todo envio se rechaza con 403. Para probar
+(como en el inicio rapido) todo envio se rechaza: sin `RECAPTCHA_SITE_KEY` los formularios
+se pre-renderizan sin el script de reCAPTCHA y el envio no lleva token (400), y con una
+clave que Google no valida, 403. Para probar
 localmente, registra un par de claves v3 con el dominio `localhost` en
 https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
 `RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
@@ -190,7 +193,7 @@ base64 rompen la URL.
 
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
-| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
+| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3. Sin ella los formularios se pre-renderizan sin el script de reCAPTCHA | vacio |
 | `RECAPTCHA_HOSTNAMES` | Hostnames (separados por coma) desde los que se sirven los formularios: forms-api rechaza los tokens de reCAPTCHA emitidos en otro sitio. Definila en produccion | vacio (cualquier hostname) |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
 | `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS, para el login de Better Auth y en los `POST`/`PUT`/`PATCH`/`DELETE` de su API | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
