@@ -2,74 +2,16 @@ import type { Feature, UploadAction, UploadConfig, UploadTarget } from '../../ty
 import type { Kernel } from '../../kernel';
 import type { Hono, Context, Next } from 'hono';
 import { FileExistsError, contentTypeFor, dispositionFor } from '@iskra-bun/storage-kit';
-import { UploadHelper, normalizeFolder, safeBasename } from './helper';
+import {
+    DEFAULT_MAX_FILE_SIZE,
+    MULTIPART_OVERHEAD_BYTES,
+    UploadHelper,
+    extensionAllowed,
+    normalizeFolder,
+    readFormDataWithin,
+    safeBasename,
+} from './helper';
 import { consoleLogger, type KernelLogger } from '../../logging';
-
-// Room for multipart boundaries and part headers on top of the file itself.
-const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
-
-/**
- * Refused unless `allowedExtensions` lists them: a browser runs these as a page
- * wherever they are served inline (e.g. by a static server for the local
- * adapter's folder), and a same-origin `.js` passes a `script-src 'self'` policy.
- */
-const ACTIVE_CONTENT_EXTENSIONS = new Set([
-    '.html',
-    '.htm',
-    '.shtml',
-    '.xhtml',
-    '.xht',
-    '.mht',
-    '.mhtml',
-    '.svg',
-    '.svgz',
-    '.xml',
-    '.xsl',
-    '.xslt',
-    '.js',
-    '.mjs',
-    '.cjs',
-]);
-
-/** `.png` for `photo.PNG`; '' without an extension. */
-function extensionOf(filename: string): string {
-    const dot = filename.lastIndexOf('.');
-    return dot === -1 ? '' : filename.slice(dot).toLowerCase();
-}
-
-/**
- * Parses a multipart body, aborting as soon as more than `limit` bytes arrive
- * instead of buffering an arbitrarily large request first. Returns null when
- * the limit is exceeded.
- */
-async function readFormDataWithin(req: Request, limit: number): Promise<FormData | null> {
-    if (!req.body) return req.formData();
-    let received = 0;
-    let exceeded = false;
-    const counter = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-            received += chunk.byteLength;
-            if (received > limit) {
-                exceeded = true;
-                controller.error(new Error('payload too large'));
-            } else {
-                controller.enqueue(chunk);
-            }
-        },
-    });
-    const limited = new Request(req.url, {
-        method: req.method,
-        headers: req.headers,
-        body: req.body.pipeThrough(counter),
-        duplex: 'half',
-    } as RequestInit);
-    try {
-        return await limited.formData();
-    } catch (err) {
-        if (exceeded) return null;
-        throw err;
-    }
-}
 
 declare module 'hono' {
     interface ContextVariableMap {
@@ -95,7 +37,7 @@ export class UploadFeature implements Feature {
         }
         this.config = {
             projectName: config.projectName,
-            maxFileSize: config.maxFileSize || 10 * 1024 * 1024,
+            maxFileSize: config.maxFileSize || DEFAULT_MAX_FILE_SIZE,
             allowedExtensions: (config.allowedExtensions || []).map((e) => e.toLowerCase()),
             overwrite: config.overwrite ?? false,
             exposeRoutes: config.exposeRoutes || false,
@@ -127,7 +69,10 @@ export class UploadFeature implements Feature {
             );
         }
 
-        this.helper = new UploadHelper(storage, this.config.projectName);
+        this.helper = new UploadHelper(storage, this.config.projectName, {
+            maxFileSize: this.config.maxFileSize,
+            allowedExtensions: this.config.allowedExtensions,
+        });
 
         const app = kernel.getApp();
         app.use('*', async (c: Context, next: Next) => {
@@ -136,12 +81,6 @@ export class UploadFeature implements Feature {
         });
 
         this.log.debug(`Upload feature initialized: ${this.config.projectName}`);
-    }
-
-    private extensionAllowed(filename: string): boolean {
-        const allowed = this.config.allowedExtensions;
-        if (allowed.length > 0) return allowed.some((e) => filename.toLowerCase().endsWith(e));
-        return !ACTIVE_CONTENT_EXTENSIONS.has(extensionOf(filename));
     }
 
     /** The file a download/delete URL names (`<prefix>/<subfolder...>/<filename>`). */
@@ -192,7 +131,8 @@ export class UploadFeature implements Feature {
 
                 if (file.size > this.config.maxFileSize) return c.json({ error: 'File too large' }, 413);
                 const filename = safeBasename(file.name);
-                if (!this.extensionAllowed(filename)) return c.json({ error: 'Invalid extension' }, 400);
+                if (!extensionAllowed(filename, this.config.allowedExtensions))
+                    return c.json({ error: 'Invalid extension' }, 400);
 
                 // The type comes from the extension, never from file.type (which
                 // Bun derives from the name: image/svg+xml, text/html...).
