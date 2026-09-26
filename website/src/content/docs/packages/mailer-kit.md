@@ -115,7 +115,7 @@ await mailer.send({
 
 ### SES
 
-Uses `@aws-sdk/client-sesv2`, lazily loaded only when sending:
+Uses `@aws-sdk/client-sesv2`, lazily loaded on the first send; the adapter builds one `SESv2Client` and reuses it for every later send:
 
 ```typescript
 const mailer = await createEmailAdapter({

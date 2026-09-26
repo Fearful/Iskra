@@ -115,7 +115,7 @@ await mailer.send({
 
 ### SES
 
-Usa `@aws-sdk/client-sesv2`, cargado de forma diferida solo al enviar:
+Usa `@aws-sdk/client-sesv2`, cargado de forma diferida en el primer envío; el adaptador crea un solo `SESv2Client` y lo reutiliza en los envíos siguientes:
 
 ```typescript
 const mailer = await createEmailAdapter({
