@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { formsApi } from '../api/client';
+import { formsApi, errorMessage, type Json } from '../api/client';
+import type { Answer, FormWithFields } from '@forms-app/shared';
 
 export function FormAnswersPage() {
     const { id } = useParams<{ id: string }>();
-    const [form, setForm] = useState<any>(null);
-    const [answers, setAnswers] = useState<any[]>([]);
+    const [form, setForm] = useState<Json<FormWithFields> | null>(null);
+    const [answers, setAnswers] = useState<Json<Answer>[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
     const [error, setError] = useState('');
@@ -20,15 +21,15 @@ export function FormAnswersPage() {
             setForm(formRes.data);
             setAnswers(answersRes.data);
             setTotal(answersRes.total);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 
     if (error) return <p style={{ color: '#dc2626' }}>{error}</p>;
     if (!form) return <p>Loading...</p>;
 
-    const fieldNames = form.fields?.map((f: any) => f.name) ?? [];
+    const fieldNames = form.fields?.map((f) => f.name) ?? [];
 
     return (
         <div>
@@ -55,7 +56,7 @@ export function FormAnswersPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {answers.map((a: any) => (
+                            {answers.map((a) => (
                                 <tr key={a.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                     <td style={{ padding: '0.5rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
                                         {new Date(a.submittedAt).toLocaleString()}

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { spacesApi } from '../api/client';
+import { spacesApi, errorMessage, type Json } from '../api/client';
+import type { Space } from '@forms-app/shared';
 
 export function SpacesPage() {
-    const [spaces, setSpaces] = useState<any[]>([]);
+    const [spaces, setSpaces] = useState<Json<Space>[]>([]);
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [error, setError] = useState('');
@@ -16,8 +17,8 @@ export function SpacesPage() {
         try {
             const res = await spacesApi.list();
             setSpaces(res.data);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 
@@ -29,8 +30,8 @@ export function SpacesPage() {
             setName('');
             setSlug('');
             await loadSpaces();
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 

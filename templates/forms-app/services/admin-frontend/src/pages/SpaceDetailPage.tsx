@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { spacesApi, formsApi } from '../api/client';
+import { spacesApi, formsApi, errorMessage, type Json } from '../api/client';
+import type { Form, Space } from '@forms-app/shared';
 
 export function SpaceDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const [space, setSpace] = useState<any>(null);
-    const [forms, setForms] = useState<any[]>([]);
+    const [space, setSpace] = useState<Json<Space> | null>(null);
+    const [forms, setForms] = useState<Json<Form>[]>([]);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -19,8 +20,8 @@ export function SpaceDetailPage() {
             const [spaceRes, formsRes] = await Promise.all([spacesApi.get(spaceId), formsApi.listBySpace(spaceId)]);
             setSpace(spaceRes.data);
             setForms(formsRes.data);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { formsApi } from '../api/client';
+import { formsApi, errorMessage } from '../api/client';
 import { FieldList } from '../components/FormBuilder/FieldList';
 
 interface Field {
@@ -76,8 +76,8 @@ export function FormBuilderPage() {
                 fields,
             });
             navigate(`/spaces/${spaceId}`);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 
