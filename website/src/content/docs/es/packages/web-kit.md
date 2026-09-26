@@ -70,7 +70,7 @@ defineRoute({
 });
 ```
 
-Aplica los headers de seguridad por defecto del Kernel (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). El `schema.body` de una ruta se valida sea cual sea el `Content-Type` del request. Los errores lanzados por un handler se registran en el servidor; al cliente solo se le devuelve `{ error: 'Internal Server Error' }` con status 500 (nunca se serializa el mensaje crudo, que podria filtrar connection strings u otros secretos). El cuerpo de los requests se limita a 16 MiB, como en el Kernel (`maxRequestBodySize`; Bun solo permite 128 MiB).
+Aplica los headers de seguridad por defecto del Kernel (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`); un header que la ruta define por si misma, como `X-Frame-Options: DENY`, se conserva. El `schema.body` de una ruta se valida sea cual sea el `Content-Type` del request. Los errores lanzados por un handler se registran en el servidor; al cliente solo se le devuelve `{ error: 'Internal Server Error' }` con status 500 (nunca se serializa el mensaje crudo, que podria filtrar connection strings u otros secretos). El cuerpo de los requests se limita a 16 MiB, como en el Kernel (`maxRequestBodySize`; Bun solo permite 128 MiB).
 
 ## Kernel
 

@@ -70,7 +70,7 @@ defineRoute({
 });
 ```
 
-It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`). A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets). Request bodies are capped at 16 MiB, as in the Kernel (`maxRequestBodySize`; Bun alone allows 128 MiB).
+It applies the Kernel's default security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`); a header a route sets itself, such as `X-Frame-Options: DENY`, is kept. A route's `schema.body` is validated whatever the request's `Content-Type`. Errors thrown by a handler are logged server-side; the client only receives `{ error: 'Internal Server Error' }` with a 500 status (the raw error message is never serialized, since it may embed connection strings or other secrets). Request bodies are capped at 16 MiB, as in the Kernel (`maxRequestBodySize`; Bun alone allows 128 MiB).
 
 ## Kernel
 
