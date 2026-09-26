@@ -29,12 +29,11 @@ export class MailgunEmailAdapter implements EmailAdapter {
     }
 
     async send(message: EmailMessage): Promise<{ messageId: string; success: boolean }> {
-        const form = new FormData();
-
         const from = message.from || this.defaultFrom;
-        if (from) {
-            form.append('from', formatAddress(from));
-        }
+        if (!from) throw new Error('From address required');
+
+        const form = new FormData();
+        form.append('from', formatAddress(from));
 
         // Mailgun parses each field as an address list and builds the headers
         // itself: every value is one checked mailbox, and nothing carries CR/LF.
