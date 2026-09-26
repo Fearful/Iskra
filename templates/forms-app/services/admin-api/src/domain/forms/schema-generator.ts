@@ -29,18 +29,15 @@ function buildErrorMessages(field: FieldDefinition): Record<string, string> {
     }
 
     if (field.maxLength) {
-        msgs.maxLength = getErrorMessage(ft, 'maxLength', custom)
-            .replace('{max}', String(field.maxLength));
+        msgs.maxLength = getErrorMessage(ft, 'maxLength', custom).replace('{max}', String(field.maxLength));
     }
 
     if (field.min !== undefined && field.min !== null) {
-        msgs.minimum = getErrorMessage(ft, 'minimum', custom)
-            .replace('{min}', String(field.min));
+        msgs.minimum = getErrorMessage(ft, 'minimum', custom).replace('{min}', String(field.min));
     }
 
     if (field.max !== undefined && field.max !== null) {
-        msgs.maximum = getErrorMessage(ft, 'maximum', custom)
-            .replace('{max}', String(field.max));
+        msgs.maximum = getErrorMessage(ft, 'maximum', custom).replace('{max}', String(field.max));
     }
 
     if (ft === 'email') {

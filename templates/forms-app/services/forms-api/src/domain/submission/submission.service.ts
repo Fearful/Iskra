@@ -28,10 +28,7 @@ export class SubmissionService {
         this.worker = worker;
     }
 
-    static async getFormData(
-        spaceSlug: string,
-        formSlug: string,
-    ): Promise<{ schema: any; meta: FormMeta } | null> {
+    static async getFormData(spaceSlug: string, formSlug: string): Promise<{ schema: any; meta: FormMeta } | null> {
         const cacheKey = `${spaceSlug}:${formSlug}`;
         const cached = schemaCache.get(cacheKey);
 

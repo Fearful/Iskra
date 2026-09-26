@@ -54,7 +54,17 @@ export function SpacesPage() {
                     pattern="[a-z0-9-]+"
                     style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: 4 }}
                 />
-                <button type="submit" style={{ padding: '0.5rem 1rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                <button
+                    type="submit"
+                    style={{
+                        padding: '0.5rem 1rem',
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                    }}
+                >
                     Create
                 </button>
             </form>

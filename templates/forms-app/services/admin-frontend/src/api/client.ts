@@ -34,8 +34,7 @@ export const spacesApi = {
         request<{ data: any }>('/spaces', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: { name?: string; slug?: string }) =>
         request<{ data: any }>(`/spaces/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) =>
-        request<{ data: any }>(`/spaces/${id}`, { method: 'DELETE' }),
+    delete: (id: string) => request<{ data: any }>(`/spaces/${id}`, { method: 'DELETE' }),
 };
 
 // Forms
@@ -46,12 +45,9 @@ export const formsApi = {
         request<{ data: any }>(`/spaces/${spaceId}/forms`, { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
         request<{ data: any }>(`/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) =>
-        request<{ data: any }>(`/forms/${id}`, { method: 'DELETE' }),
-    publish: (id: string) =>
-        request<{ data: any }>(`/forms/${id}/publish`, { method: 'POST' }),
-    prerender: (id: string) =>
-        request<{ data: any }>(`/forms/${id}/prerender`, { method: 'POST' }),
+    delete: (id: string) => request<{ data: any }>(`/forms/${id}`, { method: 'DELETE' }),
+    publish: (id: string) => request<{ data: any }>(`/forms/${id}/publish`, { method: 'POST' }),
+    prerender: (id: string) => request<{ data: any }>(`/forms/${id}/prerender`, { method: 'POST' }),
     getAnswers: (id: string, page = 1, pageSize = 50) =>
         request<any>(`/forms/${id}/answers?page=${page}&pageSize=${pageSize}`),
 };

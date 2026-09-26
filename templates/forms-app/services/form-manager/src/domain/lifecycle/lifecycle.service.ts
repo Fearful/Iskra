@@ -32,10 +32,7 @@ export class LifecycleService {
         const space = spaceResults[0];
 
         // Update status to open
-        await this.db
-            .update(forms)
-            .set({ status: FormStatus.OPEN, updatedAt: new Date() })
-            .where(eq(forms.id, formId));
+        await this.db.update(forms).set({ status: FormStatus.OPEN, updatedAt: new Date() }).where(eq(forms.id, formId));
 
         // Update Redis meta
         if (this.redis && space) {

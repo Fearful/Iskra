@@ -63,13 +63,16 @@ async function main() {
     }, config.checkIntervalMs);
 
     // Re-populate Redis every 5 minutes
-    setInterval(async () => {
-        try {
-            await RedisPopulatorService.populateActiveForms();
-        } catch (err) {
-            console.error('Redis population error:', err);
-        }
-    }, 5 * 60 * 1000);
+    setInterval(
+        async () => {
+            try {
+                await RedisPopulatorService.populateActiveForms();
+            } catch (err) {
+                console.error('Redis population error:', err);
+            }
+        },
+        5 * 60 * 1000,
+    );
 
     console.log(`Cron service running on port ${config.web.port}`);
 }

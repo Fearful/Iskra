@@ -33,12 +33,15 @@ export const FIELD_CONSTRAINTS: Record<FieldType, FieldConstraints> = {
     },
 };
 
-export function enforceConstraints(fieldType: FieldType, values: {
-    maxLength?: number;
-    min?: number;
-    max?: number;
-    options?: unknown[];
-}): { maxLength?: number; min?: number; max?: number; optionsTruncated?: boolean } {
+export function enforceConstraints(
+    fieldType: FieldType,
+    values: {
+        maxLength?: number;
+        min?: number;
+        max?: number;
+        options?: unknown[];
+    },
+): { maxLength?: number; min?: number; max?: number; optionsTruncated?: boolean } {
     const constraints = FIELD_CONSTRAINTS[fieldType];
     const result: ReturnType<typeof enforceConstraints> = {};
 

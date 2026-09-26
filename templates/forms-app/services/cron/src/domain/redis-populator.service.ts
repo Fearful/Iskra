@@ -33,12 +33,7 @@ export class RedisPopulatorService {
             })
             .from(forms)
             .innerJoin(spaces, eq(forms.spaceId, spaces.id))
-            .where(
-                or(
-                    eq(forms.status, FormStatus.OPEN),
-                    eq(forms.status, FormStatus.SCHEDULED),
-                ),
-            );
+            .where(or(eq(forms.status, FormStatus.OPEN), eq(forms.status, FormStatus.SCHEDULED)));
 
         let populated = 0;
         const activeKeys: string[] = [];

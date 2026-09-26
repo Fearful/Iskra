@@ -3,7 +3,14 @@ import { pgTable, text, timestamp, integer, jsonb, pgEnum, uniqueIndex, boolean,
 export const formStatusEnum = pgEnum('form_status', ['draft', 'scheduled', 'open', 'closed']);
 
 export const fieldTypeEnum = pgEnum('field_type', [
-    'text', 'number', 'email', 'select', 'checkbox', 'radio', 'textarea', 'date',
+    'text',
+    'number',
+    'email',
+    'select',
+    'checkbox',
+    'radio',
+    'textarea',
+    'date',
 ]);
 
 export const spaces = pgTable('spaces', {
@@ -14,26 +21,32 @@ export const spaces = pgTable('spaces', {
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const forms = pgTable('forms', {
-    id: text('id').primaryKey(),
-    spaceId: text('space_id').notNull().references(() => spaces.id, { onDelete: 'cascade' }),
-    title: text('title').notNull(),
-    description: text('description'),
-    slug: text('slug').notNull(),
-    schema: jsonb('schema'),
-    validationSchema: jsonb('validation_schema'),
-    startsAt: timestamp('starts_at'),
-    endsAt: timestamp('ends_at'),
-    status: formStatusEnum('status').notNull().default('draft'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => [
-    uniqueIndex('forms_space_slug_idx').on(table.spaceId, table.slug),
-]);
+export const forms = pgTable(
+    'forms',
+    {
+        id: text('id').primaryKey(),
+        spaceId: text('space_id')
+            .notNull()
+            .references(() => spaces.id, { onDelete: 'cascade' }),
+        title: text('title').notNull(),
+        description: text('description'),
+        slug: text('slug').notNull(),
+        schema: jsonb('schema'),
+        validationSchema: jsonb('validation_schema'),
+        startsAt: timestamp('starts_at'),
+        endsAt: timestamp('ends_at'),
+        status: formStatusEnum('status').notNull().default('draft'),
+        createdAt: timestamp('created_at').defaultNow().notNull(),
+        updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    },
+    (table) => [uniqueIndex('forms_space_slug_idx').on(table.spaceId, table.slug)],
+);
 
 export const formFields = pgTable('form_fields', {
     id: text('id').primaryKey(),
-    formId: text('form_id').notNull().references(() => forms.id, { onDelete: 'cascade' }),
+    formId: text('form_id')
+        .notNull()
+        .references(() => forms.id, { onDelete: 'cascade' }),
     fieldType: fieldTypeEnum('field_type').notNull(),
     label: text('label').notNull(),
     name: text('name').notNull(),
@@ -50,7 +63,9 @@ export const formFields = pgTable('form_fields', {
 
 export const answers = pgTable('answers', {
     id: text('id').primaryKey(),
-    formId: text('form_id').notNull().references(() => forms.id, { onDelete: 'cascade' }),
+    formId: text('form_id')
+        .notNull()
+        .references(() => forms.id, { onDelete: 'cascade' }),
     data: jsonb('data').notNull(),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
     ipHash: text('ip_hash'),

@@ -26,7 +26,9 @@ export function ValidationConfig({ field, onChange }: ValidationConfigProps) {
                         <input
                             type="number"
                             value={field.maxLength ?? ''}
-                            onChange={(e) => onChange({ maxLength: e.target.value ? Number(e.target.value) : undefined })}
+                            onChange={(e) =>
+                                onChange({ maxLength: e.target.value ? Number(e.target.value) : undefined })
+                            }
                             placeholder="e.g. 255"
                             style={inputStyle}
                         />
@@ -73,5 +75,17 @@ export function ValidationConfig({ field, onChange }: ValidationConfigProps) {
     );
 }
 
-const labelStyle: React.CSSProperties = { display: 'block', fontWeight: 500, marginBottom: '0.25rem', fontSize: '0.8rem', color: '#4b5563' };
-const inputStyle: React.CSSProperties = { width: '100%', padding: '0.375rem 0.5rem', border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.875rem' };
+const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontWeight: 500,
+    marginBottom: '0.25rem',
+    fontSize: '0.8rem',
+    color: '#4b5563',
+};
+const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '0.375rem 0.5rem',
+    border: '1px solid #d1d5db',
+    borderRadius: 4,
+    fontSize: '0.875rem',
+};
