@@ -87,10 +87,13 @@ const auth = createBetterAuth({
         clientId: process.env.OIDC_CLIENT_ID!,
         clientSecret: process.env.OIDC_CLIENT_SECRET!,
         issuer: 'https://idp.example.com',
-        // endpoints/scopes opcionales; se derivan del issuer si no se indican
+        // opcionales: authorizationEndpoint, tokenEndpoint, userinfoEndpoint,
+        // discoveryEndpoint, scopes
     },
 });
 ```
+
+Los endpoints que no indiques salen del documento de discovery del issuer (`discoveryEndpoint`, por defecto `${issuer}/.well-known/openid-configuration`), así que cualquier proveedor que siga el estándar (Keycloak, Auth0, Okta, Entra ID, …) funciona solo con el `issuer`. Indica un endpoint solo para reemplazar el descubierto.
 
 PKCE viene **activado por defecto** (`pkce: true`) para el proveedor OAuth/OIDC genérico. Esto protege contra la interceptación e inyección del código de autorización. Solo se desactiva con un `false` explícito:
 

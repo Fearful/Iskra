@@ -1,6 +1,7 @@
 export {
     createBetterAuth,
     mapOidcProfile,
+    oidcProviderConfig,
     type Auth,
     type AuthKitDrizzleDb,
     type BetterAuthConfigOptions,

@@ -105,6 +105,30 @@ export function mapOidcProfile(profile: GenericOAuthUserInfo) {
     };
 }
 
+/**
+ * The generic-oauth provider config for `oidcConfig`. The endpoints left
+ * unset come from the issuer's discovery document: better-auth fills only
+ * the ones not given, so a default here (e.g. Keycloak's
+ * `/protocol/openid-connect/*` paths) would override discovery for every
+ * other provider.
+ */
+export function oidcProviderConfig(oidcConfig: NonNullable<BetterAuthConfigOptions['oidcConfig']>) {
+    return {
+        providerId: oidcConfig.providerId || 'oidc',
+        clientId: oidcConfig.clientId,
+        clientSecret: oidcConfig.clientSecret,
+        authorizationUrl: oidcConfig.authorizationEndpoint || undefined,
+        tokenUrl: oidcConfig.tokenEndpoint || undefined,
+        userInfoUrl: oidcConfig.userinfoEndpoint || undefined,
+        discoveryUrl: oidcConfig.discoveryEndpoint || `${oidcConfig.issuer}/.well-known/openid-configuration`,
+        scopes: oidcConfig.scopes || ['openid', 'email', 'profile'],
+        // Secure default: PKCE on. Disabling exposes auth-code
+        // interception/injection and requires an explicit false.
+        pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
+        mapProfileToUser: mapOidcProfile,
+    };
+}
+
 export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthInstance {
     const {
         db,
@@ -171,32 +195,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
 
     const plugins = [];
     if (oidcConfig) {
-        const authorizationUrl =
-            oidcConfig.authorizationEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/auth`;
-        const tokenUrl = oidcConfig.tokenEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/token`;
-        const userInfoUrl = oidcConfig.userinfoEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/userinfo`;
-
-        plugins.push(
-            genericOAuth({
-                config: [
-                    {
-                        providerId: oidcConfig.providerId || 'oidc',
-                        clientId: oidcConfig.clientId,
-                        clientSecret: oidcConfig.clientSecret,
-                        authorizationUrl,
-                        tokenUrl,
-                        userInfoUrl,
-                        discoveryUrl:
-                            oidcConfig.discoveryEndpoint || `${oidcConfig.issuer}/.well-known/openid-configuration`,
-                        scopes: oidcConfig.scopes || ['openid', 'email', 'profile'],
-                        // Secure default: PKCE on. Disabling exposes auth-code
-                        // interception/injection and requires an explicit false.
-                        pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
-                        mapProfileToUser: mapOidcProfile,
-                    },
-                ],
-            }),
-        );
+        plugins.push(genericOAuth({ config: [oidcProviderConfig(oidcConfig)] }));
     }
 
     return betterAuth({
