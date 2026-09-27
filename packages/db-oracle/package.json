@@ -53,7 +53,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:*"
+        "@iskra-bun/core": "workspace:^"
     },
     "peerDependencies": {
         "oracledb": "^6.3.0"

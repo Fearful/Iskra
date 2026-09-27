@@ -125,6 +125,8 @@ la entrada más duradera que contiene:
   pisarse): las claves vencidas se quitan en cada escritura, y pasadas las 10.000
   entradas se eliminan las más antiguas junto con sus datos.
 
+Si falla la indexación de una etiqueta (el almacén da error), `set()` borra la entrada que acaba de escribir y rechaza con ese error, así que no queda ninguna entrada que `invalidateTag()` no alcance.
+
 Los índices escritos antes de esta versión (una lista JSON por etiqueta) se siguen
 leyendo y borrando en `invalidateTag()`.
 

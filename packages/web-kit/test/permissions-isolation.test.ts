@@ -85,3 +85,72 @@ describe('PermissionsFeature cache', () => {
         await kernel.shutdown();
     });
 });
+
+/** Minimal stand-in for SessionFeature: the session holds the user of a header. */
+class HeaderSessionFeature {
+    name = 'session';
+    async initialize(kernel: Kernel) {
+        kernel.getApp().use('*', async (c, next) => {
+            const id = c.req.header('x-session-user');
+            if (id) c.set('session', { user: { id } } as any);
+            await next();
+        });
+    }
+}
+
+describe('PermissionsFeature ordering', () => {
+    it('reads a session registered after it', async () => {
+        // Regression: it only depended on "auth", so a session feature
+        // registered later ran after it and the session's user was never seen.
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new HeaderAuthFeature() as any);
+        kernel.registerFeature(
+            new PermissionsFeature({
+                loadRoles: async (id) => (id === 'root' ? ['admin'] : ['user']),
+                cachePermissions: false,
+            }),
+        );
+        kernel.registerFeature(new HeaderSessionFeature() as any);
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/danger', requirePermission('delete:everything'), (c) => c.text('ok'));
+
+        expect((await app.request('/danger', { headers: { 'x-session-user': 'root' } })).status).toBe(200);
+        expect((await app.request('/danger')).status).toBe(403);
+    });
+
+    it('uses a cache registered after it', async () => {
+        let loads = 0;
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new HeaderAuthFeature() as any);
+        kernel.registerFeature(
+            new PermissionsFeature({
+                loadRoles: async () => {
+                    loads++;
+                    return ['admin'];
+                },
+            }),
+        );
+        kernel.registerFeature(new CacheFeature({ adapter: 'memory' }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/danger', requirePermission('delete:everything'), (c) => c.text('ok'));
+
+        expect((await app.request('/danger', { headers: { 'x-user': 'root' } })).status).toBe(200);
+        expect((await app.request('/danger', { headers: { 'x-user': 'root' } })).status).toBe(200);
+        expect(loads).toBe(1);
+        await kernel.shutdown();
+    });
+
+    it('starts without an auth feature and denies by default', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new PermissionsFeature({ anonymousPermissions: ['read:public'] }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/public', requirePermission('read:public'), (c) => c.text('ok'));
+        app.get('/danger', requirePermission('delete:everything'), (c) => c.text('ok'));
+
+        expect((await app.request('/public')).status).toBe(200);
+        expect((await app.request('/danger')).status).toBe(403);
+    });
+});

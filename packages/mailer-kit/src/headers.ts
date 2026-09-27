@@ -3,10 +3,10 @@ import type { EmailAddress, EmailRecipient } from './types';
 /**
  * Outbound custom mail headers callers may set on every provider. Anything
  * else is rejected so a caller cannot spoof Sender / routing headers via the
- * generic `headers` map.
+ * generic `headers` map. Reply-To is not one: `message.replyTo` sets it, with
+ * its address checked like a recipient's.
  */
 export const ALLOWED_HEADERS = [
-    'reply-to',
     'in-reply-to',
     'references',
     'list-unsubscribe',
@@ -28,6 +28,9 @@ export function checkHeaders(
     if (!headers) return undefined;
     const checked: Record<string, string> = {};
     for (const [key, value] of Object.entries(headers)) {
+        if (key.toLowerCase() === 'reply-to') {
+            throw new Error(`Header "${key}" is not allowed: use message.replyTo`);
+        }
         if (!allowed.includes(key.toLowerCase())) {
             throw new Error(`Header "${key}" is not allowed`);
         }

@@ -50,6 +50,8 @@ expect(logger.logs.info[0].args[0]).toBe('mensaje');
 logger.reset(); // borra todos los registros
 ```
 
+Todos los niveles están habilitados (`level` es `'trace'` e `isLevelEnabled()` devuelve `true`), así que también se capturan las llamadas protegidas con `isLevelEnabled()`.
+
 ### `createMockDriver(name?, hooks?)`
 
 Devuelve un `Driver` que registra las llamadas al ciclo de vida (`init`, `start`, `stop`) y su orden. Los hooks opcionales permiten inyectar comportamiento o lanzar errores.

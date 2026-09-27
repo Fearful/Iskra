@@ -1,9 +1,12 @@
 export {
     createBetterAuth,
     mapOidcProfile,
+    oidcProviderConfig,
+    resolveAuthBaseURL,
     type Auth,
     type AuthKitDrizzleDb,
     type BetterAuthConfigOptions,
+    type OidcClaimMapping,
 } from './better-auth-config';
 
 export {

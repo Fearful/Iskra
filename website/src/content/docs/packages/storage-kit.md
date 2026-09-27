@@ -67,7 +67,7 @@ const storage = await createStorageAdapter({
 
 ```typescript
 // Store a file
-// options: { contentType?, contentDisposition?, overwrite?, metadata? }
+// options: { contentType?, contentDisposition?, overwrite?, metadata?, maxBytes? }
 const file = await storage.put(path, data, options?);
 
 // Read bytes
@@ -98,6 +98,9 @@ await storage.delete(path);
 // Check if path is a directory
 const isDir = await storage.isDirectory(path);
 ```
+
+`PutOptions.public` is deprecated and ignored by every adapter: to make objects
+public, use a bucket policy (S3/MinIO) or serve them from your app (local).
 
 ## Security
 
@@ -168,6 +171,24 @@ try {
 
 On S3 this needs conditional writes (AWS S3 since August 2024; check your MinIO
 or S3-compatible server supports `If-None-Match` on `PUT`).
+
+### Streamed uploads to S3
+
+The S3/MinIO adapter reads a `ReadableStream` given to `put()` into memory before
+uploading it. `maxBytes` bounds that: a longer stream is cancelled and `put()`
+rejects with a `RangeError` (`put(): stream exceeds maxBytes (N)`) without
+uploading anything. The default is 5 GiB, S3's limit for a single upload (or the
+largest Buffer the runtime allows, if smaller); set it to what the route accepts
+when the stream comes from a request body. It must be a non-negative integer
+(else `put()` rejects with a `TypeError` or `RangeError`). Chunks may be bytes
+(any `ArrayBuffer` view), `ArrayBuffer`s or strings, stored as UTF-8 and counted
+by their UTF-8 bytes. The local
+adapter writes a stream straight to disk and ignores `maxBytes`: bound the size
+before calling it.
+
+```typescript
+await storage.put('uploads/avatar.png', req.body!, { maxBytes: 5 * 1024 * 1024 });
+```
 
 ### Secure-by-default S3 endpoints
 

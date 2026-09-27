@@ -194,7 +194,12 @@ describe('Mailgun subject and Reply-To', () => {
             forms.push(init.body);
             return new Response(JSON.stringify({ id: 'id', message: 'ok' }), { status: 200 });
         }) as any);
-        const adapter = new MailgunEmailAdapter({ provider: 'mailgun', apiKey: 'k', domain: 'mg.example.com' });
+        const adapter = new MailgunEmailAdapter({
+            provider: 'mailgun',
+            apiKey: 'k',
+            domain: 'mg.example.com',
+            from: { email: 'noreply@example.com' },
+        });
         await adapter.send({ to: 'u@example.com', subject: 'Hi\r\nBcc: spy@evil.test', text: 't' });
         expect(forms[0]!.get('subject')).toBe('Hi');
     });

@@ -96,6 +96,16 @@ function renderFieldHtml(field: FormField): string {
     </div>`;
 }
 
+/**
+ * Without a site key there is nothing to load: `render=` with a placeholder
+ * made Google's script fail on every page. forms-api then rejects the
+ * submissions (no reCAPTCHA token), as it does without keys anyway.
+ */
+function recaptchaScript(siteKey: string): string {
+    if (!siteKey) return '';
+    return `<script src="https://www.google.com/recaptcha/api.js?render=${escapeHtml(encodeURIComponent(siteKey))}"></script>`;
+}
+
 export function generateFormHtml(
     title: string,
     description: string | null,
@@ -112,7 +122,7 @@ export function generateFormHtml(
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(title)}</title>
-    <script src="https://www.google.com/recaptcha/api.js?render=${escapeHtml(encodeURIComponent(recaptchaSiteKey))}"></script>
+    ${recaptchaScript(recaptchaSiteKey)}
     <link rel="stylesheet" href="./assets/style.css" />
 </head>
 <body>

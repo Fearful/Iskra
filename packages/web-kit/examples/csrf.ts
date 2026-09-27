@@ -1,6 +1,6 @@
-import { Kernel } from "../src/kernel";
-import { CsrfFeature, requireCsrf } from "../src/features/csrf";
-import { SessionFeature } from "../src/features/session";
+import { Kernel } from '../src/kernel';
+import { CsrfFeature } from '../src/features/csrf';
+import { SessionFeature } from '../src/features/session';
 
 // At least 32 random characters, from the environment (e.g. `openssl rand -base64 32`);
 // a random one per start otherwise, so tokens do not survive a restart.
@@ -22,8 +22,8 @@ basicKernel.registerFeature(
 // Initialize before adding routes: a route added earlier skips the features' middleware.
 await basicKernel.initialize();
 
-basicKernel.getApp().get("/form", (c) => {
-    const csrfToken = c.get("csrfToken");
+basicKernel.getApp().get('/form', (c) => {
+    const csrfToken = c.get('csrfToken');
 
     return c.html(`
     <!DOCTYPE html>
@@ -41,9 +41,9 @@ basicKernel.getApp().get("/form", (c) => {
   `);
 });
 
-basicKernel.getApp().post("/submit", async (c) => {
+basicKernel.getApp().post('/submit', async (c) => {
     const body = await c.req.parseBody();
-    return c.json({ message: "Form submitted successfully", data: body });
+    return c.json({ message: 'Form submitted successfully', data: body });
 });
 
 // ============================================================================
@@ -55,8 +55,8 @@ const sessionKernel = new Kernel({ port: 8005 });
 // With SessionFeature, tokens are bound to the stored session.
 sessionKernel.registerFeature(
     new SessionFeature({
-        store: "memory",
-        secret: "session-secret-0123456789abcdef0123456789abcdef",
+        store: 'memory',
+        secret: 'session-secret-0123456789abcdef0123456789abcdef',
     }),
 );
 
@@ -69,8 +69,8 @@ sessionKernel.registerFeature(
 // Initialize before adding routes: a route added earlier skips the features' middleware.
 await sessionKernel.initialize();
 
-sessionKernel.getApp().get("/login", (c) => {
-    const csrfToken = c.get("csrfToken");
+sessionKernel.getApp().get('/login', (c) => {
+    const csrfToken = c.get('csrfToken');
 
     return c.html(`
     <!DOCTYPE html>
@@ -89,24 +89,24 @@ sessionKernel.getApp().get("/login", (c) => {
   `);
 });
 
-sessionKernel.getApp().post("/login", async (c) => {
+sessionKernel.getApp().post('/login', async (c) => {
     const body = await c.req.parseBody();
 
     // A new session ID after login (session fixation); it also issues a new
     // CSRF token, c.get("csrfToken"), for the pages that follow.
-    await c.get("regenerateSession")();
+    await c.get('regenerateSession')();
 
     // The session is a plain object: set fields, and it is saved after the response.
-    const session = c.get("session");
-    session.userId = "user123";
-    session.username = String(body.username ?? "");
+    const session = c.get('session');
+    session.userId = 'user123';
+    session.username = String(body.username ?? '');
 
-    return c.json({ message: "Logged in successfully" });
+    return c.json({ message: 'Logged in successfully' });
 });
 
 // Run
 if (import.meta.main) {
-    console.log("Starting Basic CSRF Example on port 8001...");
+    console.log('Starting Basic CSRF Example on port 8001...');
     await basicKernel.start();
     // To run other examples, uncomment or run separately.
     // await sessionKernel.start();

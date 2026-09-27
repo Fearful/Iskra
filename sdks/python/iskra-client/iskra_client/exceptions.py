@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Any, Optional
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any, Mapping, Optional
 
 
 class IskraException(Exception):
@@ -18,13 +20,16 @@ class IskraException(Exception):
         self.request_id = request_id
 
     @staticmethod
-    def from_error_response(status_code: int, body: Any) -> IskraException:
+    def from_error_response(
+        status_code: int, body: Any, headers: Optional[Mapping[str, str]] = None
+    ) -> IskraException:
         """Maps an error response to a typed exception.
 
         Understands the shapes an Iskra service answers with:
         `{"error", "code", "details"}` (ErrorHandlerFeature / errorResponse),
         `{"message", "code"}` (Better Auth and the Kernel's default handler),
-        and a plain-text body (e.g. Hono's `404 Not Found`).
+        and a plain-text body (e.g. Hono's `404 Not Found`). A 429's
+        `Retry-After` header, when `headers` are given, becomes `retry_after`.
         """
         message: Optional[str] = None
         code = details = request_id = None
@@ -42,6 +47,17 @@ class IskraException(Exception):
         elif isinstance(body, str) and body.strip():
             message = body.strip()
 
+        if status_code == 429:
+            return RateLimitException(
+                message=message or f"HTTP {status_code}",
+                status_code=status_code,
+                error_code=code,
+                details=details,
+                request_id=request_id,
+                retry_after=parse_retry_after(
+                    next((v for k, v in (headers or {}).items() if k.lower() == "retry-after"), None)
+                ),
+            )
         cls = _STATUS_CLASSES.get(status_code, IskraException)
         return cls(
             message=message or f"HTTP {status_code}",
@@ -73,7 +89,28 @@ class ConflictException(IskraException):
 
 
 class RateLimitException(IskraException):
-    pass
+    def __init__(self, *args: Any, retry_after: Optional[float] = None, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        #: Seconds to wait before retrying, from the response's `Retry-After`
+        #: header; None when it is absent or invalid.
+        self.retry_after = retry_after
+
+
+def parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """A `Retry-After` value (delay in seconds or an HTTP-date) in seconds
+    from now, never negative; None when absent or invalid."""
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isascii() and value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 _STATUS_CLASSES = {

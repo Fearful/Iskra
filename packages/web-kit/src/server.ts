@@ -45,9 +45,13 @@ export class WebDriver implements Driver {
     private setupSecurityHeaders() {
         this.server.use('*', async (c, next) => {
             await next();
-            c.res.headers.set('X-Frame-Options', 'SAMEORIGIN');
-            c.res.headers.set('X-Content-Type-Options', 'nosniff');
-            c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+            // A header the route set itself (e.g. `X-Frame-Options: DENY`) is kept.
+            const set = (name: string, value: string) => {
+                if (!c.res.headers.has(name)) c.res.headers.set(name, value);
+            };
+            set('X-Frame-Options', 'SAMEORIGIN');
+            set('X-Content-Type-Options', 'nosniff');
+            set('Referrer-Policy', 'strict-origin-when-cross-origin');
         });
     }
 

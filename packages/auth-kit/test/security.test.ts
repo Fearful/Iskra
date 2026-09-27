@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from 'bun:test';
-import { createBetterAuth, type AuthKitDrizzleDb } from '../src/better-auth-config';
+import { createBetterAuth, resolveAuthBaseURL, type AuthKitDrizzleDb } from '../src/better-auth-config';
 
 // Security regression tests (RED stage of TDD) covering audit findings on
 // src/better-auth-config.ts. Better Auth's drizzle adapter only wraps the db
@@ -90,9 +90,66 @@ describe('createBetterAuth placeholder secrets', () => {
 
     it('accepts a random secret in production, and the samples outside it', () => {
         process.env.NODE_ENV = 'production';
-        expect(build('k7Hq2Vx9Lm4Tz8Rb1Nw6Pc3Yd5Fg0Js2Ua')).not.toThrow();
+        expect(() =>
+            createBetterAuth({
+                db: fakeDb,
+                adapterType: 'postgres',
+                secret: 'k7Hq2Vx9Lm4Tz8Rb1Nw6Pc3Yd5Fg0Js2Ua',
+                baseURL: 'https://app.example.com',
+            }),
+        ).not.toThrow();
         process.env.NODE_ENV = 'development';
         for (const secret of placeholders) expect(build(secret)).not.toThrow();
+    });
+});
+
+// HIGH — baseURL decides the cookies' Secure flag and is a trusted origin:
+// production defaulted to http://localhost:3000 and ignored BETTER_AUTH_URL.
+describe('createBetterAuth baseURL', () => {
+    const saved = { NODE_ENV: process.env.NODE_ENV, BETTER_AUTH_URL: process.env.BETTER_AUTH_URL };
+    afterEach(() => {
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    });
+    const build = (baseURL?: string) => () =>
+        createBetterAuth({ db: fakeDb, adapterType: 'postgres', secret: VALID_SECRET, baseURL });
+    const baseURLOf = (auth: unknown) => (auth as { options: { baseURL?: string } }).options.baseURL;
+
+    it('requires one in production', () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.BETTER_AUTH_URL;
+        expect(build()).toThrow(/createBetterAuth: set baseURL \(or BETTER_AUTH_URL\)/);
+    });
+
+    it('requires https in production, except on localhost', () => {
+        process.env.NODE_ENV = 'production';
+        expect(build('http://app.example.com')).toThrow(/"http:\/\/app\.example\.com" must use https in production/);
+        expect(build('https://app.example.com')).not.toThrow();
+        expect(build('http://localhost:4000')).not.toThrow();
+        expect(build('http://127.0.0.1:3000')).not.toThrow();
+    });
+
+    it('takes BETTER_AUTH_URL when baseURL is not given', () => {
+        process.env.NODE_ENV = 'production';
+        process.env.BETTER_AUTH_URL = 'https://env.example.com';
+        expect(baseURLOf(build()())).toBe('https://env.example.com');
+        process.env.BETTER_AUTH_URL = 'http://env.example.com';
+        expect(build()).toThrow(/must use https/);
+    });
+
+    it('defaults to http://localhost:3000 outside production', () => {
+        process.env.NODE_ENV = 'development';
+        delete process.env.BETTER_AUTH_URL;
+        expect(baseURLOf(build()())).toBe('http://localhost:3000');
+        expect(resolveAuthBaseURL('http://app.example.com')).toBe('http://app.example.com');
+    });
+
+    it('prefixes its errors with the caller', () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.BETTER_AUTH_URL;
+        expect(() => resolveAuthBaseURL(undefined, 'AuthFeature')).toThrow(/^AuthFeature: /);
     });
 });
 

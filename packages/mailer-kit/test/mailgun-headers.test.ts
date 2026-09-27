@@ -86,4 +86,18 @@ describe('Mailgun outbound header allowlist', () => {
         const form = init.body as FormData;
         expect(form.get('h:List-Unsubscribe')).toBe('<https://x.com/unsub>');
     });
+
+    it('refuses Reply-To in headers, pointing to message.replyTo', async () => {
+        mockFetch();
+
+        await expect(
+            makeAdapter().send({
+                to: 'user@example.com',
+                subject: 's',
+                text: 't',
+                headers: { 'Reply-To': 'attacker@evil.test, x@example.com' },
+            }),
+        ).rejects.toThrow('Header "Reply-To" is not allowed: use message.replyTo');
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
 });

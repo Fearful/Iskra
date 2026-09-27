@@ -509,3 +509,40 @@ describe('socket-kit topic types and log volume', () => {
         ws.close();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Start-up warning when canJoin / canPublish are left at allow-all
+// ---------------------------------------------------------------------------
+describe('socket-kit open authorization warning', () => {
+    async function startWarnings(options: ConstructorParameters<typeof SocketDriver>[0]) {
+        const warnings: string[] = [];
+        const app = new App({ name: 'SocketAuthzWarning', logger: { level: 'silent' } });
+        const warn = app.logger.warn.bind(app.logger);
+        (app.logger as any).warn = (obj: unknown, msg?: string) => {
+            warnings.push(String(msg ?? obj));
+            return warn(obj as never, msg as never);
+        };
+        app.register(new SocketDriver({ port: 0, ...options }));
+        await app.start();
+        await app.stop();
+        return warnings.filter((w) => w.startsWith('SocketDriver authorization is open'));
+    }
+
+    it('warns that any client can join any room and publish to any topic without the hooks', async () => {
+        const warnings = await startWarnings({});
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('any client can join any room');
+        expect(warnings[0]).toContain('any client can publish to any topic');
+    });
+
+    it('names only the hook that is missing', async () => {
+        const warnings = await startWarnings({ canJoin: () => true });
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).not.toContain('join any room');
+        expect(warnings[0]).toContain('publish to any topic');
+    });
+
+    it('does not warn when both hooks are set', async () => {
+        expect(await startWarnings({ canJoin: () => true, canPublish: () => true })).toEqual([]);
+    });
+});

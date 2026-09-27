@@ -136,12 +136,12 @@ A Driver, Plugin or Feature runs with full access to the app: its config and sec
 
 ## Packaging for reuse
 
-Start from the [`plugin-starter`](https://github.com/fearful/iskra/tree/main/templates/plugin-starter) template. Export your Driver/Plugin from the package entry point and declare `@iskra-bun/core` as a peer dependency so consumers control the version.
+Start from the [`plugin-starter`](https://github.com/fearful/iskra/tree/main/templates/plugin-starter) template. Export your Driver/Plugin from the package entry point and declare `@iskra-bun/core` as a peer dependency so consumers control the version. Use the caret range of the core version you build against (the template itself uses `workspace:*`, which only resolves inside this monorepo):
 
 ```json
 {
   "peerDependencies": {
-    "@iskra-bun/core": "workspace:*"
+    "@iskra-bun/core": "^0.1.1"
   }
 }
 ```

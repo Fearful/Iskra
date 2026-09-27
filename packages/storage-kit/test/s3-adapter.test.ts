@@ -133,6 +133,92 @@ describe('S3StorageAdapter - mocked send', () => {
         expect(putInput.Body).toBeInstanceOf(Uint8Array);
     });
 
+    it('put rejects a stream longer than maxBytes, cancels it and uploads nothing', async () => {
+        const adapter = makeAdapter();
+        const sent: string[] = [];
+        mockSend(adapter, (cmd) => {
+            sent.push(cmd.constructor.name);
+            return {};
+        });
+        await adapter.connect();
+        sent.length = 0;
+
+        let cancelled = false;
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]));
+                controller.enqueue(new Uint8Array([4, 5, 6, 7, 8, 9, 10]));
+            },
+            cancel() {
+                cancelled = true;
+            },
+        });
+        const err = await adapter.put('big.bin', stream, { maxBytes: 4 }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(RangeError);
+        expect((err as Error).message).toBe('put(): stream exceeds maxBytes (4)');
+        expect(cancelled).toBe(true);
+        expect(sent).toEqual([]);
+    });
+
+    it('put accepts a stream of exactly maxBytes', async () => {
+        const adapter = makeAdapter();
+        let putInput: any;
+        mockSend(adapter, (cmd) => {
+            if (cmd.constructor.name === 'PutObjectCommand') putInput = cmd.input;
+            return {};
+        });
+        await adapter.connect();
+
+        const stream = new Response(new Uint8Array([1, 2, 3, 4])).body!;
+        const file = await adapter.put('four.bin', stream, { maxBytes: 4 });
+        expect(file.size).toBe(4);
+        expect(Array.from(putInput.Body as Uint8Array)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('put reads string and ArrayBuffer chunks, and counts a string by its UTF-8 bytes', async () => {
+        // Regression: a chunk was taken as a Uint8Array, so a string counted
+        // its length (not its bytes) against maxBytes and broke the upload.
+        const adapter = makeAdapter();
+        let putInput: any;
+        mockSend(adapter, (cmd) => {
+            if (cmd.constructor.name === 'PutObjectCommand') putInput = cmd.input;
+            return {};
+        });
+        await adapter.connect();
+
+        const view = new Uint8Array([9, 9, 3, 4, 9]).subarray(2, 4);
+        const stream = new ReadableStream<unknown>({
+            start(controller) {
+                controller.enqueue('añ');
+                controller.enqueue(new Uint8Array([1, 2]).buffer);
+                controller.enqueue(view);
+                controller.enqueue(new DataView(new Uint8Array([7, 5, 6]).buffer, 1));
+                controller.close();
+            },
+        });
+        const file = await adapter.put('mixed.bin', stream as ReadableStream);
+        expect(file.size).toBe(9);
+        expect(Array.from(putInput.Body as Uint8Array)).toEqual([0x61, 0xc3, 0xb1, 1, 2, 3, 4, 5, 6]);
+
+        // 'ñ' is 2 bytes: 'añ' is 3 bytes, over a maxBytes of 2.
+        const text = new Response('añ').body!.pipeThrough(new TextDecoderStream());
+        const err = await adapter.put('text.txt', text, { maxBytes: 2 }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(RangeError);
+    });
+
+    it('put refuses an invalid maxBytes', async () => {
+        const adapter = makeAdapter();
+        mockSend(adapter, () => ({}));
+        await adapter.connect();
+        const stream = () => new Response(new Uint8Array([1])).body!;
+
+        for (const maxBytes of [-1, 1.5, NaN, Infinity]) {
+            await expect(adapter.put('x.bin', stream(), { maxBytes })).rejects.toBeInstanceOf(RangeError);
+        }
+        await expect(adapter.put('x.bin', stream(), { maxBytes: '10' as any })).rejects.toBeInstanceOf(TypeError);
+        expect((await adapter.put('x.bin', stream(), { maxBytes: 1 })).size).toBe(1);
+    });
+
     it('get returns bytes from the response body', async () => {
         const adapter = makeAdapter();
         mockSend(adapter, (cmd) => {

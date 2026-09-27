@@ -62,6 +62,19 @@ await app.start();
 const users = await db.db!.query.users.findMany({ where: eq(schema.users.active, true) });
 ```
 
+`app.context.get('db')` returns the same driver, but typed with the default
+schema (`DbDriver | undefined`): the context registry cannot know the schema you
+passed, so `db.query.*` is untyped through it. Keep a reference to the typed
+driver instance and use it, or cast what the context returns:
+
+```typescript
+// Recommended: export the typed instance and import it where you need it
+export const db = new DbDriver<typeof schema>();
+
+// Where only the app is at hand
+const db = app.context.get('db') as DbDriver<typeof schema> | undefined;
+```
+
 The exported helper types `IskraDrizzleDb<TSchema>` and `IskraDrizzleTx<TSchema>`
 are available if you need to annotate function parameters:
 

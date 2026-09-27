@@ -4,17 +4,20 @@ import { forms, spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
 import { config } from '../../app.config.ts';
 import { REDIS_KEYS, FormStatus } from '@forms-app/shared';
-import { PrerenderService } from '../prerender/prerender.service.ts';
+import type { FormsDb, FormsRedis } from '@forms-app/shared/db/client';
+
+/** The Redis commands opening, closing and removing a form use. */
+type LifecycleRedis = Pick<FormsRedis, 'set' | 'expire' | 'srem' | 'del'>;
 
 export class LifecycleService {
-    private static db: any;
-    private static redis: any;
+    private static db: FormsDb;
+    private static redis: LifecycleRedis | undefined;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 
-    static setRedis(redis: any) {
+    static setRedis(redis: LifecycleRedis) {
         this.redis = redis;
     }
 
@@ -32,10 +35,7 @@ export class LifecycleService {
         const space = spaceResults[0];
 
         // Update status to open
-        await this.db
-            .update(forms)
-            .set({ status: FormStatus.OPEN, updatedAt: new Date() })
-            .where(eq(forms.id, formId));
+        await this.db.update(forms).set({ status: FormStatus.OPEN, updatedAt: new Date() }).where(eq(forms.id, formId));
 
         // Update Redis meta
         if (this.redis && space) {

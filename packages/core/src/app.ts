@@ -75,10 +75,24 @@ export class App {
         await Promise.all(this.pendingInstalls);
         this.pendingInstalls = [];
 
+        // Only the drivers whose init() ran are rolled back: one without an
+        // init hook was never initialized and has nothing to release yet.
+        const initialized: Driver[] = [];
         for (const driver of this.drivers) {
-            if (driver.init) {
-                this.logger.debug(`Initializing driver: ${driver.name}`);
+            if (!driver.init) continue;
+            this.logger.debug(`Initializing driver: ${driver.name}`);
+            initialized.push(driver);
+            try {
                 await driver.init(this);
+            } catch (err) {
+                // The failing driver may hold part of what it opened (a pool, a
+                // child process), so it is stopped too, with the ones before it.
+                this.logger.error(
+                    { err, driver: driver.name },
+                    'Driver failed to initialize; stopping the drivers already initialized',
+                );
+                await this.rollback(initialized.reverse());
+                throw err;
             }
         }
     }
@@ -134,8 +148,10 @@ export class App {
     /**
      * Starts drivers one at a time, in registration order, so a driver can rely
      * on the ones registered before it (e.g. the DB before the web server). If
-     * one fails, the drivers already started are stopped in reverse order and
-     * the error is rethrown, instead of leaving ports bound and children running.
+     * one fails, every driver is stopped in reverse order (all were initialized
+     * and may hold connections, including the failing one), OpenTelemetry is
+     * shut down and the error is rethrown, instead of leaving ports bound and
+     * children running.
      */
     async start() {
         await this.init();
@@ -146,12 +162,8 @@ export class App {
                 if (driver.start) await driver.start();
                 started.push(driver);
             } catch (err) {
-                this.logger.error(
-                    { err, driver: driver.name },
-                    'Driver failed to start; stopping the drivers already started',
-                );
-                await this.stopDrivers(started.reverse());
-                this.startedDrivers = [];
+                this.logger.error({ err, driver: driver.name }, 'Driver failed to start; stopping every driver');
+                await this.rollback([...this.drivers].reverse());
                 throw err;
             }
         }
@@ -200,6 +212,21 @@ export class App {
         }
 
         this.logger.info('App stopped.');
+    }
+
+    /**
+     * Stops `drivers` after a failed init() or start() and shuts down
+     * OpenTelemetry. Failures to stop are logged, not thrown: the caller
+     * rethrows the original error. A later stop() stops nothing more.
+     */
+    private async rollback(drivers: Driver[]) {
+        this.startedDrivers = [];
+        await this.stopDrivers(drivers);
+        try {
+            await shutdownOtel();
+        } catch (err) {
+            this.logger.error({ err }, 'OpenTelemetry failed to shut down');
+        }
     }
 
     private async stopDrivers(drivers: Driver[]): Promise<PromiseRejectedResult[]> {

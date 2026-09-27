@@ -70,6 +70,16 @@ describe('createMockLogger', () => {
         expect(logger.logs.fatal).toHaveLength(1);
     });
 
+    it('reports every level as enabled so guarded log calls are captured', () => {
+        const logger = createMockLogger();
+        expect(logger.level).toBe('trace');
+        for (const level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal']) {
+            expect(logger.isLevelEnabled(level)).toBe(true);
+        }
+        if (logger.isLevelEnabled('debug')) logger.debug('guarded');
+        expect(logger.logs.debug).toHaveLength(1);
+    });
+
     it('reset() clears all captured logs', () => {
         const logger = createMockLogger();
         logger.info('one');

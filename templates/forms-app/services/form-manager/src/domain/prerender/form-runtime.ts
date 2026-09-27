@@ -97,6 +97,9 @@ async function getCsrfToken() {
 }
 
 async function getRecaptchaToken() {
+    // No reCAPTCHA script (no site key, or blocked): send no token and let
+    // forms-api answer, instead of failing here as a network error.
+    if (typeof grecaptcha === 'undefined') return '';
     return new Promise((resolve) => {
         grecaptcha.ready(() => {
             grecaptcha.execute(${js(recaptchaSiteKey)}, { action: ${js(RECAPTCHA_ACTION)} }).then(resolve);

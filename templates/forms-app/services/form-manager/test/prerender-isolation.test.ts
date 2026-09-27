@@ -12,17 +12,23 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { forms, spaces } from '@forms-app/shared/db';
+import type { JsonSchema } from '@forms-app/vite-plugin-jsonschema';
 import { config } from '../src/app.config.ts';
 import { buildFormBundle, PrerenderService } from '../src/domain/prerender/prerender.service.ts';
 import { generateFormHtml } from '../src/domain/prerender/html-template.ts';
 import { generateFormRuntime, publicFormBase } from '../src/domain/prerender/form-runtime.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 // The pre-render built in the fixed, shared /tmp/form-builds/<formId>, and Vite
 // searched the build directory's parents for a PostCSS config (which it runs)
 // and a tsconfig.json: another user of the machine could run code in
 // form-manager or put JavaScript into every public form page.
 
-const SCHEMA = { type: 'object', properties: { email: { type: 'string', format: 'email' } }, required: ['email'] };
+const SCHEMA: JsonSchema = {
+    type: 'object',
+    properties: { email: { type: 'string', format: 'email' } },
+    required: ['email'],
+};
 const FIELD = {
     id: 'f1',
     formId: 'form-1',
@@ -127,7 +133,7 @@ describe('PrerenderService.prerenderForm', () => {
         plantConfigs(join(root, 'tmp'));
         process.env.TMPDIR = join(root, 'tmp');
         config.staticDir = join(root, 'static');
-        PrerenderService.setDb(db);
+        PrerenderService.setDb(db as unknown as FormsDb);
         PrerenderService.setRedis(redis);
         spyOn(console, 'log').mockImplementation(() => {});
     });

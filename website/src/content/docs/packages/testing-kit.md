@@ -48,7 +48,7 @@ expect(logger.logs.info[0].args[0]).toBe('hello');
 logger.reset(); // clears all captured entries
 ```
 
-Available capture arrays: `logs.trace`, `logs.debug`, `logs.info`, `logs.warn`, `logs.error`, `logs.fatal`.
+Available capture arrays: `logs.trace`, `logs.debug`, `logs.info`, `logs.warn`, `logs.error`, `logs.fatal`. Every level is enabled (`level` is `'trace'` and `isLevelEnabled()` returns `true`), so code that guards a log call with `isLevelEnabled()` is captured too.
 
 ### `createMockDriver(name?, hooks?)`
 

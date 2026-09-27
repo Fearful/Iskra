@@ -1,5 +1,5 @@
-import { Kernel } from "../src/kernel";
-import { EmailFeature } from "../src/features/email";
+import { Kernel } from '../src/kernel';
+import { EmailFeature } from '../src/features/email';
 
 // ============================================================================
 // Example 1: Basic Email Sending (SMTP)
@@ -9,14 +9,14 @@ const basicKernel = new Kernel({ port: 8001 });
 
 basicKernel.registerFeature(
     new EmailFeature({
-        provider: "smtp",
+        provider: 'smtp',
         smtp: {
-            host: "smtp.example.com",
+            host: 'smtp.example.com',
             port: 587,
-            username: "user",
-            password: "password",
+            username: 'user',
+            password: 'password',
         },
-        from: { email: "noreply@example.com" },
+        from: { email: 'noreply@example.com' },
     }),
 );
 
@@ -27,33 +27,32 @@ basicKernel.registerFeature(
 const correctedKernel = new Kernel({ port: 8001 });
 correctedKernel.registerFeature(
     new EmailFeature({
-        provider: "mock", // Use mock for example safety
-        from: { email: "noreply@example.com", name: "Example" }
-    })
+        provider: 'mock', // Use mock for example safety
+        from: { email: 'noreply@example.com', name: 'Example' },
+    }),
 );
 
 // Initialize before adding routes: a route added earlier skips the features' middleware.
 await correctedKernel.initialize();
 
-correctedKernel.getApp().post("/send-email", async (c) => {
-    const email = c.get("email");
+correctedKernel.getApp().post('/send-email', async (c) => {
+    const email = c.get('email');
     const body = await c.req.json();
 
     try {
         await email.send({
-            to: body.to || "test@test.com",
-            subject: body.subject || "Hello",
-            text: body.message || "World",
+            to: body.to || 'test@test.com',
+            subject: body.subject || 'Hello',
+            text: body.message || 'World',
         });
 
-        return c.json({ message: "Email sent successfully" });
+        return c.json({ message: 'Email sent successfully' });
     } catch (error) {
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
     }
 });
 
-
 if (import.meta.main) {
-    console.log("\n✅ Email Example (Mock) running on port 8001");
+    console.log('\n✅ Email Example (Mock) running on port 8001');
     await correctedKernel.start();
 }

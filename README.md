@@ -42,6 +42,12 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | `@iskra-bun/mobile-kit` | Experimental placeholder for mobile apps (no platform integration yet) | [Mobile Kit](https://iskra-docs.fly.dev/packages/mobile-kit/) |
 | `create-iskra` | Project scaffolding CLI (`bun create iskra`) | [create-iskra](https://iskra-docs.fly.dev/packages/create-iskra/) |
 
+## Requirements
+
+- [Bun](https://bun.sh) v1.3 or later (the version CI uses is pinned in [`.bun-version`](./.bun-version))
+- [Node.js](https://nodejs.org) v18+ (for some native dependencies)
+- [Redis](https://redis.io) (only if you use `worker-kit`, or `kv-kit` with its Redis adapter)
+
 ## Quick start
 
 Add the core and the web kit to your project:
@@ -104,7 +110,7 @@ bun start
 
 ## Documentation
 
-Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**. You can also browse the [`docs/`](./docs/) directory:
+Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**. Its sources are in [`website/src/content/docs/`](./website/src/content/docs/):
 
 | Document | What it covers |
 | :--- | :--- |
@@ -125,8 +131,8 @@ Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**
 
 Iskra exposes its services over HTTP and provides client SDKs to integrate from other languages:
 
-- **Java** — `dev.iskra:iskra-client`
-- **Python** — `iskra-client` (sync and async)
+- **Java** — `dev.iskra:iskra-client` (install from source)
+- **Python** — `iskra-client` (sync and async; install from source)
 - **Go** and **.NET** — planned (see the [roadmap](./ROADMAP.md))
 
 More details in the [SDK documentation](https://iskra-docs.fly.dev/guides/sdks/).
@@ -144,3 +150,5 @@ A read-only mirror is available on Codeberg: [codeberg.org/fearful/iskra](https:
 ## License
 
 Licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE) (AGPL-3.0-or-later).
+
+The client SDKs under [`sdks/`](./sdks/) are MIT licensed ([Python](./sdks/python/iskra-client/LICENSE), [Java](./sdks/java/iskra-client/LICENSE)), so they can be used from applications under any license.

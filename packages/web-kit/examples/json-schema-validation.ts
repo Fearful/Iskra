@@ -1,5 +1,5 @@
-import { Kernel } from "../src/kernel";
-import { validateJson } from "../src/features/json-schema-validation";
+import { Kernel } from '../src/kernel';
+import { validateJson } from '../src/features/json-schema-validation';
 
 // ============================================================================
 // Example: JSON Schema Validation with Custom Error Messages
@@ -15,43 +15,43 @@ const app = kernel.getApp();
 // This schema can be shared as a .json file between frontend and backend.
 
 const createUserSchema = {
-    type: "object",
+    type: 'object',
     properties: {
         name: {
-            type: "string",
+            type: 'string',
             minLength: 2,
             maxLength: 50,
             errorMessage: {
-                type: "Name must be a string",
-                minLength: "Name must be at least 2 characters",
-                maxLength: "Name must be at most 50 characters",
+                type: 'Name must be a string',
+                minLength: 'Name must be at least 2 characters',
+                maxLength: 'Name must be at most 50 characters',
             },
         },
         email: {
-            type: "string",
-            format: "email",
+            type: 'string',
+            format: 'email',
             errorMessage: {
-                type: "Email must be a string",
-                format: "Please provide a valid email address",
+                type: 'Email must be a string',
+                format: 'Please provide a valid email address',
             },
         },
         age: {
-            type: "integer",
+            type: 'integer',
             minimum: 18,
             maximum: 150,
             errorMessage: {
-                type: "Age must be a number",
-                minimum: "You must be at least 18 years old",
-                maximum: "Age must be 150 or less",
+                type: 'Age must be a number',
+                minimum: 'You must be at least 18 years old',
+                maximum: 'Age must be 150 or less',
             },
         },
     },
-    required: ["name", "email", "age"],
+    required: ['name', 'email', 'age'],
     errorMessage: {
         required: {
-            name: "Name is required",
-            email: "Email is required",
-            age: "Age is required",
+            name: 'Name is required',
+            email: 'Email is required',
+            age: 'Age is required',
         },
     },
     additionalProperties: false,
@@ -66,28 +66,31 @@ interface CreateUser {
     age: number;
 }
 
-app.post("/users", validateJson<CreateUser>({ body: createUserSchema }), (c) => {
-    const { body } = c.get("validated");
-    return c.json({
-        success: true,
-        message: "User created",
-        data: body,
-    }, 201);
+app.post('/users', validateJson<CreateUser>({ body: createUserSchema }), (c) => {
+    const { body } = c.get('validated');
+    return c.json(
+        {
+            success: true,
+            message: 'User created',
+            data: body,
+        },
+        201,
+    );
 });
 
 // ── Query parameter validation ──────────────────────────────────────────────
 
 const listUsersQuerySchema = {
-    type: "object",
+    type: 'object',
     properties: {
-        page: { type: "integer", minimum: 1 },
-        limit: { type: "integer", minimum: 1, maximum: 100 },
-        sort: { type: "string", enum: ["name", "email", "age"] },
+        page: { type: 'integer', minimum: 1 },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+        sort: { type: 'string', enum: ['name', 'email', 'age'] },
     },
-    required: ["page"],
+    required: ['page'],
     errorMessage: {
         required: {
-            page: "Page number is required",
+            page: 'Page number is required',
         },
     },
 };
@@ -95,11 +98,11 @@ const listUsersQuerySchema = {
 interface ListUsersQuery {
     page: number;
     limit?: number;
-    sort?: "name" | "email" | "age";
+    sort?: 'name' | 'email' | 'age';
 }
 
-app.get("/users", validateJson<unknown, ListUsersQuery>({ query: listUsersQuerySchema }), (c) => {
-    const { query } = c.get("validated");
+app.get('/users', validateJson<unknown, ListUsersQuery>({ query: listUsersQuerySchema }), (c) => {
+    const { query } = c.get('validated');
     return c.json({
         success: true,
         data: [],
@@ -108,6 +111,6 @@ app.get("/users", validateJson<unknown, ListUsersQuery>({ query: listUsersQueryS
 });
 
 if (import.meta.main) {
-    console.log("Starting JSON Schema Validation Example on port 8002...");
+    console.log('Starting JSON Schema Validation Example on port 8002...');
     await kernel.start();
 }

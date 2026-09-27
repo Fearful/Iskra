@@ -90,8 +90,7 @@ export class HealthCheckFeature implements Feature {
         };
 
         if (this.config.includeDetails && this.kernel) {
-            // @ts-expect-error - features is a private kernel field accessed for diagnostics
-            response.features = Array.from(this.kernel.features.keys());
+            response.features = this.kernel.getFeatureNames();
             if (Object.keys(checks).length > 0) response.checks = checks;
             if (Object.keys(customChecks).length > 0) response.customChecks = customChecks;
         }

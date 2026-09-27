@@ -31,7 +31,7 @@ export interface KVAdapter {
      * Expiring sets, for cache-kit's tag index: `sadd` adds `member` to the set
      * at `key` for `ttl` seconds (for good without one), and the set lives as
      * long as its longest-lived member. `sdrain` deletes the set and returns
-     * its members in one step, so a member added meanwhile is never lost.
+     * its unexpired members in one step, so a member added meanwhile is never lost.
      */
     sadd?(key: string, member: string, ttl?: number): Promise<void>;
     sdrain?(key: string): Promise<string[]>;

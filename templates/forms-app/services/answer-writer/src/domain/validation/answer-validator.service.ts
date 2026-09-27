@@ -5,6 +5,7 @@ import { UnrecoverableError } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { forms } from '@forms-app/shared/db';
 import { FormStatus, type AnswerJob } from '@forms-app/shared';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 // The same AJV setup as forms-api's SubmissionService: an answer forms-api
 // accepted has to pass here too.
@@ -71,10 +72,10 @@ function problemWith(form: CachedForm | null, job: AnswerJob): string | null {
  * the form's JSON Schema from Postgres.
  */
 export class AnswerValidatorService {
-    private static db: any;
+    private static db: FormsDb;
     private static cache = new Map<string, CachedForm>();
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
         this.cache.clear();
     }

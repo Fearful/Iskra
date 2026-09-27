@@ -1,6 +1,6 @@
-import { Kernel } from "../src/kernel";
-import { validate } from "../src/features/validation";
-import { z } from "zod";
+import { Kernel } from '../src/kernel';
+import { validate } from '../src/features/validation';
+import { z } from 'zod';
 
 // ============================================================================
 // Example: request validation with Zod
@@ -18,24 +18,24 @@ const userSchema = z.object({
     age: z.number().int().positive().max(150),
 });
 
-app.post("/users", validate({ body: userSchema }), (c) => {
-    const user = c.get("validated").body; // { name: string; email: string; age: number }
-    return c.json({ message: "User created", user }, 201);
+app.post('/users', validate({ body: userSchema }), (c) => {
+    const user = c.get('validated').body; // { name: string; email: string; age: number }
+    return c.json({ message: 'User created', user }, 201);
 });
 
 app.get(
-    "/users/:id",
+    '/users/:id',
     validate({
         params: z.object({ id: z.string().uuid() }),
         query: z.object({ fields: z.string().optional() }),
     }),
     (c) => {
-        const { params, query } = c.get("validated");
-        return c.json({ id: params.id, fields: query.fields ?? "all" });
+        const { params, query } = c.get('validated');
+        return c.json({ id: params.id, fields: query.fields ?? 'all' });
     },
 );
 
 if (import.meta.main) {
-    console.log("Starting Validation Example on port 8001...");
+    console.log('Starting Validation Example on port 8001...');
     await kernel.start();
 }

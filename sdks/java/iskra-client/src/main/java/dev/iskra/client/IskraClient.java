@@ -10,6 +10,7 @@ import dev.iskra.client.response.IskraResponse;
 import dev.iskra.client.storage.StorageClient;
 
 import java.time.Duration;
+import java.util.Map;
 
 /**
  * Entry point of the SDK. An instance is thread-safe and never stores cookies,
@@ -81,6 +82,18 @@ public class IskraClient {
         return http.get(path, responseType);
     }
 
+    /**
+     * GET with {@code query} appended to the path, UTF-8 percent-encoded: null
+     * values are left out and a collection or array repeats its key.
+     */
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, Class<T> responseType) {
+        return http.get(path, query, responseType);
+    }
+
+    public <T> IskraResponse<T> get(String path, Map<String, ?> query, TypeReference<T> responseType) {
+        return http.get(path, query, responseType);
+    }
+
     public <T> IskraResponse<T> post(String path, Object body, Class<T> responseType) {
         return http.post(path, body, responseType);
     }
@@ -142,6 +155,12 @@ public class IskraClient {
 
         public Builder storageRoutePrefix(String storageRoutePrefix) {
             configBuilder.storageRoutePrefix(storageRoutePrefix);
+            return this;
+        }
+
+        /** See {@link IskraConfig.Builder#maxResponseBytes(long)}. */
+        public Builder maxResponseBytes(long maxResponseBytes) {
+            configBuilder.maxResponseBytes(maxResponseBytes);
             return this;
         }
 

@@ -2,11 +2,12 @@ import { spaces } from '@forms-app/shared/db';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type { Space, CreateSpaceInput, UpdateSpaceInput } from '@forms-app/shared';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 export class SpaceService {
-    private static db: any;
+    private static db: FormsDb;
 
-    static setDb(db: any) {
+    static setDb(db: FormsDb) {
         this.db = db;
     }
 

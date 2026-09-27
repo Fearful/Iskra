@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { secretFromEnv } from '@forms-app/shared/env';
 
 export const AppConfigSchema = z.object({
     db: z.object({
@@ -24,7 +25,7 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
 export const config: AppConfig = AppConfigSchema.parse({
     db: {
         driver: 'postgres',
-        url: process.env.DATABASE_URL || 'postgresql://forms:secret@localhost:5432/forms_app',
+        url: secretFromEnv('DATABASE_URL', 'postgresql://forms:secret@localhost:5432/forms_app', { minLength: 1 }),
     },
     redis: {
         url: process.env.REDIS_URL || 'redis://localhost:6379',

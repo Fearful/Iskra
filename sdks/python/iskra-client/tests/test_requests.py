@@ -2,8 +2,11 @@ import pytest
 
 from iskra_client import (
     AuthException,
+    ConflictException,
+    ForbiddenException,
     IskraClient,
     NotFoundException,
+    RateLimitException,
     ValidationException,
 )
 
@@ -35,6 +38,17 @@ def test_query_params(iskra: IskraClient):
     assert iskra.get("/contract/envelope", params={"page": 2}).success
 
 
+def test_query_params_are_encoded(iskra: IskraClient):
+    params = {"q": "a b&c=d/ñ+", "tags": ["x", "y"], "skip": None, "flag": True, "n": 2}
+    assert iskra.get("/contract/query", params=params).data == {
+        "q": ["a b&c=d/ñ+"],
+        "tags": ["x", "y"],
+        "flag": ["true"],
+        "n": ["2"],
+    }
+    assert iskra.get("/contract/query?page=1", params={"size": 10}).data == {"page": ["1"], "size": ["10"]}
+
+
 def test_api_key_and_custom_headers_are_sent(base_url: str):
     with IskraClient(base_url=base_url, api_key="sk-test", headers={"X-Custom": "yes"}) as client:
         assert client.get("/contract/headers").data == {"apiKey": "sk-test", "custom": "yes"}
@@ -59,6 +73,51 @@ def test_unauthenticated_route(iskra: IskraClient):
     with pytest.raises(AuthException) as err:
         iskra.get("/contract/me")
     assert err.value.status_code == 401
+
+
+def test_forbidden_conflict_and_rate_limit_are_typed(iskra: IskraClient):
+    with pytest.raises(ForbiddenException) as forbidden:
+        iskra.get("/contract/forbidden")
+    assert str(forbidden.value) == "Not your widget"
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.error_code == "FORBIDDEN"
+
+    with pytest.raises(ConflictException) as conflict:
+        iskra.post("/contract/conflict")
+    assert str(conflict.value) == "Widget already exists"
+    assert conflict.value.status_code == 409
+    assert conflict.value.error_code == "CONFLICT"
+
+    with pytest.raises(RateLimitException) as limited:
+        iskra.get("/contract/rate-limited")
+    assert str(limited.value) == "Too many requests"
+    assert limited.value.status_code == 429
+
+
+def test_rate_limit_exposes_retry_after(iskra: IskraClient):
+    from email.utils import format_datetime
+    from datetime import datetime, timedelta, timezone
+
+    with pytest.raises(RateLimitException) as seconds:
+        iskra.get("/contract/rate-limited")
+    assert seconds.value.retry_after == 7.0
+
+    when = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=120), usegmt=True)
+    with pytest.raises(RateLimitException) as date:
+        iskra.get("/contract/rate-limited", params={"retryAfter": when})
+    assert date.value.retry_after is not None and 100 < date.value.retry_after <= 120
+
+    past = format_datetime(datetime.now(timezone.utc) - timedelta(seconds=60), usegmt=True)
+    for value, expected in (("", None), ("soon", None), ("-5", None), (past, 0.0)):
+        with pytest.raises(RateLimitException) as other:
+            iskra.get("/contract/rate-limited", params={"retryAfter": value})
+        assert other.value.retry_after == expected, value
+
+
+async def test_async_rate_limit_exposes_retry_after(iskra: IskraClient):
+    with pytest.raises(RateLimitException) as err:
+        await iskra.async_get("/contract/rate-limited")
+    assert err.value.retry_after == 7.0
 
 
 def test_plain_text_error_body(iskra: IskraClient):

@@ -67,12 +67,7 @@ app.post('/api/submit/:spaceSlug/:formSlug', async (c) => {
 
     // 7. Enqueue answer
     try {
-        await SubmissionService.enqueueAnswer(
-            formData.meta.formId,
-            body.data,
-            ipHash,
-            recaptchaResult.score,
-        );
+        await SubmissionService.enqueueAnswer(formData.meta.formId, body.data, ipHash, recaptchaResult.score);
     } catch (err) {
         console.error('Failed to enqueue answer:', err);
         return c.json({ error: 'Submission failed, please try again' }, 500);

@@ -129,10 +129,25 @@ describe('MailgunEmailAdapter send/sendTemplate (fetch mocked)', () => {
             apiKey: 'k',
             domain: 'd.org',
             baseUrl: 'https://api.eu.mailgun.net/v3',
+            from: { email: 'noreply@test.com' },
         });
         await adapter.send({ to: 'x@example.com', subject: 's', text: 't' });
 
         const [url] = fetchSpy!.mock.calls[0] as [string, any];
         expect(url).toBe('https://api.eu.mailgun.net/v3/d.org/messages');
+    });
+
+    it('requires a from address, like the other providers, before calling Mailgun', async () => {
+        mockFetch(new Response(JSON.stringify({ id: '<x>', message: 'ok' }), { status: 200 }));
+        const adapter = new MailgunEmailAdapter({ provider: 'mailgun', apiKey: 'k', domain: 'd.org' });
+
+        await expect(adapter.send({ to: 'x@example.com', subject: 's', text: 't' })).rejects.toThrow(
+            'From address required',
+        );
+        expect(fetchSpy).not.toHaveBeenCalled();
+
+        await adapter.send({ from: { email: 'me@d.org' }, to: 'x@example.com', subject: 's', text: 't' });
+        const [, init] = fetchSpy!.mock.calls[0] as [string, any];
+        expect((init.body as FormData).get('from')).toBe('me@d.org');
     });
 });

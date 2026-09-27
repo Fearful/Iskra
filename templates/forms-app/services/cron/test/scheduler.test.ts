@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { SchedulerService } from '../src/domain/scheduler.service.ts';
 import { config } from '../src/app.config.ts';
+import type { FormsDb } from '@forms-app/shared/db/client';
 
 /** A Drizzle-ish db whose every select() returns `rows`. */
 const fakeDb = (rows: unknown[]) => ({ select: () => ({ from: () => ({ where: async () => rows }) }) });
@@ -17,7 +18,7 @@ describe("cron's calls to form-manager", () => {
         );
         const logSpy = spyOn(console, 'log').mockImplementation(() => {});
         spies.push(fetchSpy, logSpy);
-        SchedulerService.setDb(fakeDb([{ id: 'form-1', title: 'F' }]));
+        SchedulerService.setDb(fakeDb([{ id: 'form-1', title: 'F' }]) as unknown as FormsDb);
 
         expect(await SchedulerService.checkAndOpenForms()).toBe(1);
         expect(await SchedulerService.checkAndCloseForms()).toBe(1);

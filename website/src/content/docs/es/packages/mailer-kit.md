@@ -87,7 +87,6 @@ Las cabeceras que pasas en `headers` no se reenvian sin control: solo se permite
 
 Cabeceras permitidas:
 
-- `Reply-To`
 - `In-Reply-To`
 - `References`
 - `List-Unsubscribe`
@@ -95,6 +94,8 @@ Cabeceras permitidas:
 - `List-Id`
 - `X-Mailgun-Variables`
 - `X-Mailgun-Tag`
+
+`Reply-To` no esta entre ellas: se define con `replyTo`, cuya direccion se valida como la de un destinatario. Un `Reply-To` en `headers` lanza `Header "Reply-To" is not allowed: use message.replyTo`.
 
 ```typescript
 await mailer.send({
@@ -115,7 +116,7 @@ await mailer.send({
 
 ### SES
 
-Usa `@aws-sdk/client-sesv2`, cargado de forma diferida solo al enviar:
+Usa `@aws-sdk/client-sesv2`, cargado de forma diferida en el primer envío; el adaptador crea un solo `SESv2Client` y lo reutiliza en los envíos siguientes:
 
 ```typescript
 const mailer = await createEmailAdapter({
@@ -166,7 +167,7 @@ await mailer.send({ to: 'a@example.com, b@example.com', subject: 'x', text: 't' 
 
 `checkRecipients(value)` aplica las mismas reglas, por si quieres validar la entrada por tu cuenta.
 
-Todos los adaptadores ponen entre comillas (o codifican, si no es ASCII) el nombre visible de `from` (y el de un destinatario), asi que no puede agregar otra direccion. Un `content` de adjunto de tipo string es texto; para archivos binarios pasa un `Uint8Array`.
+Todos los adaptadores salvo el mock exigen un remitente: el `from` del mensaje o el de la configuracion; si falta, `send()` lanza `From address required` antes de contactar al proveedor (Mailgun enviaba sin el). Todos los adaptadores ponen entre comillas (o codifican, si no es ASCII) el nombre visible de `from` (y el de un destinatario), asi que no puede agregar otra direccion. Un `content` de adjunto de tipo string es texto; para archivos binarios pasa un `Uint8Array`.
 
 ### Plantillas (no soportadas todavia)
 

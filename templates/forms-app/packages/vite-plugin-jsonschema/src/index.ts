@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { transformJsonSchemaToZod } from './transform.ts';
+import type { SchemaEntry } from './codegen.ts';
 
 const VIRTUAL_PREFIX = 'virtual:form-validation/';
 const RESOLVED_PREFIX = '\0virtual:form-validation/';
@@ -10,14 +11,7 @@ const RESOLVED_PREFIX = '\0virtual:form-validation/';
 const RESOLVE_FROM = fileURLToPath(import.meta.url);
 
 export interface JsonSchemaPluginOptions {
-    schemas: Array<{
-        id: string;
-        schema: {
-            type: 'object';
-            properties: Record<string, unknown>;
-            required?: string[];
-        };
-    }>;
+    schemas: SchemaEntry[];
 }
 
 export default function jsonSchemaPlugin(options: JsonSchemaPluginOptions): Plugin {
@@ -29,7 +23,7 @@ export default function jsonSchemaPlugin(options: JsonSchemaPluginOptions): Plug
         buildStart() {
             for (const entry of options.schemas) {
                 // Plain JS: Vite does not transpile virtual modules.
-                const zodSource = transformJsonSchemaToZod(entry.schema as any, { typeExport: false });
+                const zodSource = transformJsonSchemaToZod(entry.schema, { typeExport: false });
                 generated.set(entry.id, zodSource);
             }
         },
@@ -54,6 +48,11 @@ export default function jsonSchemaPlugin(options: JsonSchemaPluginOptions): Plug
     };
 }
 
-export { transformJsonSchemaToZod, type TransformOptions } from './transform.ts';
+export {
+    transformJsonSchemaToZod,
+    type TransformOptions,
+    type JsonSchema,
+    type JsonSchemaProperty,
+} from './transform.ts';
 export type { SchemaEntry } from './codegen.ts';
 export { generateZodFile } from './codegen.ts';

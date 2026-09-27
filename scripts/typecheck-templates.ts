@@ -18,6 +18,18 @@ const dirs = roots.flatMap((root) =>
         .filter((dir) => existsSync(join(dir, 'tsconfig.json'))),
 );
 
+// plugin-starter compiles with NodeNext and no `source` condition (it emits
+// what a published plugin ships), so it resolves @iskra-bun/core through its
+// dist types. Build core first on a clean checkout.
+if (!existsSync(join('packages', 'core', 'dist', 'index.d.ts'))) {
+    console.log('Building @iskra-bun/core (plugin-starter typechecks against its dist)...');
+    const build = spawnSync('bun', ['run', 'build'], { cwd: join('packages', 'core'), stdio: 'inherit' });
+    if (build.status !== 0) {
+        console.error('✘ could not build packages/core');
+        process.exit(1);
+    }
+}
+
 const tsc = join(process.cwd(), 'node_modules', '.bin', 'tsc');
 const failed: string[] = [];
 for (const dir of dirs) {

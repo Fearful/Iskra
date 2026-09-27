@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setSystemTime } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { RateLimitFeature } from '../src/features/rate-limit';
 import { CacheFeature } from '../src/features/cache';
@@ -67,6 +67,75 @@ describe('Rate Limit Feature', () => {
         expect(res.headers.get('X-RateLimit-Remaining')).toBe('9');
         expect(res.headers.get('X-RateLimit-Reset')).toBeDefined();
 
+        await kernel.shutdown();
+    });
+
+    it('reports the window reset time, not now + windowMs on every request', async () => {
+        const kernel = new Kernel();
+        kernel.registerFeature(
+            new RateLimitFeature({
+                windowMs: 60_000,
+                max: 10,
+                keyGenerator: () => 'reset-test',
+            }),
+        );
+        await kernel.initialize();
+
+        const app = kernel.getApp();
+        app.get('/reset', (c) => c.text('ok'));
+
+        const start = Date.now();
+        try {
+            setSystemTime(new Date(start));
+            const first = await app.request('/reset');
+            setSystemTime(new Date(start + 20_000));
+            const second = await app.request('/reset');
+
+            expect(second.headers.get('X-RateLimit-Remaining')).toBe('8');
+            expect(second.headers.get('X-RateLimit-Reset')).toBe(first.headers.get('X-RateLimit-Reset'));
+            expect(first.headers.get('X-RateLimit-Reset')).toBe(String(Math.ceil((start + 60_000) / 1000)));
+        } finally {
+            setSystemTime();
+            await kernel.shutdown();
+        }
+    });
+
+    it('answers a 429 with Retry-After until the window resets', async () => {
+        // Regression: the 429 said nothing about when to retry.
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new RateLimitFeature({ windowMs: 60_000, max: 1, keyGenerator: () => 'retry-test' }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/retry', (c) => c.text('ok'));
+
+        const start = Date.now();
+        try {
+            setSystemTime(new Date(start));
+            expect((await app.request('/retry')).headers.get('Retry-After')).toBeNull();
+            setSystemTime(new Date(start + 20_500));
+            const limited = await app.request('/retry');
+            expect(limited.status).toBe(429);
+            expect(limited.headers.get('Retry-After')).toBe('40');
+        } finally {
+            setSystemTime();
+            await kernel.shutdown();
+        }
+    });
+
+    it('falls back to windowMs for Retry-After when the store does not know the reset', async () => {
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new CacheFeature({ adapter: 'memory' }));
+        kernel.registerFeature(
+            new RateLimitFeature({ windowMs: 30_000, max: 1, store: 'cache', keyGenerator: () => 'retry-cache' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/retry', (c) => c.text('ok'));
+
+        await app.request('/retry');
+        const limited = await app.request('/retry');
+        expect(limited.status).toBe(429);
+        expect(limited.headers.get('Retry-After')).toBe('30');
         await kernel.shutdown();
     });
 

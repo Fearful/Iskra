@@ -27,7 +27,7 @@ await app.start() // falla si el puente no puede conectarse a Oracle
 const rows = await oracle.query('SELECT * FROM users WHERE id = :1', [42])
 ```
 
-`new OracleDriver(bridgePath?, timeoutMs = 30000, startTimeoutMs = 30000, maxResponseBytes = 64 MiB)`: `start()` espera a que el puente se conecte (o falla con el error de Oracle); cada consulta tiene su propio timeout. Una respuesta (las filas de una consulta, como una linea de JSON) de mas de `maxResponseBytes` rechaza esa consulta sin afectar a las demas. Si `ORA_CONN` no esta definida, el driver no arranca y lo avisa en el log.
+`new OracleDriver(bridgePath?, timeoutMs = 30000, startTimeoutMs = 30000, maxResponseBytes = 64 MiB)`: `start()` espera a que el puente se conecte (o falla con el error de Oracle); cada consulta tiene su propio timeout. Una respuesta (las filas de una consulta, como una linea de JSON) de mas de `maxResponseBytes` rechaza esa consulta sin afectar a las demas. Si `ORA_CONN` no esta definida, el driver no arranca y lo avisa en el log. Si el puente termina mientras la app corre, las consultas pendientes se rechazan, el driver lo registra como error y las siguientes consultas fallan al instante (sin esperar su timeout) hasta que se vuelva a llamar a `start()`.
 
 ## Estado
 

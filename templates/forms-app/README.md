@@ -123,7 +123,8 @@ docker compose up --build
 
 Las claves de reCAPTCHA las emite Google (ver
 [Envios de formularios y reCAPTCHA](#envios-de-formularios-y-recaptcha)); hasta que las
-pongas el stack arranca, pero todo envio se rechaza con 403.
+pongas el stack arranca, pero todo envio se rechaza (400 sin `RECAPTCHA_SITE_KEY`, 403
+con claves que Google no valida).
 
 En el primer arranque (volumen de datos vacio) Postgres crea las tablas con los scripts
 de `db/init/`: `01-schema.sql`, generado desde `packages/shared/src/db/schema.ts`, y
@@ -157,11 +158,19 @@ Despues inicia sesion en http://localhost/admin/login.
 ### Envios de formularios y reCAPTCHA
 
 forms-api valida cada envio con reCAPTCHA v3 contra Google, asi que sin claves reales
-(como en el inicio rapido) todo envio se rechaza con 403. Para probar
+(como en el inicio rapido) todo envio se rechaza: sin `RECAPTCHA_SITE_KEY` los formularios
+se pre-renderizan sin el script de reCAPTCHA y el envio no lleva token (400), y con una
+clave que Google no valida, 403. Para probar
 localmente, registra un par de claves v3 con el dominio `localhost` en
 https://www.google.com/recaptcha/admin y pasalas en `RECAPTCHA_SITE_KEY` y
 `RECAPTCHA_SECRET` (form-manager inserta la clave publica al pre-renderizar cada
 formulario, asi que re-publicalo despues de cambiarla).
+
+El token CSRF de forms-api viaja en la cookie `__Host-csrf`, que es `Secure`: el navegador
+solo la guarda y la envia por HTTPS, con la excepcion de `http://localhost`. Si servis los
+formularios por `http://` desde otro host (una IP de la LAN, un dominio sin TLS) todo envio
+se rechaza con 403 (CSRF). En produccion hace falta HTTPS: termina TLS en nginx o en un
+proxy delante de el (y defini `PUBLIC_ORIGINS` con el origen `https://`).
 
 ## Variables de entorno
 
@@ -190,10 +199,10 @@ base64 rompen la URL.
 
 | Variable | Descripcion | Default |
 |----------|-------------|---------|
-| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3 | `your-site-key` |
+| `RECAPTCHA_SITE_KEY` | Clave publica de reCAPTCHA v3. Sin ella los formularios se pre-renderizan sin el script de reCAPTCHA | vacio |
 | `RECAPTCHA_HOSTNAMES` | Hostnames (separados por coma) desde los que se sirven los formularios: forms-api rechaza los tokens de reCAPTCHA emitidos en otro sitio. Definila en produccion | vacio (cualquier hostname) |
 | `AUTH_BASE_URL` | Origen publico del admin, sin path (con path, Better Auth deja de responder en `/api/auth`) | `http://localhost` |
-| `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS y para el login de Better Auth | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
+| `CORS_ORIGINS` | Origenes (separados por coma) que admin-api acepta para CORS, para el login de Better Auth y en los `POST`/`PUT`/`PATCH`/`DELETE` de su API | `http://localhost` (fuera de produccion tambien `http://localhost:5173`, el Vite de `bun dev`) |
 | `PUBLIC_ORIGINS` | Origenes publicos (separados por coma) de los formularios, p. ej. `https://forms.example.com`: forms-api rechaza (CSRF) los envios desde otro origen. Hace falta detras de un proxy que termina TLS, donde forms-api recibe `http://` | `http://localhost` |
 | `TRUST_PROXY` | Proxies delante del servicio: la IP del cliente se toma de `X-Forwarded-For` a esa distancia del final | `1` (nginx) |
 | `DATABASE_URL` | URL de conexion a Postgres (compose la arma con `DB_PASSWORD`) | `postgresql://forms:<DB_PASSWORD>@postgres:5432/forms_app` |
@@ -473,6 +482,18 @@ borrar todos los espacios, formularios y respuestas. No hay roles ni espacios po
 las cuentas se crean solo con `create-admin`. Da cuentas unicamente a personas de confianza
 total; si varios equipos (o clientes) comparten la instalacion, agrega en admin-api un
 control por espacio (por ejemplo una tabla de miembros) antes de usarla asi.
+
+### Origen de las requests del admin
+
+La cookie de sesion del admin viaja con cualquier request del navegador, asi que una pagina
+de otro origen (o de un subdominio hermano, que para la cookie es el mismo sitio) podria
+crear, publicar o borrar. Better Auth chequea el `Origin` de sus rutas (`/api/auth/*`) contra
+`CORS_ORIGINS`; el resto de admin-api responde 403 a todo `POST`, `PUT`, `PATCH` o `DELETE`
+cuyo `Origin` no este en esa lista. Sin `Origin` rechaza los que traen
+`Sec-Fetch-Site: cross-site` o `same-site`, y deja pasar los clientes que no son un
+navegador (curl, scripts), que no llevan la cookie de nadie. El admin-frontend llama a la
+API por nginx desde el mismo origen (`http://localhost` en compose): si lo servis en otro
+dominio, agregalo a `CORS_ORIGINS`.
 
 ### API interna de form-manager
 

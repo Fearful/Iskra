@@ -170,7 +170,7 @@ El `clear()` de cache-kit usa este `clear()`, así que una `Cache` sobre un `KVM
 
 ## Sets con expiración
 
-`sadd(key, member, ttl?)` y `sdrain(key)` mantienen un conjunto de strings cuyos miembros expiran uno por uno: el conjunto vive lo que su miembro más duradero, y `sdrain` lo elimina y devuelve sus miembros en un solo paso. En Redis es un sorted set ordenado por expiración, actualizado por un único script atómico. cache-kit guarda en ellos su índice de etiquetas. Solo `key` lleva el namespace; los miembros se guardan tal cual.
+`sadd(key, member, ttl?)` y `sdrain(key)` mantienen un conjunto de strings cuyos miembros expiran uno por uno: el conjunto vive lo que su miembro más duradero, y `sdrain` lo elimina y devuelve sus miembros no expirados en un solo paso (un miembro expirado que aún siga guardado se omite). En Redis es un sorted set ordenado por expiración, actualizado y vaciado por scripts atómicos. cache-kit guarda en ellos su índice de etiquetas. Solo `key` lleva el namespace; los miembros se guardan tal cual.
 
 ## Operaciones en Lote
 

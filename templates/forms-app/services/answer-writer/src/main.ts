@@ -6,6 +6,7 @@ import { WriterService } from './domain/writer/writer.service.ts';
 import { AnswerValidatorService } from './domain/validation/answer-validator.service.ts';
 import { handleAnswerJob } from './domain/answer-job.ts';
 import { QUEUE_NAMES, JOB_NAMES, type AnswerJob } from '@forms-app/shared';
+import { asFormsDb } from '@forms-app/shared/db/client';
 
 const app = new App({ name: 'AnswerWriter' });
 
@@ -37,8 +38,9 @@ app.register({
     async start() {
         const dbDriver = app.context.get('db');
         if (!dbDriver?.db) throw new Error('DB Driver not initialized');
-        WriterService.setDb(dbDriver.db);
-        AnswerValidatorService.setDb(dbDriver.db);
+        const db = asFormsDb(dbDriver.db);
+        WriterService.setDb(db);
+        AnswerValidatorService.setDb(db);
         WriterService.startFlushTimer();
         console.log('Answer Writer services initialized');
     },

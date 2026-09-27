@@ -47,6 +47,19 @@ if (!secret) throw new Error('AUTH_SECRET no está configurado');
 const auth = createBetterAuth({ db, adapterType: 'postgres', secret });
 ```
 
+## URL base
+
+`baseURL` es el origen público de la app. Decide si las cookies de sesión llevan `Secure` (solo con un origen https) y siempre es un origen confiable. Si no se indica, se lee de `BETTER_AUTH_URL`, y fuera de producción cae en `http://localhost:3000`. Con `NODE_ENV=production` la construcción **lanza un error** si no hay ninguno de los dos, o si el origen es `http://` en un host que no sea `localhost`, `127.0.0.1` o `[::1]`:
+
+```typescript
+// NODE_ENV=production
+createBetterAuth({ db, adapterType: 'postgres', secret });                                    // falla salvo que BETTER_AUTH_URL esté definida
+createBetterAuth({ db, adapterType: 'postgres', secret, baseURL: 'http://app.example.com' });  // falla: debe usar https
+createBetterAuth({ db, adapterType: 'postgres', secret, baseURL: 'https://app.example.com' }); // ok
+```
+
+La misma regla se exporta como `resolveAuthBaseURL(baseURL?, who?)`, que devuelve el origen a usar y antepone `who` a sus errores (el `AuthFeature` de web-kit la usa).
+
 ## Adaptadores de base de datos
 
 La fábrica recibe una instancia de Drizzle más un `adapterType`. Selecciona el esquema correspondiente y construye el adaptador Drizzle de better-auth:
@@ -87,10 +100,24 @@ const auth = createBetterAuth({
         clientId: process.env.OIDC_CLIENT_ID!,
         clientSecret: process.env.OIDC_CLIENT_SECRET!,
         issuer: 'https://idp.example.com',
-        // endpoints/scopes opcionales; se derivan del issuer si no se indican
+        // opcionales: authorizationEndpoint, tokenEndpoint, userinfoEndpoint,
+        // discoveryEndpoint, scopes
     },
 });
 ```
+
+Los endpoints que no indiques salen del documento de discovery del issuer (`discoveryEndpoint`, por defecto `${issuer}/.well-known/openid-configuration`), así que cualquier proveedor que siga el estándar (Keycloak, Auth0, Okta, Entra ID, …) funciona solo con el `issuer`. Indica un endpoint solo para reemplazar el descubierto. El discovery ocurre una vez al arrancar: si en ese momento no se puede obtener el documento (por ejemplo, el IdP arranca después que la app), better-auth registra el error y deja el proveedor afuera hasta que la app se reinicie, así que indica los tres endpoints si el IdP puede no estar disponible cuando arranca la app.
+
+Los campos del usuario salen de los claims estándar (`email`, `name` o `preferred_username`, `picture`, `email_verified`). Si tu proveedor usa otros nombres de claim, indícalos en `mapping`; si el perfil no trae un claim mapeado se usa el estándar, y un claim `emailVerified` mapeado cuenta como verificado cuando es `true` o `"true"`. Un email mapeado solo lo verifica su claim `emailVerified` mapeado (o `email_verified` cuando es la misma dirección que `email`), porque better-auth vincula un email verificado con el usuario local existente:
+
+```typescript
+oidcConfig: {
+    clientId, clientSecret, issuer,
+    mapping: { email: 'mail', name: 'displayName', image: 'avatar', emailVerified: 'mail_verified' },
+},
+```
+
+`jwksEndpoint`, `mapping.id` y `mapping.extraFields` están deprecados y se ignoran: better-auth toma el JWKS solo del `jwks_uri` del documento de discovery, la identidad de la cuenta siempre sale del claim `sub` verificado, y los campos extra del usuario necesitarían `user.additionalFields` de better-auth.
 
 PKCE viene **activado por defecto** (`pkce: true`) para el proveedor OAuth/OIDC genérico. Esto protege contra la interceptación e inyección del código de autorización. Solo se desactiva con un `false` explícito:
 
@@ -145,4 +172,6 @@ En MySQL, `verification.value` es `text`: guarda el estado de OAuth, de más de 
 # Al menos 32 caracteres aleatorios, por ejemplo la salida de: openssl rand -base64 32
 # (en producción se rechaza un valor de ejemplo como "change-me…")
 AUTH_SECRET=
+# El origen público de la app cuando no se pasa baseURL (https en producción)
+BETTER_AUTH_URL=
 ```

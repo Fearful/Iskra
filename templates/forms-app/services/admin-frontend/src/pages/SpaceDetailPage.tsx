@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { spacesApi, formsApi } from '../api/client';
+import { spacesApi, formsApi, errorMessage, type Json } from '../api/client';
+import type { Form, Space } from '@forms-app/shared';
 
 export function SpaceDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const [space, setSpace] = useState<any>(null);
-    const [forms, setForms] = useState<any[]>([]);
+    const [space, setSpace] = useState<Json<Space> | null>(null);
+    const [forms, setForms] = useState<Json<Form>[]>([]);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -16,14 +17,11 @@ export function SpaceDetailPage() {
 
     async function loadData(spaceId: string) {
         try {
-            const [spaceRes, formsRes] = await Promise.all([
-                spacesApi.get(spaceId),
-                formsApi.listBySpace(spaceId),
-            ]);
+            const [spaceRes, formsRes] = await Promise.all([spacesApi.get(spaceId), formsApi.listBySpace(spaceId)]);
             setSpace(spaceRes.data);
             setForms(formsRes.data);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(errorMessage(err));
         }
     }
 
@@ -32,15 +30,25 @@ export function SpaceDetailPage() {
 
     return (
         <div>
-            <Link to="/" style={{ color: '#6b7280', textDecoration: 'none' }}>&larr; Back to Spaces</Link>
+            <Link to="/" style={{ color: '#6b7280', textDecoration: 'none' }}>
+                &larr; Back to Spaces
+            </Link>
             <h1 style={{ marginTop: '0.5rem' }}>{space.name}</h1>
             <p style={{ color: '#6b7280' }}>Slug: /{space.slug}</p>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
+            <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}
+            >
                 <h2>Forms</h2>
                 <Link
                     to={`/spaces/${id}/forms/new`}
-                    style={{ padding: '0.5rem 1rem', background: '#2563eb', color: '#fff', borderRadius: 4, textDecoration: 'none' }}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        background: '#2563eb',
+                        color: '#fff',
+                        borderRadius: 4,
+                        textDecoration: 'none',
+                    }}
                 >
                     New Form
                 </Link>
@@ -62,14 +70,19 @@ export function SpaceDetailPage() {
                         {forms.map((f) => (
                             <tr key={f.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                 <td style={{ padding: '0.5rem' }}>
-                                    <Link to={`/forms/${f.id}`} style={{ color: '#2563eb' }}>{f.title}</Link>
+                                    <Link to={`/forms/${f.id}`} style={{ color: '#2563eb' }}>
+                                        {f.title}
+                                    </Link>
                                 </td>
                                 <td style={{ padding: '0.5rem', color: '#6b7280' }}>/{f.slug}</td>
                                 <td style={{ padding: '0.5rem' }}>
                                     <StatusBadge status={f.status} />
                                 </td>
                                 <td style={{ padding: '0.5rem' }}>
-                                    <Link to={`/forms/${f.id}/answers`} style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                                    <Link
+                                        to={`/forms/${f.id}/answers`}
+                                        style={{ color: '#6b7280', fontSize: '0.875rem' }}
+                                    >
                                         Answers
                                     </Link>
                                 </td>
@@ -91,7 +104,16 @@ function StatusBadge({ status }: { status: string }) {
     };
     const c = colors[status] ?? colors.draft;
     return (
-        <span style={{ padding: '0.125rem 0.5rem', borderRadius: 9999, fontSize: '0.75rem', fontWeight: 500, background: c.bg, color: c.text }}>
+        <span
+            style={{
+                padding: '0.125rem 0.5rem',
+                borderRadius: 9999,
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                background: c.bg,
+                color: c.text,
+            }}
+        >
             {status}
         </span>
     );

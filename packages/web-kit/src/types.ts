@@ -262,16 +262,31 @@ export interface AuthConfig {
         authorizationEndpoint?: string;
         tokenEndpoint?: string;
         userinfoEndpoint?: string;
+        /**
+         * @deprecated Ignored: better-auth takes the JWKS only from the
+         * discovery document's `jwks_uri`; point `discoveryEndpoint` at a
+         * document that has the right one instead.
+         */
         jwksEndpoint?: string;
         discoveryEndpoint?: string;
         scopes?: string[];
         pkce?: boolean;
+        /** Claim names to read the user's fields from, instead of the standard ones. */
         mapping?: {
+            /**
+             * @deprecated Ignored: better-auth always takes the account's
+             * identity from the verified `sub` claim.
+             */
             id?: string;
             email?: string;
+            /** The claim is read as verified when it is `true` or `"true"`. */
             emailVerified?: string;
             name?: string;
             image?: string;
+            /**
+             * @deprecated Ignored: extra user fields need better-auth
+             * `user.additionalFields`, which the feature does not declare.
+             */
             extraFields?: Record<string, string>;
         };
     };

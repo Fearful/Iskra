@@ -22,6 +22,11 @@ export interface CacheAdapter {
     setIfExists?(key: string, value: unknown, ttl?: number): Promise<boolean>;
     delete(key: string): Promise<void>;
     exists(key: string): Promise<boolean>;
+    /**
+     * Increments a counter, creating it at 1. Store a counter as a number
+     * (`set(key, 5)`): on Redis the string `'5'` is stored as JSON (`"5"`),
+     * which `INCR` refuses.
+     */
     increment?(key: string): Promise<number>;
     /**
      * Atomically increments a counter, creating it with `ttlMs` expiry when it
@@ -109,7 +114,9 @@ class MemoryAdapter implements CacheAdapter {
     async increment(key: string): Promise<number> {
         const item = this.live(key);
         if (!item) {
-            return 0;
+            // Created at 1, as Redis INCR does (it returned 0 and stored nothing).
+            this.put(key, { value: 1, expires: null });
+            return 1;
         }
         const newVal = Number(item.value) + 1;
         item.value = newVal;
@@ -142,6 +149,14 @@ end
 return n
 `;
 
+/**
+ * A TTL in seconds as whole milliseconds, at least 1: `EX` takes only whole
+ * seconds, so Redis rejected a fractional TTL the memory adapter honored.
+ */
+function ttlMs(ttlSeconds: number): number {
+    return Math.max(1, Math.ceil(ttlSeconds * 1000));
+}
+
 // Redis Adapter
 class RedisAdapter implements CacheAdapter {
     private client: Redis;
@@ -155,23 +170,26 @@ class RedisAdapter implements CacheAdapter {
         try {
             return value ? JSON.parse(value) : null;
         } catch {
+            // A raw string an older version stored (it wrote strings as they were).
             return value;
         }
     }
 
+    // Every value is written as JSON, strings too: a raw '123' came back from
+    // get() as the number 123, unlike the memory adapter.
     async set(key: string, value: unknown, ttl?: number) {
-        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        const stringValue = JSON.stringify(value);
         if (ttl) {
-            await this.client.set(key, stringValue, 'EX', ttl);
+            await this.client.set(key, stringValue, 'PX', ttlMs(ttl));
         } else {
             await this.client.set(key, stringValue);
         }
     }
 
     async setIfExists(key: string, value: unknown, ttl?: number) {
-        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        const stringValue = JSON.stringify(value);
         const result = ttl
-            ? await this.client.set(key, stringValue, 'EX', ttl, 'XX')
+            ? await this.client.set(key, stringValue, 'PX', ttlMs(ttl), 'XX')
             : await this.client.set(key, stringValue, 'XX');
         return result === 'OK';
     }
@@ -217,17 +235,13 @@ export class CacheFeature implements Feature {
 
         if (this.config.adapter === 'redis') {
             const conn = this.config.connection || {};
-            try {
-                this.client = new RedisAdapter({
-                    host: conn.host || 'localhost',
-                    port: conn.port || 6379,
-                    password: conn.password,
-                    db: conn.db || 0,
-                });
-            } catch {
-                this.log.warn('Redis connection failed, falling back to memory cache');
-                this.client = new MemoryAdapter(this.config.maxEntries);
-            }
+            // ioredis connects in the background: the constructor never throws.
+            this.client = new RedisAdapter({
+                host: conn.host || 'localhost',
+                port: conn.port || 6379,
+                password: conn.password,
+                db: conn.db || 0,
+            });
         } else {
             this.client = new MemoryAdapter(this.config.maxEntries);
         }
@@ -242,8 +256,7 @@ export class CacheFeature implements Feature {
     }
 
     async shutdown(): Promise<void> {
-        if (this.client.disconnect) {
-            await this.client.disconnect();
-        }
+        // No client when initialize() never ran (another feature failed first).
+        await this.client?.disconnect?.();
     }
 }

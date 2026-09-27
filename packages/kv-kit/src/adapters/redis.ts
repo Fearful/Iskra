@@ -83,6 +83,20 @@ end
 `;
 
 /**
+ * Returns the unexpired members of an expiring set (see SADD_SCRIPT) and
+ * deletes it, in one atomic step: members past their expiry are left out, as
+ * the memory adapter does. KEYS[1]: the set.
+ */
+const SDRAIN_SCRIPT = `
+if redis.replicate_commands then redis.replicate_commands() end
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+local members = redis.call('ZRANGEBYSCORE', KEYS[1], '(' .. now, '+inf')
+redis.call('DEL', KEYS[1])
+return members
+`;
+
+/**
  * ioredis errors carry the command they answer with its arguments: AUTH's
  * password on a refused login, which the app then logged. Only the command
  * name is kept.
@@ -278,9 +292,6 @@ export class RedisAdapter implements KVAdapter {
     }
 
     async sdrain(key: string): Promise<string[]> {
-        const results = await this.redis.multi().zrange(key, 0, -1).del(key).exec();
-        const failed = results?.find(([err]) => err);
-        if (failed) throw failed[0];
-        return (results?.[0]?.[1] as string[] | undefined) ?? [];
+        return (await this.redis.eval(SDRAIN_SCRIPT, 1, key)) as string[];
     }
 }

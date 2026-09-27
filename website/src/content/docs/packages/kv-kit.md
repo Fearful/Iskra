@@ -170,7 +170,7 @@ cache-kit's `clear()` runs this `clear()`, so a `Cache` on a `KVManager` clears 
 
 ## Expiring sets
 
-`sadd(key, member, ttl?)` and `sdrain(key)` keep a set of strings whose members expire one by one: the set lives as long as its longest-lived member, and `sdrain` deletes it and returns its members in one step. With Redis it is a sorted set scored by expiry, updated by one atomic script. cache-kit keeps its tag index in them. Only `key` is namespaced; members are stored as given.
+`sadd(key, member, ttl?)` and `sdrain(key)` keep a set of strings whose members expire one by one: the set lives as long as its longest-lived member, and `sdrain` deletes it and returns its unexpired members in one step (an expired member still stored is left out). With Redis it is a sorted set scored by expiry, updated and drained by atomic scripts. cache-kit keeps its tag index in them. Only `key` is namespaced; members are stored as given.
 
 ## Batch Operations
 

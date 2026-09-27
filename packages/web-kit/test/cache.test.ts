@@ -3,6 +3,10 @@ import { Kernel } from '../src/kernel';
 import { CacheFeature } from '../src/features/cache';
 
 describe('Cache Feature', () => {
+    it('shuts down without having been initialized', async () => {
+        await expect(new CacheFeature().shutdown()).resolves.toBeUndefined();
+    });
+
     it('should init with memory adapter by default', async () => {
         const kernel = new Kernel();
         const cache = new CacheFeature();
@@ -91,14 +95,16 @@ describe('Cache Feature', () => {
         await kernel.shutdown();
     });
 
-    it('should return 0 for increment on nonexistent key', async () => {
+    it('creates a missing key at 1 on increment, like Redis INCR', async () => {
         const kernel = new Kernel();
         const cache = new CacheFeature({ adapter: 'memory' });
         kernel.registerFeature(cache);
         await kernel.initialize();
 
         const result = await cache.client.increment!('no-such-key');
-        expect(result).toBe(0);
+        expect(result).toBe(1);
+        expect(await cache.client.get('no-such-key')).toBe(1);
+        expect(await cache.client.increment!('no-such-key')).toBe(2);
 
         await kernel.shutdown();
     });
@@ -129,7 +135,7 @@ describe('Cache Feature', () => {
         await kernel.shutdown();
     });
 
-    it('returns 0 when incrementing an expired key', async () => {
+    it('starts an expired key over at 1 on increment', async () => {
         const kernel = new Kernel();
         const cache = new CacheFeature({ adapter: 'memory' });
         kernel.registerFeature(cache);
@@ -137,7 +143,7 @@ describe('Cache Feature', () => {
 
         await cache.client.set('expiring', 10, 0.05); // 50ms TTL
         await new Promise((r) => setTimeout(r, 80));
-        expect(await cache.client.increment!('expiring')).toBe(0);
+        expect(await cache.client.increment!('expiring')).toBe(1);
 
         await kernel.shutdown();
     });

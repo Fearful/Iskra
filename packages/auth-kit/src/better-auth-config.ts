@@ -35,10 +35,59 @@ function placeholderMarker(secret: string): string | undefined {
     return PLACEHOLDER_SECRET_MARKERS.find((marker) => normalized.includes(normalizeSecret(marker)));
 }
 
+/** Hosts a production baseURL may reach over plain http (e.g. docker compose on one machine). */
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The origin better-auth runs on: `baseURL`, else `BETTER_AUTH_URL`, else
+ * `http://localhost:3000` outside production. It decides the cookies'
+ * `Secure` flag and is a trusted origin, so production requires one and it
+ * must be https (plain http only for localhost, 127.0.0.1 and [::1]). `who`
+ * prefixes the error messages.
+ */
+export function resolveAuthBaseURL(baseURL?: string, who = 'createBetterAuth'): string {
+    const resolved = baseURL || process.env.BETTER_AUTH_URL;
+    if (resolved) {
+        assertHttpsInProduction(resolved, who);
+        return resolved;
+    }
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+            `${who}: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, ` +
+                'e.g. "https://app.example.com"; without it cookies are sent without Secure.',
+        );
+    }
+    return 'http://localhost:3000';
+}
+
+/**
+ * better-auth marks the session cookies Secure only for an https baseURL, so
+ * an http:// one in production sent them over plain HTTP as well.
+ */
+function assertHttpsInProduction(baseURL: string, who: string): void {
+    if (process.env.NODE_ENV !== 'production') return;
+    let url: URL;
+    try {
+        url = new URL(baseURL);
+    } catch {
+        return; // an invalid URL is reported by the caller
+    }
+    if (url.protocol === 'https:' || LOCAL_HOSTNAMES.has(url.hostname)) return;
+    throw new Error(
+        `${who}: baseURL "${baseURL}" must use https in production: better-auth marks the session cookies ` +
+            'Secure only for an https baseURL. Plain http is allowed only for localhost, 127.0.0.1 and [::1].',
+    );
+}
+
 export interface BetterAuthConfigOptions {
     db: AuthKitDrizzleDb;
     adapterType: 'postgres' | 'mysql' | 'sqlite';
     secret: string;
+    /**
+     * The app's public origin. Defaults to `BETTER_AUTH_URL`, then (outside
+     * production only) `http://localhost:3000`; must be https in production
+     * unless it is localhost. See `resolveAuthBaseURL`.
+     */
     baseURL?: string;
     basePath?: string;
     trustedOrigins?: string[];
@@ -74,34 +123,91 @@ export interface BetterAuthConfigOptions {
         authorizationEndpoint?: string;
         tokenEndpoint?: string;
         userinfoEndpoint?: string;
+        /**
+         * @deprecated Ignored: better-auth takes the JWKS only from the
+         * discovery document's `jwks_uri`; point `discoveryEndpoint` at a
+         * document that has the right one instead.
+         */
         jwksEndpoint?: string;
         discoveryEndpoint?: string;
         scopes?: string[];
         pkce?: boolean;
-        mapping?: {
-            id?: string;
-            email?: string;
-            emailVerified?: string;
-            name?: string;
-            image?: string;
-            extraFields?: Record<string, string>;
-        };
+        /** Claim names to read the user's fields from, instead of the standard ones. */
+        mapping?: OidcClaimMapping;
     };
+}
+
+/** Claim names `mapOidcProfile` reads the user's fields from. */
+export interface OidcClaimMapping {
+    /**
+     * @deprecated Ignored: better-auth always takes the account's identity
+     * from the verified `sub` claim.
+     */
+    id?: string;
+    email?: string;
+    /** The claim is read as verified when it is `true` or `"true"`. */
+    emailVerified?: string;
+    name?: string;
+    image?: string;
+    /**
+     * @deprecated Ignored: extra user fields need better-auth
+     * `user.additionalFields`, which `createBetterAuth` does not declare.
+     */
+    extraFields?: Record<string, string>;
 }
 
 /**
  * The local user fields for an OIDC login (standard claims, with the common
- * non-standard fallbacks). No `id`: better-auth takes the account's identity
- * from the verified `sub` (accountSubject) and ignores one returned here.
+ * non-standard fallbacks). A claim named in `mapping` is read instead of the
+ * standard one when the profile has it. No `id`: better-auth takes the
+ * account's identity from the verified `sub` (accountSubject) and ignores one
+ * returned here.
  */
-export function mapOidcProfile(profile: GenericOAuthUserInfo) {
+export function mapOidcProfile(profile: GenericOAuthUserInfo, mapping: OidcClaimMapping = {}) {
     const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+    const claim = (name: string | undefined) => (name ? profile[name] : undefined);
+    const isTrue = (v: unknown) => v === true || v === 'true';
+    const standardVerified = profile.emailVerified === true || isTrue(profile.email_verified);
+    const mappedEmail = str(claim(mapping.email));
+    // better-auth links a login to the local user with the same email when it
+    // is verified, so a flag must vouch for the address actually returned.
+    // A mapped flag pairs with the mapped email (or with the standard one when
+    // mapping.email is not set); the standard flag only vouches for the
+    // standard email.
+    const pairedFlag = mappedEmail !== undefined || !mapping.email ? claim(mapping.emailVerified) : undefined;
+    let emailVerified: boolean;
+    if (pairedFlag !== undefined && pairedFlag !== null) emailVerified = isTrue(pairedFlag);
+    else if (mappedEmail !== undefined) emailVerified = mappedEmail === profile.email && standardVerified;
+    else emailVerified = standardVerified;
     return {
-        email: profile.email,
-        name: profile.name || str(profile.preferred_username),
-        image: str(profile.picture) ?? profile.image,
-        emailVerified:
-            profile.emailVerified === true || profile.email_verified === true || profile.email_verified === 'true',
+        email: mappedEmail ?? profile.email,
+        name: str(claim(mapping.name)) ?? (profile.name || str(profile.preferred_username)),
+        image: str(claim(mapping.image)) ?? str(profile.picture) ?? profile.image,
+        emailVerified,
+    };
+}
+
+/**
+ * The generic-oauth provider config for `oidcConfig`. The endpoints left
+ * unset come from the issuer's discovery document: better-auth fills only
+ * the ones not given, so a default here (e.g. Keycloak's
+ * `/protocol/openid-connect/*` paths) would override discovery for every
+ * other provider.
+ */
+export function oidcProviderConfig(oidcConfig: NonNullable<BetterAuthConfigOptions['oidcConfig']>) {
+    return {
+        providerId: oidcConfig.providerId || 'oidc',
+        clientId: oidcConfig.clientId,
+        clientSecret: oidcConfig.clientSecret,
+        authorizationUrl: oidcConfig.authorizationEndpoint || undefined,
+        tokenUrl: oidcConfig.tokenEndpoint || undefined,
+        userInfoUrl: oidcConfig.userinfoEndpoint || undefined,
+        discoveryUrl: oidcConfig.discoveryEndpoint || `${oidcConfig.issuer}/.well-known/openid-configuration`,
+        scopes: oidcConfig.scopes || ['openid', 'email', 'profile'],
+        // Secure default: PKCE on. Disabling exposes auth-code
+        // interception/injection and requires an explicit false.
+        pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
+        mapProfileToUser: (profile: GenericOAuthUserInfo) => mapOidcProfile(profile, oidcConfig.mapping),
     };
 }
 
@@ -110,7 +216,6 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         db,
         adapterType,
         secret,
-        baseURL = 'http://localhost:3000',
         basePath = '/api/auth',
         trustedOrigins = [],
         enableEmailPassword = true,
@@ -141,6 +246,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         );
     }
 
+    const baseURL = resolveAuthBaseURL(options.baseURL);
     const baseOrigin = new URL(baseURL).origin;
     const allTrustedOrigins = trustedOrigins.includes(baseOrigin) ? trustedOrigins : [baseOrigin, ...trustedOrigins];
 
@@ -171,32 +277,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
 
     const plugins = [];
     if (oidcConfig) {
-        const authorizationUrl =
-            oidcConfig.authorizationEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/auth`;
-        const tokenUrl = oidcConfig.tokenEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/token`;
-        const userInfoUrl = oidcConfig.userinfoEndpoint || `${oidcConfig.issuer}/protocol/openid-connect/userinfo`;
-
-        plugins.push(
-            genericOAuth({
-                config: [
-                    {
-                        providerId: oidcConfig.providerId || 'oidc',
-                        clientId: oidcConfig.clientId,
-                        clientSecret: oidcConfig.clientSecret,
-                        authorizationUrl,
-                        tokenUrl,
-                        userInfoUrl,
-                        discoveryUrl:
-                            oidcConfig.discoveryEndpoint || `${oidcConfig.issuer}/.well-known/openid-configuration`,
-                        scopes: oidcConfig.scopes || ['openid', 'email', 'profile'],
-                        // Secure default: PKCE on. Disabling exposes auth-code
-                        // interception/injection and requires an explicit false.
-                        pkce: oidcConfig.pkce !== undefined ? oidcConfig.pkce : true,
-                        mapProfileToUser: mapOidcProfile,
-                    },
-                ],
-            }),
-        );
+        plugins.push(genericOAuth({ config: [oidcProviderConfig(oidcConfig)] }));
     }
 
     return betterAuth({

@@ -191,6 +191,89 @@ describe('DB session store — concurrent logout', () => {
         await kernel.shutdown();
     });
 });
+describe('DB session store — write failures', () => {
+    it('answers 500 with no cookie when the session cannot be stored', async () => {
+        // Regression: the store logged the error and went on, so the client
+        // got a cookie for a session that was never saved.
+        const sqlite = new Database(':memory:');
+        let failInsert = false;
+        const db = drizzle(sqlite, {
+            logger: {
+                // Called right before each statement runs.
+                logQuery(query) {
+                    if (failInsert && /^insert\b/i.test(query)) throw new Error('disk full');
+                },
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature({ name: 'db', db, adapter: 'sqlite', async initialize() {} } as Feature);
+        kernel.registerFeature(
+            new SessionFeature({ store: 'db', secret: 'db-session-secret-0123456789abcdef0123456789abcdef' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/set', (c) => {
+            c.get('session').value = 'x';
+            return c.json({ ok: true });
+        });
+
+        failInsert = true;
+        const res = await app.request('/set');
+        expect(res.status).toBe(500);
+        expect(res.headers.get('Set-Cookie')).toBeNull();
+        await kernel.shutdown();
+    });
+});
+
+describe('DB session store — read failures', () => {
+    async function setup() {
+        const sqlite = new Database(':memory:');
+        let failSelect = false;
+        const db = drizzle(sqlite, {
+            logger: {
+                logQuery(query) {
+                    if (failSelect && /^select\b/i.test(query)) throw new Error('connection lost');
+                },
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature({ name: 'db', db, adapter: 'sqlite', async initialize() {} } as Feature);
+        kernel.registerFeature(
+            new SessionFeature({ store: 'db', secret: 'db-session-secret-0123456789abcdef0123456789abcdef' }),
+        );
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/set', (c) => {
+            c.get('session').value = 'x';
+            return c.json({ ok: true });
+        });
+        app.get('/get', (c) => c.json({ session: c.get('session') }));
+        return { sqlite, kernel, app, failSelects: () => (failSelect = true) };
+    }
+
+    it('treats a corrupt row as no session', async () => {
+        // Regression: the parse error was rethrown with the database errors,
+        // so the request failed (500) until the row expired.
+        const { sqlite, kernel, app } = await setup();
+        const cookie = cookieOf(await app.request('/set'));
+        sqlite.run(`UPDATE sessions SET data = '{not json'`);
+
+        const res = await app.request('/get', { headers: { Cookie: cookie } });
+        expect(res.status).toBe(200);
+        expect(((await res.json()) as any).session).toEqual({});
+        await kernel.shutdown();
+    });
+
+    it('still fails the request when the database cannot be read', async () => {
+        const { kernel, app, failSelects } = await setup();
+        const cookie = cookieOf(await app.request('/set'));
+        failSelects();
+
+        expect((await app.request('/get', { headers: { Cookie: cookie } })).status).toBe(500);
+        await kernel.shutdown();
+    });
+});
+
 runSuite(pgUp, 'DB session store — postgres (requires Postgres)', {
     adapter: 'postgres',
     connection: { connectionString: PG_URL },

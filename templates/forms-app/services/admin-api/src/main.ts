@@ -6,6 +6,7 @@ import router from './interfaces/http/router.ts';
 import { SpaceService } from './domain/spaces/space.service.ts';
 import { FormService } from './domain/forms/form.service.ts';
 import { Hono } from 'hono';
+import { asFormsDb } from '@forms-app/shared/db/client';
 
 const app = new App({ name: 'AdminAPI' });
 
@@ -49,8 +50,9 @@ async function setupDb() {
         throw new Error('DB Driver not initialized');
     }
 
-    SpaceService.setDb(dbDriver.db);
-    FormService.setDb(dbDriver.db);
+    const db = asFormsDb(dbDriver.db);
+    SpaceService.setDb(db);
+    FormService.setDb(db);
 
     console.log('Database services initialized');
 }

@@ -30,6 +30,14 @@ describe('WebDriver — error/header hardening', () => {
                     path: '/ok',
                     handler: () => ({ message: 'world' }),
                 },
+                {
+                    method: 'GET',
+                    path: '/deny',
+                    handler: () =>
+                        new Response('framed never', {
+                            headers: { 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' },
+                        }),
+                },
             ],
         });
         app.register(driver);
@@ -58,6 +66,14 @@ describe('WebDriver — error/header hardening', () => {
         // Off, as in the Kernel: the legacy auditor it enables could be abused.
         expect(res.headers.get('X-XSS-Protection')).toBeNull();
         expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    });
+
+    it('keeps a security header the route set itself', async () => {
+        const res = await fetch(`http://localhost:${PORT}/deny`);
+        expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+        // Headers the route left unset still get the default.
+        expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     });
 
     it('sets security headers even on error responses', async () => {

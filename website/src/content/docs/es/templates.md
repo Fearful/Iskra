@@ -75,4 +75,4 @@ App multiplataforma que apunta a escritorio y móvil desde un mismo codebase.
 
 ### plugin-starter
 Scaffolding para construir plugins/drivers reutilizables que podés registrar en cualquier app de Iskra.
-`cd templates/plugin-starter && bun run build`
+`(cd packages/core && bun run build) && cd templates/plugin-starter && bun run build` (el template compila contra los tipos publicados de `@iskra-bun/core`, así que primero compilá core)

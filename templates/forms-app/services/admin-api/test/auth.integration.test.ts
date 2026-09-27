@@ -26,7 +26,8 @@ async function pgUsable(url: string): Promise<boolean> {
     }
 }
 
-const DROP = 'DROP TABLE IF EXISTS session, account, verification, "user", answers, form_fields, forms, spaces CASCADE;';
+const DROP =
+    'DROP TABLE IF EXISTS session, account, verification, "user", answers, form_fields, forms, spaces CASCADE;';
 const SPACES = `CREATE TABLE spaces (
   id text PRIMARY KEY, name text NOT NULL, slug text NOT NULL UNIQUE,
   created_at timestamp DEFAULT now() NOT NULL, updated_at timestamp DEFAULT now() NOT NULL);`;

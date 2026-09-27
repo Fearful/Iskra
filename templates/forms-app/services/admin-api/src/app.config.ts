@@ -37,7 +37,7 @@ export const config: AppConfig = AppConfigSchema.parse({
     },
     db: {
         driver: 'postgres',
-        url: process.env.DATABASE_URL || 'postgresql://forms:secret@localhost:5432/forms_app',
+        url: secretFromEnv('DATABASE_URL', 'postgresql://forms:secret@localhost:5432/forms_app', { minLength: 1 }),
     },
     auth: {
         // Signs the session cookies: with better-auth's cookie cache, whoever

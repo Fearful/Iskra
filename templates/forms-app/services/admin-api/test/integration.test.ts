@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { eq } from 'drizzle-orm';
 import { answers } from '@forms-app/shared/db';
 import { SpaceService } from '../src/domain/spaces/space.service.ts';
 import { FormService } from '../src/domain/forms/form.service.ts';
