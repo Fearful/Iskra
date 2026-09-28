@@ -176,6 +176,11 @@ export async function readOutBinds(outBinds: unknown): Promise<unknown> {
  * The per-statement `fetchTypeHandler`: CLOBs as strings and BLOBs as Buffers
  * (a Lob would outlive the pooled connection it must be read on), plus the
  * configured fetchAsString types. oracledb's global settings are left alone.
+ *
+ * It must stay the same for every statement on the driver's connections:
+ * Thin mode fixes a LOB column's fetch type on a query's first run and keeps
+ * it with the cached statement, so a per-query override would be ignored
+ * whenever the same SQL ran before on that connection.
  */
 export function fetchTypeHandler(
     oracledb: OracledbModule,

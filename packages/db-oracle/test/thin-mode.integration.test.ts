@@ -162,7 +162,11 @@ async function dropTable(conn: oracledb.Connection) {
             { body: { val: body, type: oracledb.CLOB }, data: { val: data, type: oracledb.BLOB } },
             { autoCommit: true },
         );
-        const sql = `SELECT body, data FROM ${TABLE} WHERE name = 'lob'`;
+        // Thin mode sets a LOB column's fetch type when the database describes
+        // the query, on its first run only: running the same SQL again on this
+        // connection reuses the cached statement and its first fetch type. Each
+        // way of reading gets its own SQL text.
+        const sql = (way: string) => `SELECT body, data FROM ${TABLE} WHERE name = 'lob' /* ${way} */`;
         const same = (row: { BODY: unknown; DATA: unknown }) => {
             expect(typeof row.BODY).toBe('string');
             expect((row.BODY as string).length).toBe(body.length);
@@ -172,10 +176,10 @@ async function dropTable(conn: oracledb.Connection) {
         };
 
         // By default a LOB column is fetched as a Lob to read on its own.
-        const lobs = (await conn.execute<{ BODY: Lob; DATA: Lob }>(sql, [], OBJECT)).rows![0];
+        const lobs = (await conn.execute<{ BODY: Lob; DATA: Lob }>(sql('lob'), [], OBJECT)).rows![0];
         same({ BODY: await lobs.BODY.getData(), DATA: await lobs.DATA.getData() });
 
-        const perQuery = await conn.execute<{ BODY: unknown; DATA: unknown }>(sql, [], {
+        const perQuery = await conn.execute<{ BODY: unknown; DATA: unknown }>(sql('fetchInfo'), [], {
             ...OBJECT,
             fetchInfo: { BODY: { type: oracledb.STRING }, DATA: { type: oracledb.BUFFER } },
         });
@@ -185,7 +189,7 @@ async function dropTable(conn: oracledb.Connection) {
         oracledb.fetchAsString = [oracledb.CLOB];
         oracledb.fetchAsBuffer = [oracledb.BLOB];
         try {
-            const global = await conn.execute<{ BODY: unknown; DATA: unknown }>(sql, [], OBJECT);
+            const global = await conn.execute<{ BODY: unknown; DATA: unknown }>(sql('fetchAs'), [], OBJECT);
             same(global.rows![0]);
         } finally {
             oracledb.fetchAsString = fetchAsString;
