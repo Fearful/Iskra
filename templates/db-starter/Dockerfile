@@ -31,6 +31,8 @@ WORKDIR /app
 # Root-owned and read-only (0555): copied with --chown=1001:0, the user the
 # app runs as could overwrite its own code, so a compromise could persist.
 COPY --from=builder --chmod=0555 /build/app /app/app
+# The Oracle example's migrations, which the app applies when ORA_CONN is set.
+COPY --from=builder --chmod=0555 /build/templates/db-starter/migrations /app/migrations
 
 ENV NODE_ENV=production
 

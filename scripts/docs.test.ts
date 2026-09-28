@@ -98,4 +98,24 @@ describe('documentation', () => {
         }
         expect(missing).toEqual([]);
     });
+
+    it('names only the Oracle variables the driver reads', () => {
+        // db-starter and full-stack-app documented ORACLE_USER/_PASSWORD/
+        // _CONNECTION_STRING while the driver reads ORA_*: Oracle never started.
+        const src = join(ROOT, 'packages', 'db-oracle', 'src');
+        const read = new Set(
+            walk(src, (n) => n.endsWith('.ts')).flatMap((file) =>
+                [...readFileSync(file, 'utf8').matchAll(/\benv\.(ORA_\w+)/g)].map((m) => m[1]),
+            ),
+        );
+        expect(read.size).toBeGreaterThan(0);
+        const files = walk(join(ROOT, 'templates'), (name) => name.endsWith('.md') || name.startsWith('.env'));
+        const unknown = files.flatMap((file) =>
+            [...readFileSync(file, 'utf8').matchAll(/\bORA(?:CLE)?_[A-Z_]+/g)]
+                .map((m) => m[0])
+                .filter((name) => !read.has(name))
+                .map((name) => `${relative(ROOT, file)}: ${name}`),
+        );
+        expect(unknown).toEqual([]);
+    });
 });

@@ -9,7 +9,7 @@ App completa que combina todos los kits de Iskra: servidor HTTP con documentacio
 - [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket con router de eventos
 - [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store en memoria
 - [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQL con Drizzle ORM
-- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Oracle Database (opcional)
+- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-oracle/) — Oracle Database (opcional)
 - [`@iskra-bun/process-kit`](https://iskra-docs.fly.dev/es/packages/process-kit/) — Gestion de procesos externos
 
 ## Inicio rapido
@@ -33,9 +33,9 @@ La documentacion OpenAPI esta disponible en `http://localhost:3000/doc`.
 | `PORT` | Puerto del servidor HTTP | `3000` |
 | `SOCKET_PORT` | Puerto del servidor WebSocket | `3001` |
 | `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `:memory:` |
-| `ORACLE_USER` | Usuario de Oracle (opcional): uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
-| `ORACLE_PASSWORD` | Password de Oracle (opcional) | — |
-| `ORACLE_CONNECTION_STRING` | Connection string de Oracle (opcional) | — |
+| `ORA_CONN` | Connection string de Oracle (opcional; sin ella el `OracleDriver` no arranca), p. ej. `localhost:1521/XEPDB1` | — |
+| `ORA_USER` | Usuario de Oracle: uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
+| `ORA_PASSWORD` | Password de Oracle | — |
 
 ## Endpoints HTTP
 

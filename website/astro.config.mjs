@@ -53,6 +53,7 @@ export default defineConfig({
                         { slug: 'packages/web-kit' },
                         { slug: 'packages/auth-kit' },
                         { slug: 'packages/db-kit' },
+                        { slug: 'packages/db-oracle' },
                         { slug: 'packages/socket-kit' },
                         { slug: 'packages/kv-kit' },
                         { slug: 'packages/cache-kit' },

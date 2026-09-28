@@ -2,6 +2,7 @@ import { App } from '@iskra-bun/core';
 import { WebDriver } from '@iskra-bun/web-kit';
 import { DbDriver } from '@iskra-bun/db-kit';
 import { OracleDriver } from '@iskra-bun/db-oracle';
+import { OracleUserService, type OracleDB } from './domain/oracle-user.service';
 import { UserService } from './domain/user.service';
 import { users } from './db/schema';
 import { createRouter } from './interfaces/http/router';
@@ -15,10 +16,11 @@ const app = new App({
 });
 
 const db = new DbDriver<{ users: typeof users }>();
-const oracle = new OracleDriver(); // Will skip if no env vars
+// Optional: without ORA_CONN (or an `oracle` config section) it does not start.
+const oracle = new OracleDriver<OracleDB>();
 
 const userService = new UserService(db);
-const routes = createRouter(userService);
+const routes = createRouter(userService, new OracleUserService(oracle));
 
 app.register(
     new WebDriver({
@@ -33,5 +35,6 @@ app.register(oracle);
 app.start()
     .then(async () => {
         await userService.initTable();
+        if (oracle.db) await oracle.runMigrations('./migrations/oracle');
     })
     .catch(console.error);
