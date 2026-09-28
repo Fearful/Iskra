@@ -1,4 +1,4 @@
-import type { App, Driver } from '@iskra-bun/core';
+import { isProductionEnv, type App, type Driver } from '@iskra-bun/core';
 import type { Redis } from 'ioredis';
 import type { KVAdapter } from './types';
 import { MemoryAdapter } from './adapters/memory';
@@ -26,6 +26,16 @@ export class KVManager implements Driver, KVAdapter {
     private readonly flushDb: boolean;
 
     constructor(options: KVManagerOptions = {}) {
+        // The store is chosen by the App's config (`kv.driver`), not here: an
+        // `adapter: 'redis'` copied from an old README was ignored, and the app
+        // silently ran on per-process memory.
+        const misplaced = ['adapter', 'driver', 'connection'].filter((key) => key in options);
+        if (misplaced.length > 0) {
+            throw new Error(
+                `KVManager does not take ${misplaced.map((k) => `"${k}"`).join(', ')}: choose the store in the App config, ` +
+                    "e.g. new App({ name, kv: { driver: 'redis', connection: process.env.REDIS_URL } })",
+            );
+        }
         // Default to memory until configured
         this.adapter = new MemoryAdapter();
         this.prefix = options.namespace ? `${options.namespace}:` : '';
@@ -45,6 +55,13 @@ export class KVManager implements Driver, KVAdapter {
                 flushDb: this.flushDb,
             });
         } else if (!config?.driver || config.driver === 'memory') {
+            if (!config?.driver && isProductionEnv()) {
+                app.logger.warn(
+                    'KV has no driver configured: using the in-memory store, which each process keeps on its own ' +
+                        "and loses on restart. Set kv: { driver: 'redis', connection } in the App config, or " +
+                        "kv: { driver: 'memory' } to keep it.",
+                );
+            }
             app.logger.info('Initializing KV with Memory');
             this.adapter = new MemoryAdapter();
         } else {

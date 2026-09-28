@@ -17,7 +17,13 @@ import { App } from '@iskra-bun/core'
 import { WorkerManager } from '@iskra-bun/worker-kit'
 
 const app = new App({ name: 'mi-worker' })
-app.register(new WorkerManager({ queue: 'mis-jobs', concurrency: 2 }))
+app.register(
+  new WorkerManager({
+    connection: process.env.REDIS_URL ?? 'redis://localhost:6379',
+    queueName: 'mis-jobs',
+    concurrency: 2,
+  }),
+)
 
 await app.start()
 ```

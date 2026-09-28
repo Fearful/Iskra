@@ -14,11 +14,17 @@ bun add @iskra-bun/db-kit @iskra-bun/core
 import { App } from '@iskra-bun/core'
 import { DbDriver } from '@iskra-bun/db-kit'
 
-const app = new App({ name: 'mi-app' })
-app.register(new DbDriver({ dialect: 'sqlite', url: 'app.db' }))
+const app = new App({
+  name: 'mi-app',
+  db: { driver: 'sqlite', url: 'app.db' }, // o 'postgres' / 'mysql' con su URL
+})
+const db = new DbDriver()
+app.register(db)
 
 await app.start()
 ```
+
+La conexion se configura en la config de la App (`db`), no en el constructor de `DbDriver`.
 
 ## Documentacion
 
