@@ -3,16 +3,16 @@ import oracledb from 'oracledb';
 import { ORACLE, oracleUp } from './oracle-env';
 
 // oracledb in Thin mode (pure JavaScript, no Oracle Client) inside the Bun
-// process, against a real database: what an in-process OracleDriver would rely
-// on instead of the Node bridge. Skipped unless the database in oracle-env.ts
-// is reachable; the `oracle` CI job provides one.
+// process, against a real database: the node-oracledb features the
+// OracleDriver relies on. Skipped unless the database in oracle-env.ts is
+// reachable; the `oracle` CI job provides one.
 setDefaultTimeout(30_000);
 
 const up = await oracleUp();
 const TABLE = 'iskra_it_thin';
 const OBJECT = { outFormat: oracledb.OUT_FORMAT_OBJECT };
 
-// The out bind types the driver is to accept by name, and the DbType each maps to.
+// The DbType each bind type name maps to (as in src/binds.ts).
 const OUT_TYPES = {
     string: oracledb.DB_TYPE_VARCHAR,
     number: oracledb.DB_TYPE_NUMBER,

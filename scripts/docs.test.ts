@@ -102,10 +102,10 @@ describe('documentation', () => {
     it('names only the Oracle variables the driver reads', () => {
         // db-starter and full-stack-app documented ORACLE_USER/_PASSWORD/
         // _CONNECTION_STRING while the driver reads ORA_*: Oracle never started.
-        const oracle = join(ROOT, 'packages', 'db-oracle');
+        const src = join(ROOT, 'packages', 'db-oracle', 'src');
         const read = new Set(
-            [...walk(join(oracle, 'src'), (n) => n.endsWith('.ts')), join(oracle, 'bridge', 'runner.js')].flatMap(
-                (file) => [...readFileSync(file, 'utf8').matchAll(/process\.env\.(ORA\w*)/g)].map((m) => m[1]),
+            walk(src, (n) => n.endsWith('.ts')).flatMap((file) =>
+                [...readFileSync(file, 'utf8').matchAll(/\benv\.(ORA_\w+)/g)].map((m) => m[1]),
             ),
         );
         expect(read.size).toBeGreaterThan(0);

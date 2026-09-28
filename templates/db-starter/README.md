@@ -7,7 +7,7 @@ Template con CRUD de usuarios usando SQLite (via Drizzle ORM) y soporte opcional
 - [`@iskra-bun/core`](https://iskra-docs.fly.dev/es/packages/core/) — Clase App, ciclo de vida, logger
 - [`@iskra-bun/web-kit`](https://iskra-docs.fly.dev/es/packages/web-kit/) — Servidor HTTP
 - [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQL con Drizzle ORM
-- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Oracle Database (opcional, via Bridge/Sidecar)
+- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-oracle/) — Oracle Database (opcional): Kysely, busqueda, paginacion y migraciones
 
 ## Inicio rapido
 
@@ -36,6 +36,7 @@ El servidor levanta en `http://localhost:3000`.
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | `GET` | `/users` | Listar los usuarios (`id` y `name`: los emails no se exponen) |
+| `GET` | `/oracle/users` | Usuarios de Oracle paginados: `?q=ana&sort=-name&page=2&pageSize=20` (503 sin Oracle) |
 | `POST` | `/users` | Crear un usuario (body: `{ "name": "...", "email": "..." }`, validado con Zod; `409` si el email ya existe) |
 
 El listado es publico, asi que no devuelve emails. Si un panel necesita verlos, sumale
@@ -49,17 +50,20 @@ src/
 ├── db/
 │   └── schema.ts                    # Schema Drizzle ORM (tabla users)
 ├── domain/
-│   └── user.service.ts              # Logica de negocio (CRUD)
+│   ├── user.service.ts              # Logica de negocio (CRUD)
+│   └── oracle-user.service.ts       # Listado de Oracle: busqueda, orden y paginacion
 └── interfaces/
     └── http/
         └── router.ts                # Rutas HTTP
+migrations/
+└── oracle/                          # Migraciones SQL de Oracle (runMigrations)
 ```
 
 ## Oracle (opcional)
 
-Si defines `ORA_CONN`, `ORA_USER` y `ORA_PASSWORD` en `.env`, el `OracleDriver` se conecta via el Bridge/Sidecar al arrancar la app. Sin `ORA_CONN` se omite (con un aviso en el log).
+Si defines `ORA_CONN`, `ORA_USER` y `ORA_PASSWORD` en `.env`, el `OracleDriver` abre un pool de node-oracledb (modo Thin, sin Oracle Client) al arrancar la app, aplica las migraciones de `migrations/oracle` y sirve `GET /oracle/users`. Sin `ORA_CONN` se omite (con un aviso en el log) y esa ruta responde 503. Si no puede conectarse, la app no arranca.
 
-El puente es un proceso Node: necesita `node` en el `PATH` y el paquete `oracledb` (`bun add oracledb`). Si no puede conectarse, la app no arranca.
+`GET /oracle/users` busca por nombre sin distinguir mayusculas (`q`), ordena por `sort` (`name` o `-name`) y pagina con `page` y `pageSize` (hasta 100): ver `src/domain/oracle-user.service.ts`. Para una base local, [gvenzl/oracle-free](https://hub.docker.com/r/gvenzl/oracle-free) crea el usuario con `APP_USER` y `APP_USER_PASSWORD` (`ORA_CONN=localhost:1521/FREEPDB1`).
 
 Conectate con un usuario propio de la app, con solo los permisos que usa (`CREATE SESSION`
 y los de sus tablas), nunca con `SYSTEM` o `SYS`:

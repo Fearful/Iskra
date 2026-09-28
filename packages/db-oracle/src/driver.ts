@@ -1,328 +1,400 @@
-import type { Driver, App } from '@iskra-bun/core';
-import { spawn, type Subprocess, type FileSink } from 'bun';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
+import type { App, Driver } from '@iskra-bun/core';
+import { CamelCasePlugin, Kysely, type KyselyPlugin, type SelectQueryBuilder } from 'kysely';
+import type * as OracleDB from 'oracledb';
+import { fetchTypeHandler, readOutBinds, toOracleBinds, type OracleBinds, type OutBinds } from './binds';
+import { resolveConfig, type ResolvedOracleConfig } from './config';
+import { OracleDialect, type StatementRunner } from './dialect';
+import { ConnectionError, MigrationError, QueryError, toQueryError } from './errors';
+import { runMigrations, type MigrationOptions } from './migrations';
+import { paginate, type Page, type PageOptions } from './pagination';
+import type {
+    ConnectionHandle,
+    OracleConnectionLike,
+    OraclePoolLike,
+    OracleRawResult,
+    OracleResultSetLike,
+} from './types';
 
-type PendingEntry = {
-    resolve: (val: unknown) => void;
-    reject: (err: unknown) => void;
-    timer: ReturnType<typeof setTimeout> | null;
-};
+type OracledbModule = typeof OracleDB;
 
-const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_START_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+/** Called with every statement the driver runs (raw and Kysely) and its binds. */
+export type OnQueryHook = (sql: string, binds: unknown) => void;
 
-/** Bytes of a response line searched for its `{"id":N` prefix. */
-const HEAD_BYTES = 64;
+export interface ExecuteResult<T, O> {
+    /** Rows of a query, as objects keyed by column name (Oracle's upper case). */
+    rows: T[];
+    /** Rows an INSERT, UPDATE, DELETE or MERGE changed; 0 for other statements. */
+    rowsAffected: number;
+    /** OUT, IN OUT and RETURNING INTO values by bind name. */
+    outBinds: O;
+}
 
-/** Settles once when the bridge reports `ready`, a fatal error, or exits. */
-type ReadyWaiter = { resolve: () => void; reject: (err: Error) => void };
+/** What `transaction()` hands its callback: everything runs on its one connection. */
+export interface OracleTransaction<DB> {
+    db: Kysely<DB>;
+    query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds): Promise<T[]>;
+    execute<T = Record<string, unknown>, const B extends OracleBinds = OracleBinds>(
+        sql: string,
+        binds?: B,
+    ): Promise<ExecuteResult<T, OutBinds<B>>>;
+    executeMany(sql: string, rows: readonly OracleBinds[]): Promise<{ rowsAffected: number }>;
+}
 
-export class OracleDriver implements Driver {
+async function loadOracledb(): Promise<OracledbModule> {
+    const mod = (await import('oracledb')) as OracledbModule & { default?: OracledbModule };
+    return mod.default ?? mod;
+}
+
+/**
+ * Oracle Database for Iskra: a node-oracledb pool (Thin mode, no Oracle
+ * Client) in the app's process, typed queries with Kysely (`db`), raw SQL
+ * with typed binds (`query`, `execute`), transactions, pagination and
+ * migrations. Configured by `app.config.oracle`, or ORA_CONN, ORA_USER and
+ * ORA_PASSWORD; without either it does not start.
+ */
+export class OracleDriver<DB = Record<string, never>> implements Driver {
     name = 'OracleDriver';
-    private proc: Subprocess | null = null;
-    /** Bridge processes whose stdout has closed (they exited or are exiting). */
-    private endedProcs = new WeakSet<Subprocess>();
-    private reqId = 0;
-    // Replaced on every start(): each bridge process owns its own pending map,
-    // so the reader of a previous (stopped) bridge can never reject queries
-    // sent to the new one.
-    private pending = new Map<number, PendingEntry>();
-    private bridgePath: string;
-    private timeoutMs: number;
-    private startTimeoutMs: number;
-    private maxResponseBytes: number;
-    private app: App | null = null;
+    /** Kysely over the pool, typed by `DB`; set by start(). */
+    public db: Kysely<DB> | undefined;
 
-    /**
-     * @param bridgePath Path to the bridge script; defaults to the `bridge/runner.js`
-     *   shipped with this package (it is resolved next to both `src/` and `dist/`).
-     * @param timeoutMs Per-query timeout.
-     * @param startTimeoutMs How long start() waits for the bridge to connect.
-     * @param maxResponseBytes Largest response (a query's rows, as one line of
-     *   JSON) read from the bridge: a larger one rejects its query.
-     */
-    constructor(
-        bridgePath?: string,
-        timeoutMs: number = DEFAULT_TIMEOUT_MS,
-        startTimeoutMs: number = DEFAULT_START_TIMEOUT_MS,
-        maxResponseBytes: number = DEFAULT_MAX_RESPONSE_BYTES,
-    ) {
-        this.bridgePath = bridgePath || resolve(import.meta.dir, '../bridge/runner.js');
-        this.timeoutMs = timeoutMs;
-        this.startTimeoutMs = startTimeoutMs;
-        this.maxResponseBytes = maxResponseBytes;
-    }
+    private app: App | undefined;
+    private oracledb: OracledbModule | undefined;
+    private config: ResolvedOracleConfig | undefined;
+    private pool: OraclePoolLike | undefined;
+    private fetchHandler: ReturnType<typeof fetchTypeHandler> | undefined;
+    private onQuery: OnQueryHook | undefined;
+
+    private readonly runner: StatementRunner = {
+        run: (handle, sql, binds) => this.run(handle, sql, binds),
+        streamRows: (handle, sql, binds, chunkSize) => this.streamRows(handle, sql, binds, chunkSize),
+    };
 
     async init(app: App) {
         this.app = app;
-        // If we want to replace the main 'db' object or sit alongside it
         app.context.set('oracle', this);
     }
 
-    async start(app?: App) {
-        // app optional to satisfy interface but we might need config from it
-        if (app) this.app = app;
-
-        // Check env vars
-        if (!process.env.ORA_CONN) {
-            this.log('warn', 'Oracle connection string (ORA_CONN) not set. Oracle driver will not start.');
+    async start() {
+        if (!this.app || this.pool) return;
+        const config = resolveConfig(this.app.config.oracle);
+        if (!config) {
+            this.app.logger.warn(
+                'Oracle is not configured (app.config.oracle or ORA_CONN): OracleDriver will not start.',
+            );
             return;
         }
-
-        if (!existsSync(this.bridgePath)) {
-            throw new Error(`Oracle bridge script not found at ${this.bridgePath}`);
-        }
-
-        const pending = new Map<number, PendingEntry>();
-        this.pending = pending;
-        const proc = spawn(['node', this.bridgePath], {
-            stdin: 'pipe',
-            stdout: 'pipe',
-            env: { ...process.env },
-        });
-
-        if (!proc.stdout) {
-            proc.kill();
-            throw new Error('Failed to spawn Oracle bridge process (no stdout)');
-        }
-
-        // start() only resolves once the bridge has connected to Oracle, so a
-        // bad connect string or missing oracledb fails the app's start instead
-        // of surfacing later as failed queries.
-        let waiter!: ReadyWaiter;
-        const ready = new Promise<void>((res, rej) => {
-            let settled = false;
-            waiter = {
-                resolve: () => {
-                    if (!settled) {
-                        settled = true;
-                        res();
-                    }
-                },
-                reject: (err) => {
-                    if (!settled) {
-                        settled = true;
-                        rej(err);
-                    }
-                },
-            };
-        });
-        this.readStream(proc, proc.stdout as ReadableStream, pending, waiter);
-
-        let timer: ReturnType<typeof setTimeout> | undefined;
+        const { connectString, user } = config;
+        this.app.logger.info({ connectString }, 'Initializing Oracle driver');
         try {
-            await Promise.race([
-                ready,
-                new Promise<never>((_, rej) => {
-                    timer = setTimeout(
-                        () => rej(new Error(`Oracle bridge did not become ready within ${this.startTimeoutMs}ms`)),
-                        this.startTimeoutMs,
-                    );
-                }),
-            ]);
-        } catch (err) {
-            proc.kill();
-            throw err;
-        } finally {
-            clearTimeout(timer);
+            this.oracledb = await loadOracledb();
+            this.config = config;
+            this.fetchHandler = fetchTypeHandler(this.oracledb, config.fetchAsString);
+            this.pool = await this.createPool({
+                ...config.poolAttributes,
+                connectString,
+                user,
+                password: config.password,
+                poolMin: config.pool.min,
+                poolMax: config.pool.max,
+                poolIncrement: config.pool.increment,
+                queueTimeout: config.pool.queueTimeout,
+            });
+            // The pool connects lazily: a wrong password or host fails start()
+            // here instead of the first query.
+            await this.withConnection((handle) => this.run(handle, 'SELECT 1 FROM DUAL', []));
+            this.db = this.createKysely(() => this.acquire());
+            this.app.logger.info('Oracle connected successfully.');
+        } catch (error) {
+            await this.stop();
+            const cause = error instanceof QueryError && error.cause instanceof Error ? error.cause : error;
+            const reason = cause instanceof Error ? cause.message.split('\n')[0] : String(cause);
+            throw new ConnectionError(`Failed to connect to Oracle: ${reason}`, {
+                cause: cause instanceof Error ? cause : undefined,
+                context: { connectString, ...(user ? { user } : {}) },
+            });
         }
-        // The bridge said ready and then exited before this line ran: its
-        // reader has already finished, so nothing would clear this.proc.
-        if (this.endedProcs.has(proc)) {
-            proc.kill();
-            throw new Error('Oracle bridge process exited');
-        }
-        this.proc = proc;
     }
 
     async stop() {
-        if (this.proc) {
-            const proc = this.proc;
-            this.proc = null;
-            // Closing stdin lets the bridge close its Oracle connection and exit;
-            // kill it if it has not exited shortly after.
-            try {
-                (proc.stdin as FileSink).end();
-            } catch {
-                // already closed
-            }
-            const exited = proc.exited
-                ? await Promise.race([proc.exited.then(() => true), Bun.sleep(2000).then(() => false)])
-                : false;
-            if (!exited) proc.kill();
-        }
-    }
-
-    private log(level: 'error' | 'warn', objOrMsg: unknown, msg?: string) {
-        // Route all diagnostics through app.logger; never use the global console.
-        if (!this.app) return;
-        const logger = this.app.logger;
-        if (typeof objOrMsg === 'string') {
-            logger[level](objOrMsg);
-        } else {
-            logger[level](objOrMsg as object, msg);
-        }
-    }
-
-    private settle(pending: Map<number, PendingEntry>, id: number, action: (entry: PendingEntry) => void) {
-        const entry = pending.get(id);
-        if (!entry) return;
-        if (entry.timer) clearTimeout(entry.timer);
-        pending.delete(id);
-        action(entry);
-    }
-
-    private rejectAllPending(err: Error, pending: Map<number, PendingEntry>) {
-        for (const id of Array.from(pending.keys())) {
-            this.settle(pending, id, ({ reject }) => reject(err));
-        }
-    }
-
-    async query(sql: string, params: unknown[] = []) {
-        if (!this.proc || !this.proc.stdin) {
-            throw new Error('Oracle driver not started');
-        }
-
-        const id = this.reqId++;
-        const pending = this.pending;
-
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.settle(pending, id, ({ reject: rej }) =>
-                    rej(new Error(`Oracle query timed out after ${this.timeoutMs}ms`)),
-                );
-            }, this.timeoutMs);
-
-            pending.set(id, { resolve, reject, timer });
-
-            const msg = JSON.stringify({ id, sql, params }) + '\n';
-            const stdin = this.proc!.stdin as FileSink;
-            if (typeof stdin.write === 'function') {
-                stdin.write(msg);
-                stdin.flush();
-            } else {
-                // No writable stdin: do not leave the request hanging in pending.
-                this.settle(pending, id, ({ reject: rej }) => rej(new Error('Oracle bridge stdin is not writable')));
-            }
-        });
-    }
-
-    private async readStream(
-        proc: Subprocess,
-        stream: ReadableStream,
-        pending: Map<number, PendingEntry>,
-        waiter: ReadyWaiter,
-    ) {
-        const reader = stream.getReader();
-        const decoder = new TextDecoder();
-        // The line being read, as the chunks received since it began: each chunk
-        // is scanned once for a newline, and a line joined and decoded once.
-        // Splitting the whole buffer again on every chunk was quadratic in the
-        // size of a result (a 32 MiB one took seconds of the event loop).
-        let parts: Uint8Array[] = [];
-        let size = 0;
-        // Past maxResponseBytes: the rest of the line is dropped.
-        let dropping = false;
-
+        const pool = this.pool;
+        this.pool = undefined;
+        this.db = undefined;
+        if (!pool) return;
         try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = value as Uint8Array;
-                let start = 0;
-                for (let nl = chunk.indexOf(0x0a); nl !== -1; nl = chunk.indexOf(0x0a, start)) {
-                    const piece = chunk.subarray(start, nl);
-                    start = nl + 1;
-                    if (!dropping && size + piece.length > this.maxResponseBytes) {
-                        this.rejectTooLarge([...parts, piece], pending);
-                    } else if (!dropping) {
-                        parts.push(piece);
-                        this.handleLine(decoder.decode(Buffer.concat(parts, size + piece.length)), pending, waiter);
-                    }
-                    parts = [];
-                    size = 0;
-                    dropping = false;
-                }
-                const rest = chunk.subarray(start);
-                if (dropping || rest.length === 0) continue;
-                if (size + rest.length > this.maxResponseBytes) {
-                    this.rejectTooLarge([...parts, rest], pending);
-                    parts = [];
-                    size = 0;
-                    dropping = true;
-                } else {
-                    parts.push(rest);
-                    size += rest.length;
-                }
-            }
-        } catch (err) {
-            this.log('error', { err }, 'Error reading from Oracle bridge');
-            this.rejectAllPending(new Error('Oracle bridge stream error'), pending);
-        } finally {
-            reader.releaseLock();
-            this.endedProcs.add(proc);
-            // The bridge exited while running (stop() clears proc first): later
-            // queries fail at once instead of waiting for their timeout.
-            if (this.proc === proc) {
-                this.proc = null;
-                // A reader that failed (the catch above) leaves the bridge
-                // running: killed, so a later start() does not run a second one.
-                try {
-                    proc.kill();
-                } catch {
-                    // already gone
-                }
-                this.log('error', 'Oracle bridge process exited; queries fail until the driver is started again');
-            }
-            waiter.reject(new Error('Oracle bridge process exited before it was ready'));
-            this.rejectAllPending(new Error('Oracle bridge process exited'), pending);
+            // Connections in use get drainTime seconds to be released.
+            await pool.close(this.config?.pool.drainTime ?? 5);
+        } catch (error) {
+            this.app?.logger.error({ error }, 'Failed to close the Oracle pool cleanly');
         }
     }
 
     /**
-     * A response past maxResponseBytes: the rest of its line is dropped, and
-     * the query it answers (its id leads the JSON the bridge writes) rejected.
+     * Register a callback for every statement and its binds (raw and Kysely).
+     * A throwing callback is ignored: observability never fails a query.
      */
-    private rejectTooLarge(parts: Uint8Array[], pending: Map<number, PendingEntry>) {
-        const head = Buffer.concat(parts.map((p) => p.subarray(0, HEAD_BYTES))).subarray(0, HEAD_BYTES);
-        const id = /^\s*\{\s*"id"\s*:\s*(\d+)/.exec(head.toString('utf8'))?.[1];
-        this.log('error', { maxResponseBytes: this.maxResponseBytes, id }, 'Oracle bridge response too large');
-        if (id === undefined) return;
-        this.settle(pending, Number(id), ({ reject }) =>
-            reject(new Error(`Oracle response exceeds maxResponseBytes (${this.maxResponseBytes} bytes)`)),
+    setOnQuery(onQuery: OnQueryHook | undefined): void {
+        this.onQuery = onQuery;
+    }
+
+    /** `SELECT 1 FROM DUAL` for readiness checks: true or false, never throws. */
+    async ping(): Promise<boolean> {
+        if (!this.pool) return false;
+        try {
+            await this.withConnection((handle) => this.run(handle, 'SELECT 1 FROM DUAL', []));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** The rows of a query. */
+    async query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds): Promise<T[]> {
+        return this.withConnection(async (handle) => (await this.executeOn<T, OracleBinds>(handle, sql, binds)).rows);
+    }
+
+    /**
+     * Runs a statement: rows, rowsAffected and outBinds. Binds by name may
+     * give a type by name: `{ id: { dir: 'returning', type: 'number' } }` for
+     * `RETURNING id INTO :id`, `{ dir: 'out', type: 'string' }` for a PL/SQL
+     * OUT parameter, `{ type: 'clob', val: text }` for a long IN value.
+     * Outside a transaction it commits on its own.
+     */
+    async execute<T = Record<string, unknown>, const B extends OracleBinds = OracleBinds>(
+        sql: string,
+        binds?: B,
+    ): Promise<ExecuteResult<T, OutBinds<B>>> {
+        return this.withConnection((handle) => this.executeOn<T, B>(handle, sql, binds));
+    }
+
+    /** Runs a DML statement once per row of binds (a bulk insert), in one round trip. */
+    async executeMany(sql: string, rows: readonly OracleBinds[]): Promise<{ rowsAffected: number }> {
+        return this.withConnection((handle) => this.executeManyOn(handle, sql, rows));
+    }
+
+    /** The rows of a query one at a time, fetched `chunkSize` (default 100) at a time. */
+    async *stream<T = Record<string, unknown>>(
+        sql: string,
+        binds?: OracleBinds,
+        options: { chunkSize?: number } = {},
+    ): AsyncGenerator<T> {
+        const handle = await this.acquire();
+        try {
+            for await (const rows of this.streamRows(handle, sql, binds, options.chunkSize ?? 100)) {
+                for (const row of rows) yield row as T;
+            }
+        } finally {
+            await handle.release();
+        }
+    }
+
+    /**
+     * Runs `fn` on one connection with autoCommit off, and commits when it
+     * returns or rolls back when it throws (rethrowing its error). `tx.db` is
+     * Kysely on that connection; `oracle.db.transaction()` works too.
+     */
+    async transaction<R>(fn: (tx: OracleTransaction<DB>) => Promise<R>): Promise<R> {
+        const handle = await this.acquire();
+        const pinned: ConnectionHandle = {
+            connection: handle.connection,
+            inTransaction: true,
+            release: async () => {},
+        };
+        try {
+            const result = await fn({
+                db: this.createKysely(async () => pinned),
+                query: async <T>(sql: string, binds?: OracleBinds) =>
+                    (await this.executeOn<T, OracleBinds>(pinned, sql, binds)).rows,
+                execute: <T, const B extends OracleBinds>(sql: string, binds?: B) =>
+                    this.executeOn<T, B>(pinned, sql, binds),
+                executeMany: (sql, rows) => this.executeManyOn(pinned, sql, rows),
+            });
+            try {
+                await handle.connection.commit();
+            } catch (error) {
+                throw toQueryError(error, 'Failed to commit the transaction');
+            }
+            return result;
+        } catch (error) {
+            try {
+                await handle.connection.rollback();
+            } catch (rollbackError) {
+                this.app?.logger.error({ error: rollbackError }, 'Failed to roll back an Oracle transaction');
+            }
+            throw error;
+        } finally {
+            await handle.release();
+        }
+    }
+
+    /** One page of a Kysely query and its total: see `paginate()`. */
+    async paginate<TB extends keyof DB, O>(
+        query: SelectQueryBuilder<DB, TB, O>,
+        options?: PageOptions,
+    ): Promise<Page<O>> {
+        return paginate(this.started().db, query, options);
+    }
+
+    /**
+     * Applies the pending `.sql` migrations of `dir` (default `./migrations`)
+     * and returns their names. Needs start().
+     */
+    async runMigrations(dir = './migrations', options?: MigrationOptions): Promise<string[]> {
+        if (!this.pool || !this.config) {
+            throw new MigrationError('Cannot run migrations: the Oracle driver is not started');
+        }
+        const { connectString, user, password, poolAttributes } = this.config;
+        return runMigrations(
+            {
+                connect: () => this.connect({ ...poolAttributes, connectString, user, password }),
+                run: (handle, sql, binds) => this.run(handle, sql, binds),
+                log: (message, context) => this.app?.logger.info(context, message),
+            },
+            dir,
+            options,
         );
     }
 
-    private handleLine(line: string, pending: Map<number, PendingEntry>, waiter: ReadyWaiter) {
-        if (!line.trim()) return;
+    /** Creates the pool; tests replace it with a fake one. */
+    protected async createPool(attributes: Record<string, unknown>): Promise<OraclePoolLike> {
+        const oracledb = await loadOracledb();
+        return (await oracledb.createPool(attributes as OracleDB.PoolAttributes)) as unknown as OraclePoolLike;
+    }
+
+    /** Opens a standalone connection (for the migrations lock); tests replace it. */
+    protected async connect(attributes: Record<string, unknown>): Promise<OracleConnectionLike> {
+        const oracledb = await loadOracledb();
+        return (await oracledb.getConnection(
+            attributes as OracleDB.ConnectionAttributes,
+        )) as unknown as OracleConnectionLike;
+    }
+
+    private started() {
+        const { oracledb, config, pool, db } = this;
+        if (!oracledb || !config || !pool || !db) throw new QueryError('Oracle driver not started');
+        return { oracledb, config, pool, db };
+    }
+
+    private createKysely(acquire: () => Promise<ConnectionHandle>): Kysely<DB> {
+        const plugins: KyselyPlugin[] = this.config?.camelCase ? [new CamelCasePlugin({ upperCase: true })] : [];
+        return new Kysely<DB>({ dialect: new OracleDialect({ acquire, runner: this.runner }), plugins });
+    }
+
+    private async acquire(): Promise<ConnectionHandle> {
+        const pool = this.pool;
+        if (!pool) throw new QueryError('Oracle driver not started');
+        let connection: OracleConnectionLike;
         try {
-            const msg = JSON.parse(line);
+            connection = await pool.getConnection();
+        } catch (error) {
+            throw toQueryError(error);
+        }
+        return {
+            connection,
+            inTransaction: false,
+            release: async () => {
+                try {
+                    await connection.close();
+                } catch (error) {
+                    this.app?.logger.warn({ error }, 'Failed to release an Oracle connection');
+                }
+            },
+        };
+    }
 
-            if (msg.type === 'ready') {
-                waiter.resolve();
-                return;
-            }
-            if (msg.type === 'fatal') {
-                this.log('error', { error: msg.error }, 'Oracle Bridge Fatal Error');
-                waiter.reject(new Error(`Oracle bridge fatal: ${msg.error}`));
-                this.rejectAllPending(new Error(`Oracle bridge fatal: ${msg.error}`), pending);
-                return;
-            }
+    private async withConnection<R>(fn: (handle: ConnectionHandle) => Promise<R>): Promise<R> {
+        const handle = await this.acquire();
+        try {
+            return await fn(handle);
+        } finally {
+            await handle.release();
+        }
+    }
 
-            if (msg.id !== undefined) {
-                this.settle(pending, msg.id, ({ resolve, reject }) => {
-                    if (msg.error) {
-                        reject(new Error(msg.error));
-                    } else {
-                        resolve(msg.data);
-                    }
-                });
+    private notify(sql: string, binds: unknown) {
+        if (!this.onQuery) return;
+        try {
+            this.onQuery(sql, binds);
+        } catch {
+            // Observability must never break the query.
+        }
+    }
+
+    private options(handle: ConnectionHandle): Record<string, unknown> {
+        const oracledb = this.oracledb;
+        if (!oracledb) throw new QueryError('Oracle driver not started');
+        return {
+            outFormat: oracledb.OUT_FORMAT_OBJECT,
+            autoCommit: !handle.inTransaction,
+            fetchTypeHandler: this.fetchHandler,
+        };
+    }
+
+    private async run(handle: ConnectionHandle, sql: string, binds: unknown): Promise<OracleRawResult> {
+        const options = this.options(handle);
+        this.notify(sql, binds);
+        try {
+            return await handle.connection.execute(sql, toOracleBinds(this.oracledb!, binds as OracleBinds), options);
+        } catch (error) {
+            throw toQueryError(error);
+        }
+    }
+
+    private async executeOn<T, B>(handle: ConnectionHandle, sql: string, binds: B | undefined) {
+        const result = await this.run(handle, sql, binds);
+        let outBinds: unknown;
+        try {
+            outBinds = await readOutBinds(result.outBinds);
+        } catch (error) {
+            throw toQueryError(error, 'Failed to read a LOB out bind');
+        }
+        return {
+            rows: (result.rows ?? []) as T[],
+            rowsAffected: result.rowsAffected ?? 0,
+            outBinds: outBinds as OutBinds<B>,
+        };
+    }
+
+    private async executeManyOn(handle: ConnectionHandle, sql: string, rows: readonly OracleBinds[]) {
+        const options = this.options(handle);
+        this.notify(sql, rows);
+        try {
+            const result = await handle.connection.executeMany(sql, [...rows], options);
+            return { rowsAffected: result.rowsAffected ?? 0 };
+        } catch (error) {
+            throw toQueryError(error);
+        }
+    }
+
+    private async *streamRows(
+        handle: ConnectionHandle,
+        sql: string,
+        binds: unknown,
+        chunkSize: number,
+    ): AsyncGenerator<unknown[]> {
+        const options = { ...this.options(handle), resultSet: true };
+        this.notify(sql, binds);
+        let resultSet: OracleResultSetLike | undefined;
+        try {
+            resultSet = (
+                await handle.connection.execute(sql, toOracleBinds(this.oracledb!, binds as OracleBinds), options)
+            ).resultSet;
+        } catch (error) {
+            throw toQueryError(error);
+        }
+        if (!resultSet) throw new QueryError('stream() needs a query that returns rows');
+        try {
+            for (;;) {
+                let rows: unknown[];
+                try {
+                    rows = await resultSet.getRows(chunkSize);
+                } catch (error) {
+                    throw toQueryError(error);
+                }
+                if (rows.length === 0) return;
+                yield rows;
             }
-        } catch (err) {
-            this.log('error', { err, line }, 'Error parsing bridge message');
+        } finally {
+            await resultSet.close().catch(() => {});
         }
     }
 }

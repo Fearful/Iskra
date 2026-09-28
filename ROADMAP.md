@@ -13,6 +13,10 @@ ship as **experimental** (`0.x`, breaking changes allowed in minor releases).
 The goal is to harden their APIs and graduate them to stable. See
 [VERSIONING.md](VERSIONING.md).
 
+`db-oracle` now covers what db-kit does (a pool in the app's process, Kysely,
+transactions, pagination, migrations) and runs its suites against Oracle
+Database Free in CI; it graduates once its API has held for a release or two.
+
 ## Test coverage 🟢
 
 - **SDK tests** — the Python and Java SDKs run against the real contract

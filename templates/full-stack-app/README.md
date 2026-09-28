@@ -9,7 +9,7 @@ App completa que combina todos los kits de Iskra: servidor HTTP con documentacio
 - [`@iskra-bun/socket-kit`](https://iskra-docs.fly.dev/es/packages/socket-kit/) — WebSocket con router de eventos
 - [`@iskra-bun/kv-kit`](https://iskra-docs.fly.dev/es/packages/kv-kit/) — Key-Value store en memoria
 - [`@iskra-bun/db-kit`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Base de datos SQL con Drizzle ORM
-- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-kit/) — Oracle Database (opcional)
+- [`@iskra-bun/db-oracle`](https://iskra-docs.fly.dev/es/packages/db-oracle/) — Oracle Database (opcional)
 - [`@iskra-bun/process-kit`](https://iskra-docs.fly.dev/es/packages/process-kit/) — Gestion de procesos externos
 
 ## Inicio rapido

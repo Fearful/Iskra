@@ -1,7 +1,7 @@
 {
     "name": "@iskra-bun/db-oracle",
     "version": "0.1.1",
-    "description": "Soporte para Oracle Database en Iskra (via puente/sidecar).",
+    "description": "Oracle Database en Iskra: pool de oracledb (modo Thin) en el proceso, Kysely, paginación y migraciones.",
     "keywords": [
         "iskra",
         "bun",
@@ -9,6 +9,7 @@
         "oracle",
         "database",
         "sql",
+        "kysely",
         "experimental"
     ],
     "author": "Joan Lascano",
@@ -39,8 +40,6 @@
     "files": [
         "dist",
         "src",
-        "bridge/runner.js",
-        "bridge/package.json",
         "README.md",
         "CHANGELOG.md"
     ],
@@ -53,15 +52,13 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
-        "@iskra-bun/core": "workspace:^"
-    },
-    "peerDependencies": {
-        "oracledb": "^6.3.0"
+        "@iskra-bun/core": "workspace:^",
+        "kysely": "^0.29.6",
+        "oracledb": "^6.10.0"
     },
     "devDependencies": {
         "@types/node": "^22.10.2",
         "@types/oracledb": "^6.10.2",
-        "bun-types": "latest",
-        "oracledb": "^6.10.0"
+        "bun-types": "latest"
     }
 }
