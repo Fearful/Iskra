@@ -63,6 +63,8 @@ export class RateLimitFeature implements Feature {
     /** The health feature's routes, looked up on the first request (it may be registered after this one). */
     private healthPaths?: Set<string>;
     private warnedUntrustedProxy = false;
+    /** When a store failure was last logged: at most one error a minute while it is down. */
+    private lastStoreErrorLog = 0;
     private config: Required<Omit<RateLimitConfig, 'name' | 'keyGenerator' | 'skip' | 'handler'>> & {
         keyGenerator?: RateLimitConfig['keyGenerator'];
         skip?: RateLimitConfig['skip'];
@@ -90,6 +92,7 @@ export class RateLimitFeature implements Feature {
             store: config.store || 'memory',
             maxKeys: config.maxKeys || DEFAULT_MAX_KEYS,
             skipHealthChecks: config.skipHealthChecks ?? true,
+            passOnStoreError: config.passOnStoreError ?? true,
             keyGenerator: config.keyGenerator,
             skip: config.skip,
             handler: config.handler,
@@ -151,7 +154,27 @@ export class RateLimitFeature implements Feature {
 
         const key = this.config.keyGenerator ? this.config.keyGenerator(c) : this.defaultKeyGenerator(c);
         const rlKey = `${this.keyPrefix}${key}`;
-        const { count, resetAt } = await store.increment(rlKey, this.config.windowMs);
+        let hit: Awaited<ReturnType<RateLimitStore['increment']>>;
+        try {
+            hit = await store.increment(rlKey, this.config.windowMs);
+        } catch (error) {
+            // The store (Redis) is down. Failing every request took the whole
+            // site down with it; by default the request goes through unlimited.
+            if (Date.now() - this.lastStoreErrorLog >= 60_000) {
+                this.lastStoreErrorLog = Date.now();
+                this.log.error(
+                    `rate-limit: store unavailable; requests are ${this.config.passOnStoreError ? 'let through without a limit' : 'refused with 503'} until it recovers`,
+                    error,
+                );
+            }
+            if (this.config.passOnStoreError) {
+                await next();
+                return;
+            }
+            c.header('Retry-After', '5');
+            throw new HTTPException(503, { message: 'Service unavailable' });
+        }
+        const { count, resetAt } = hit;
 
         if (count > this.config.max) {
             // Set on the context, so the error handler's response carries it
