@@ -42,7 +42,7 @@ Este tutorial te lleva de cero a una pequeña API HTTP respaldada por SQLite, co
     ```typescript
     // src/main.ts
     import { App } from '@iskra-bun/core';
-    import { WebPlugin, HealthFeature, successResponse } from '@iskra-bun/web-kit';
+    import { WebPlugin, HealthCheckFeature, successResponse } from '@iskra-bun/web-kit';
     import { DbDriver } from '@iskra-bun/db-kit';
     import { Hono } from 'hono';
     import { users } from './db/schema';
@@ -67,7 +67,7 @@ Este tutorial te lleva de cero a una pequeña API HTTP respaldada por SQLite, co
     });
 
     app.register(db);
-    app.register(new WebPlugin({ port: 3000, router, features: [new HealthFeature()] }));
+    app.register(new WebPlugin({ port: 3000, router, features: [new HealthCheckFeature()] }));
 
     app.start().catch((err) => app.logger.error({ err }, 'Failed to start'));
     ```
