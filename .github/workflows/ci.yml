@@ -13,6 +13,8 @@
 #   - packages/worker-kit/test/worker.integration.test.ts    (TEST_REDIS_URL)
 #   - packages/kv-kit/test/kv.integration.test.ts            (TEST_REDIS_URL)
 #   - templates/forms-app/services/*/test/*                  (TEST_REDIS_URL, TEST_PG_URL)
+# The Oracle suites (packages/db-oracle/test/*.integration.test.ts) run in the
+# `oracle` job, which has the database.
 name: CI
 
 on:
@@ -113,6 +115,57 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # db-oracle against a real Oracle Database Free: oracledb in Thin mode inside
+  # Bun, and the OracleDriver with its Node bridge. A job of its own so the
+  # other suites do not wait for the image. The TEST_ORACLE_* values match the
+  # defaults in packages/db-oracle/test/oracle-env.ts; TEST_ORACLE_REQUIRED
+  # fails the job when the database is unreachable instead of skipping.
+  oracle:
+    name: Oracle integration (db-oracle)
+    runs-on: ubuntu-latest
+
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim-faststart
+        env:
+          ORACLE_RANDOM_PASSWORD: 'yes'
+          APP_USER: iskra
+          APP_USER_PASSWORD: iskra
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      TEST_ORACLE_CONN: 127.0.0.1:1521/FREEPDB1
+      TEST_ORACLE_USER: iskra
+      TEST_ORACLE_PASSWORD: iskra
+      TEST_ORACLE_REQUIRED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The bridge runs under the runner's preinstalled Node.
+      - name: db-oracle tests
+        working-directory: packages/db-oracle
+        run: |
+          node --version
+          bun test
 
   # The Python and Java SDKs against the real contract server
   # (sdks/contract/server.ts), which each suite starts with Bun; plus a build
