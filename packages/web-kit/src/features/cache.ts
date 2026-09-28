@@ -157,12 +157,71 @@ function ttlMs(ttlSeconds: number): number {
     return Math.max(1, Math.ceil(ttlSeconds * 1000));
 }
 
+/** How long a Redis command may take unless `CacheConfig.commandTimeoutMs` says otherwise. */
+const DEFAULT_COMMAND_TIMEOUT_MS = 2000;
+
+/**
+ * ioredis errors carry the command they answer with its arguments: AUTH's
+ * password on a refused login, which would then be logged. Only the command
+ * name is kept.
+ */
+function withoutCommandArgs<E>(error: E): E {
+    const command = (error as { command?: { name?: unknown; args?: unknown } } | null)?.command;
+    if (command && typeof command === 'object' && 'args' in command) {
+        (error as { command: unknown }).command = { name: command.name };
+    }
+    return error;
+}
+
+/**
+ * The ioredis client options for a CacheConfig, and its URL if it has one.
+ * ioredis only parses a URL passed as its own argument (a `url` key in the
+ * options is ignored); fields the URL leaves out are taken from the options.
+ */
+export function redisClientArgs(config: CacheConfig): { url?: string; options: RedisOptions } {
+    const { url, tls, host, port, username, password, db } = config.connection ?? {};
+    const options: RedisOptions = {
+        // ioredis' own defaults, except that a URL brings its own.
+        ...(url ? {} : { host: host || 'localhost', port: port || 6379, db: db || 0 }),
+        ...(url && host !== undefined && { host }),
+        ...(url && port !== undefined && { port }),
+        ...(url && db !== undefined && { db }),
+        ...(username !== undefined && { username }),
+        ...(password !== undefined && { password }),
+        ...(tls && { tls: tls === true ? {} : tls }),
+        // Fail a command after this long instead of queueing it through every
+        // reconnect attempt: during an outage a request that used the cache
+        // hung, then failed anyway.
+        commandTimeout: config.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+        maxRetriesPerRequest: 1,
+    };
+    return { url, options };
+}
+
 // Redis Adapter
 class RedisAdapter implements CacheAdapter {
     private client: Redis;
+    private reportedOutage = false;
 
-    constructor(options: RedisOptions) {
-        this.client = new Redis(options);
+    constructor(config: CacheConfig, log: KernelLogger) {
+        const { url, options } = redisClientArgs(config);
+        this.client = url ? new Redis(url, options) : new Redis(options);
+        // Without an 'error' listener ioredis printed every failed reconnect
+        // to the console, outside the app's logger. One warning per outage.
+        this.client.on('error', (error: Error) => {
+            if (this.reportedOutage) return;
+            this.reportedOutage = true;
+            log.warn('Cache: Redis connection error; retrying in the background', withoutCommandArgs(error));
+        });
+        this.client.on('ready', () => {
+            if (this.reportedOutage) log.info('Cache: Redis connection restored');
+            this.reportedOutage = false;
+        });
+    }
+
+    /** The ioredis client's options, for tests and diagnostics. */
+    get clientOptions(): Readonly<RedisOptions> {
+        return this.client.options;
     }
 
     async get(key: string) {
@@ -234,14 +293,8 @@ export class CacheFeature implements Feature {
         this.log.debug(`Initializing Cache: ${this.config.adapter}`);
 
         if (this.config.adapter === 'redis') {
-            const conn = this.config.connection || {};
             // ioredis connects in the background: the constructor never throws.
-            this.client = new RedisAdapter({
-                host: conn.host || 'localhost',
-                port: conn.port || 6379,
-                password: conn.password,
-                db: conn.db || 0,
-            });
+            this.client = new RedisAdapter(this.config, this.log);
         } else {
             this.client = new MemoryAdapter(this.config.maxEntries);
         }

@@ -12,6 +12,7 @@
  * actionable error instead of an unhandled module-resolution failure.
  */
 import type { OtelConfig } from './types';
+import { nodeEnv } from './env';
 
 let sdkInstance: { shutdown(): Promise<void> } | null = null;
 
@@ -256,7 +257,7 @@ export async function initOtel(config: OtelConfig, appName: string): Promise<voi
         const resource = createResource(resources, {
             [semconv.ATTR_SERVICE_NAME ?? 'service.name']: serviceName,
             [semconv.ATTR_SERVICE_VERSION ?? 'service.version']: config.serviceVersion || '0.1.0',
-            'deployment.environment': config.environment || process.env.NODE_ENV || 'development',
+            'deployment.environment': config.environment || nodeEnv() || 'development',
             ...config.resourceAttributes,
         });
 

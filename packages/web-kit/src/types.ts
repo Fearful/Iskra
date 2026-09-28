@@ -1,4 +1,5 @@
 import type { Context, Hono } from 'hono';
+import type { ConnectionOptions } from 'node:tls';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
 import type { ClientIpHeader, TrustProxy } from './client-ip';
@@ -173,6 +174,18 @@ export interface RateLimitConfig {
      * the oldest are dropped, and they start a new window.
      */
     maxKeys?: number;
+    /**
+     * Leave the health feature's routes (`/health`, `/health/ready`,
+     * `/health/live` or the ones it is configured with) out of the limit
+     * (default true): orchestrator probes come often and from one IP.
+     */
+    skipHealthChecks?: boolean;
+    /**
+     * What happens when the store fails (`store: 'cache'` with Redis down):
+     * `true` (default) lets the request through without a limit, logging an
+     * error at most once a minute; `false` answers 503 with `Retry-After`.
+     */
+    passOnStoreError?: boolean;
 }
 
 export interface HealthCheckConfig {
@@ -320,13 +333,31 @@ export interface DbConfig {
 export interface CacheConfig {
     adapter: 'redis' | 'memory';
     connection?: {
+        /**
+         * `redis://[user:password@]host:port/db`, or `rediss://` for TLS (managed
+         * Redis: Upstash, ElastiCache with in-transit encryption). The other
+         * fields, when given, take precedence over the URL's.
+         */
+        url?: string;
         host?: string;
         port?: number;
+        /** ACL user (Redis 6+). */
+        username?: string;
         password?: string;
         db?: number;
+        /** Connect over TLS: `true`, or Node `tls.connect` options (`ca`, `servername`...). */
+        tls?: boolean | ConnectionOptions;
     };
+    /**
+     * Redis: how long a command may take before it fails, in ms (default
+     * 2000). While Redis is down, requests that use the cache (rate limiting,
+     * cache-backed sessions) fail after this instead of hanging through the
+     * client's reconnect attempts.
+     */
+    commandTimeoutMs?: number;
+    /** @deprecated Ignored. */
     secret?: string;
-    // ... (CacheConfig end)
+    /** @deprecated Ignored: pass a TTL to each `set()`. */
     ttl?: number;
     /**
      * Memory adapter only: most entries kept (default 100 000). Past it the

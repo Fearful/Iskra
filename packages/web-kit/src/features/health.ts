@@ -35,6 +35,11 @@ export class HealthCheckFeature implements Feature {
         this.readinessChecks = new Map(Object.entries(initial));
     }
 
+    /** The routes this feature serves, which the rate limiter leaves out by default. */
+    get paths(): string[] {
+        return [this.config.path, this.config.readinessPath, this.config.livenessPath];
+    }
+
     addReadinessCheck(name: string, check: () => Promise<boolean>): void {
         this.readinessChecks = new Map([...this.readinessChecks, [name, check]]);
     }

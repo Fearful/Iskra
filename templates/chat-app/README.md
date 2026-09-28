@@ -15,13 +15,14 @@ Chat en tiempo real sobre WebSocket con **salas**, **presencia de usuarios**, **
 bun install
 
 cd templates/chat-app
-cp .env.example .env   # opcional: ajustá CHAT_AUTH_SECRET y el puerto
+cp .env.example .env   # NODE_ENV=development; ajustá CHAT_AUTH_SECRET y el puerto
 bun start
 ```
 
 El servidor de WebSocket levanta en `ws://localhost:3001`. Sin `CHAT_AUTH_SECRET` usa
-un secreto de desarrollo y lo avisa; con `NODE_ENV=production` (la imagen Docker) no
-arranca sin uno propio de al menos 32 caracteres.
+un secreto de desarrollo y lo avisa, solo con `NODE_ENV=development` o `test` (el `.env`
+de ejemplo lo fija). Con cualquier otro valor, o sin `NODE_ENV` (la imagen Docker usa
+`production`), no arranca sin uno propio de al menos 32 caracteres.
 
 Para probar con dos clientes y ver la presencia y el broadcast en accion, pedile un
 token al servidor para cada usuario (`bun run token` usa el mismo `CHAT_AUTH_SECRET`

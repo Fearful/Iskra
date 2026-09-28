@@ -18,12 +18,16 @@ repository root (the root `.dockerignore` limits the context to the workspace):
    stage installs nothing (it builds offline or behind a TLS-inspecting proxy) and runs
    as a non-root UID in group 0.
 
-:::caution[`NODE_ENV` is fixed at build time]
-`bun build` inlines `process.env.NODE_ENV` (`"development"` unless it is set while
-building), so a compiled binary ignores the runtime value. Build with
-`NODE_ENV=production`, as the template Dockerfiles do: otherwise the app runs in
-development mode in production (stack traces in error responses, session cookies
-without `Secure`).
+:::caution[`NODE_ENV` and compiled binaries]
+Iskra's production safeguards (`Secure` session cookies, refusing sample secrets and
+plain-http auth URLs, ignoring `disableCSRFCheck`, JSON logs) apply in every
+environment except `NODE_ENV=development` and `test`, an unset `NODE_ENV` included,
+and Iskra reads it when the app runs. `app.start()` logs a warning when it is unset.
+
+Your own code is another matter: `bun build` inlines a literal
+`process.env.NODE_ENV` (`"development"` unless it is set while building). Build with
+`NODE_ENV=production`, as the template Dockerfiles do, or read it with
+`nodeEnv()` / `isProductionEnv()` from `@iskra-bun/core`.
 :::
 
 ### Build an Image

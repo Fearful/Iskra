@@ -76,6 +76,15 @@ describe('createBetterAuth placeholder secrets', () => {
         for (const secret of placeholders) expect(build(secret)).toThrow(/looks like a placeholder/);
     });
 
+    it('refuses them when NODE_ENV is unset or another name (staging)', () => {
+        // Only NODE_ENV=production did: a deploy that forgot it signed
+        // sessions with a public secret.
+        delete process.env.NODE_ENV;
+        for (const secret of placeholders) expect(build(secret)).toThrow(/looks like a placeholder/);
+        process.env.NODE_ENV = 'staging';
+        for (const secret of placeholders) expect(build(secret)).toThrow(/looks like a placeholder/);
+    });
+
     it('names the marker, not the secret, in the error', () => {
         process.env.NODE_ENV = 'production';
         let message = '';

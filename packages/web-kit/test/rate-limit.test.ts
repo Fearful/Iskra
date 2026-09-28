@@ -2,6 +2,8 @@ import { describe, expect, it, setSystemTime } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { RateLimitFeature } from '../src/features/rate-limit';
 import { CacheFeature } from '../src/features/cache';
+import { HealthCheckFeature } from '../src/features/health';
+import type { KernelLogger } from '../src/logging';
 
 describe('Rate Limit Feature', () => {
     it('should allow requests within the limit', async () => {
@@ -311,6 +313,87 @@ describe('Rate Limit Feature', () => {
         // 'c' is still counted.
         expect(await req('c')).toBe(429);
 
+        await kernel.shutdown();
+    });
+
+    describe('health checks', () => {
+        async function setup(
+            rateLimit: ConstructorParameters<typeof RateLimitFeature>[0],
+            health?: HealthCheckFeature,
+        ) {
+            const kernel = new Kernel({ logger: false });
+            // Registered before the health feature: the paths are looked up at request time.
+            kernel.registerFeature(new RateLimitFeature({ max: 2, keyGenerator: () => 'probe', ...rateLimit }));
+            kernel.registerFeature(health ?? new HealthCheckFeature());
+            await kernel.initialize();
+            kernel.getApp().get('/api', (c) => c.text('ok'));
+            return kernel;
+        }
+
+        it('does not count the health routes (a kubelet probing every 10 s went over the limit)', async () => {
+            const kernel = await setup({});
+            const app = kernel.getApp();
+            for (let i = 0; i < 5; i++) {
+                for (const path of ['/health', '/health/ready', '/health/live']) {
+                    expect((await app.request(path)).status).toBe(200);
+                }
+            }
+            // They took nothing from the client's budget either.
+            expect([(await app.request('/api')).status, (await app.request('/api')).status]).toEqual([200, 200]);
+            expect((await app.request('/api')).status).toBe(429);
+            await kernel.shutdown();
+        });
+
+        it('skips the paths the health feature is configured with', async () => {
+            const kernel = await setup(
+                {},
+                new HealthCheckFeature({ livenessPath: '/livez', readinessPath: '/readyz' }),
+            );
+            const app = kernel.getApp();
+            for (let i = 0; i < 4; i++) expect((await app.request('/livez')).status).toBe(200);
+            for (let i = 0; i < 4; i++) expect((await app.request('/readyz')).status).toBe(200);
+            await kernel.shutdown();
+        });
+
+        it('counts them with skipHealthChecks: false', async () => {
+            const kernel = await setup({ skipHealthChecks: false });
+            const app = kernel.getApp();
+            const statuses = [];
+            for (let i = 0; i < 3; i++) statuses.push((await app.request('/health/live')).status);
+            expect(statuses).toEqual([200, 200, 429]);
+            await kernel.shutdown();
+        });
+    });
+
+    it('warns once when requests come through a proxy that trustProxy does not cover', async () => {
+        const warnings: string[] = [];
+        const noop = () => {};
+        const logger: KernelLogger = { debug: noop, info: noop, error: noop, warn: (m) => warnings.push(m) };
+        const kernel = new Kernel({ logger });
+        kernel.registerFeature(new RateLimitFeature({ max: 100 }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/x', (c) => c.text('ok'));
+
+        await app.request('/x');
+        expect(warnings.filter((w) => w.includes('trustProxy'))).toHaveLength(0);
+        for (let i = 0; i < 3; i++) await app.request('/x', { headers: { 'X-Forwarded-For': '203.0.113.7' } });
+        expect(warnings.filter((w) => w.includes('trustProxy'))).toHaveLength(1);
+        await kernel.shutdown();
+    });
+
+    it('does not warn about the proxy when trustProxy is set', async () => {
+        const warnings: string[] = [];
+        const noop = () => {};
+        const logger: KernelLogger = { debug: noop, info: noop, error: noop, warn: (m) => warnings.push(m) };
+        const kernel = new Kernel({ logger, trustProxy: 1 });
+        kernel.registerFeature(new RateLimitFeature({ max: 100 }));
+        await kernel.initialize();
+        const app = kernel.getApp();
+        app.get('/x', (c) => c.text('ok'));
+
+        await app.request('/x', { headers: { 'X-Forwarded-For': '203.0.113.7' } });
+        expect(warnings.filter((w) => w.includes('trustProxy'))).toHaveLength(0);
         await kernel.shutdown();
     });
 });

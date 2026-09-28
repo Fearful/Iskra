@@ -14,11 +14,18 @@ bun add @iskra-bun/process-kit @iskra-bun/core
 import { App } from '@iskra-bun/core'
 import { ProcessManager } from '@iskra-bun/process-kit'
 
-const app = new App({ name: 'mi-app' })
-app.register(new ProcessManager({ command: 'python', args: ['worker.py'], mode: 'daemon' }))
+const app = new App({
+  name: 'mi-app',
+  processes: {
+    worker: { command: 'python3', args: ['worker.py'], mode: 'daemon', restartOnCrash: true },
+  },
+})
+app.register(new ProcessManager())
 
 await app.start()
 ```
+
+Los procesos se declaran en la config de la App (`processes`), no en el constructor de `ProcessManager`.
 
 ## Documentacion
 

@@ -1,5 +1,6 @@
 import pino from 'pino';
 import pretty from 'pino-pretty';
+import { isDevelopmentEnv } from '../env';
 
 /**
  * Field names whose values are replaced with `[REDACTED]`, at any depth. Keys
@@ -150,7 +151,8 @@ function scrubEntries(
 }
 
 export const createLogger = (name: string, level: string = 'info') => {
-    const isDev = process.env.NODE_ENV !== 'production';
+    // Pretty output only in development/test: JSON otherwise, NODE_ENV unset included.
+    const isDev = isDevelopmentEnv();
     const options: pino.LoggerOptions = {
         name,
         level,

@@ -5,6 +5,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { MySqlDatabase, MySqlQueryResultHKT, PreparedQueryHKTBase } from 'drizzle-orm/mysql-core';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { pgSchema, mysqlSchema, sqliteSchema } from './schema';
+import { isProductionEnv } from '@iskra-bun/core';
 
 /**
  * The Drizzle database handle auth-kit accepts. A union of the supported dialect
@@ -51,7 +52,7 @@ export function resolveAuthBaseURL(baseURL?: string, who = 'createBetterAuth'): 
         assertHttpsInProduction(resolved, who);
         return resolved;
     }
-    if (process.env.NODE_ENV === 'production') {
+    if (isProductionEnv()) {
         throw new Error(
             `${who}: set baseURL (or BETTER_AUTH_URL) to the app's public origin in production, ` +
                 'e.g. "https://app.example.com"; without it cookies are sent without Secure.',
@@ -65,7 +66,7 @@ export function resolveAuthBaseURL(baseURL?: string, who = 'createBetterAuth'): 
  * an http:// one in production sent them over plain HTTP as well.
  */
 function assertHttpsInProduction(baseURL: string, who: string): void {
-    if (process.env.NODE_ENV !== 'production') return;
+    if (!isProductionEnv()) return;
     let url: URL;
     try {
         url = new URL(baseURL);
@@ -238,7 +239,7 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
     // A sample secret left in production is public: with it anyone can sign
     // the session cookie cache, which is trusted without a database lookup,
     // and so forge a session for any user.
-    const marker = process.env.NODE_ENV === 'production' ? placeholderMarker(secret) : undefined;
+    const marker = isProductionEnv() ? placeholderMarker(secret) : undefined;
     if (marker) {
         throw new Error(
             `auth secret looks like a placeholder (it contains "${marker}"); in production set a random secret ` +

@@ -14,7 +14,7 @@ The auth/web `secret` must be at least **32 characters**. `createBetterAuth` thr
 // throws: "auth secret must be at least 32 characters; received 8"
 ```
 
-In production (`NODE_ENV=production`) it also refuses a secret that is still a sample value, one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder` (in any case, with or without `-`, `_`, `.` or spaces). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone could forge a session. The `SessionFeature` and `CsrfFeature` secrets need 32 characters too.
+In production (any `NODE_ENV` but `development` and `test`, unset included) it also refuses a secret that is still a sample value, one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder` (in any case, with or without `-`, `_`, `.` or spaces). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone could forge a session. The `SessionFeature` and `CsrfFeature` secrets need 32 characters too.
 
 Always pull secrets from the environment, never hardcode them:
 
@@ -56,12 +56,10 @@ The token alone does not say who submitted it: a sibling subdomain can set cooki
 - The cookie is `__Host-csrf` while it is Secure (the default), a name only the app's own host can set.
 - With `SessionFeature`, the token is signed together with the stored session's ID, and `regenerateSession()` issues a new one, so a token from another session is worthless.
 
-Cookies default to `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` has a `disableCSRFCheck` kill-switch (for better-auth's own check) for local development, but it is **ignored in production** — even if a config ships with it enabled, it is neutralized whenever `NODE_ENV === 'production'`:
+Cookies default to `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` has a `disableCSRFCheck` kill-switch (for better-auth's own check) for local development, but it is **ignored outside development** — even if a config ships with it enabled, it is neutralized unless `NODE_ENV` is `development` or `test` (an unset `NODE_ENV` counts as production):
 
 ```typescript
-const disableCSRFCheck = process.env.NODE_ENV !== 'production'
-    ? this.config.disableCSRFCheck === true
-    : false; // always false in prod
+const disableCSRFCheck = isDevelopmentEnv() ? this.config.disableCSRFCheck === true : false;
 ```
 
 ## WebSocket authorization

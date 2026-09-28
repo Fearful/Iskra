@@ -4,6 +4,7 @@ import { loadAppConfig } from './config/loader';
 import type { AppConfig, AppContextRegistry, AppEvents, Driver, Plugin, Context } from './types';
 import { LifecycleError } from './errors';
 import { describeOtelEndpoint, initOtel, shutdownOtel } from './otel';
+import { nodeEnv } from './env';
 
 /**
  * `app.context`: a Map whose keys in AppContextRegistry (`'db'`, `'kv'`, …)
@@ -155,6 +156,12 @@ export class App {
      */
     async start() {
         await this.init();
+        if (!nodeEnv()) {
+            this.logger.warn(
+                'NODE_ENV is not set: production defaults apply (Secure cookies, no sample secrets, JSON logs). ' +
+                    'Set NODE_ENV=development for local development.',
+            );
+        }
         this.logger.info('Starting drivers...');
         const started: Driver[] = [];
         for (const driver of this.drivers) {
@@ -252,9 +259,7 @@ export class App {
     private installSignalHandlers() {
         const configured = this.config.shutdownSignals;
         const signals =
-            configured === false
-                ? []
-                : (configured ?? (process.env.NODE_ENV === 'test' ? [] : DEFAULT_SHUTDOWN_SIGNALS));
+            configured === false ? [] : (configured ?? (nodeEnv() === 'test' ? [] : DEFAULT_SHUTDOWN_SIGNALS));
         if (signals.length === 0 || this.signalHandler) return;
 
         const timeoutMs = this.config.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;

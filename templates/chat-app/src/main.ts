@@ -1,4 +1,4 @@
-import { App } from '@iskra-bun/core';
+import { App, isProductionEnv } from '@iskra-bun/core';
 import { SocketDriver } from '@iskra-bun/socket-kit';
 import { KVManager } from '@iskra-bun/kv-kit';
 import { resolveAuthSecret } from './auth';
@@ -8,7 +8,7 @@ import { createChat } from './events';
 // produccion es obligatorio: sin uno propio de 32+ caracteres no arranca.
 let secret: string;
 try {
-    const resolved = resolveAuthSecret(process.env.CHAT_AUTH_SECRET, process.env.NODE_ENV === 'production');
+    const resolved = resolveAuthSecret(process.env.CHAT_AUTH_SECRET, isProductionEnv());
     secret = resolved.secret;
     if (resolved.warning) console.warn(`[chat-app] ${resolved.warning}`);
 } catch (err) {

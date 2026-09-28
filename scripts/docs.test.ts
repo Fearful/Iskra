@@ -55,4 +55,47 @@ describe('documentation', () => {
         });
         expect(broken).toEqual([]);
     });
+
+    it('imports only names the packages export', async () => {
+        // The Getting Started tutorial imported HealthFeature months after it
+        // became HealthCheckFeature: a new user's first run failed.
+        // Upgrade guides show the code from before on purpose. CONTENT sits
+        // under 'website', which walk() skips from ROOT, so it is walked on its own.
+        const files = [
+            ...walk(CONTENT, (name) => /\.mdx?$/.test(name)).filter((f) => !/guides\/upgrading-/.test(f)),
+            ...walk(ROOT, (name) => name === 'README.md' || name === 'README.es.md'),
+        ];
+        const importRe = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](@iskra-bun\/[\w-]+|create-iskra)['"]/g;
+        const modules = new Map<string, Record<string, unknown>>();
+        const sources = new Map<string, string>();
+        const missing: string[] = [];
+
+        for (const file of files) {
+            const text = readFileSync(file, 'utf8');
+            for (const [, typeOnly, list, spec] of text.matchAll(importRe)) {
+                if (typeOnly) continue;
+                const pkg = spec === 'create-iskra' ? 'create-iskra' : spec.slice('@iskra-bun/'.length);
+                if (!modules.has(spec)) modules.set(spec, await import(spec));
+                const names = list
+                    .split(',')
+                    .map((n) => n.trim())
+                    .filter((n) => n && !n.startsWith('type '))
+                    .map((n) => n.split(/\s+as\s+/)[0]);
+                for (const name of names) {
+                    if (name in modules.get(spec)!) continue;
+                    // A type or interface imported without `type`: declared in the package's src.
+                    if (!sources.has(pkg)) {
+                        const src = join(ROOT, 'packages', pkg, 'src');
+                        const code = walk(src, (n) => n.endsWith('.ts'))
+                            .map((f) => readFileSync(f, 'utf8'))
+                            .join('\n');
+                        sources.set(pkg, code);
+                    }
+                    const declared = new RegExp(`\\b(?:interface|type)\\s+${name}\\b`).test(sources.get(pkg)!);
+                    if (!declared) missing.push(`${relative(ROOT, file)}: ${name} from ${spec}`);
+                }
+            }
+        }
+        expect(missing).toEqual([]);
+    });
 });

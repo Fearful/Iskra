@@ -49,7 +49,7 @@ Copia `.env.example` a `.env`:
 | `DLQ_KEEP` | Dead letters que se conservan en Redis (los mas nuevos) | `1000` |
 | `HTTP_PORT` | Puerto del endpoint de health/monitoring | `8080` |
 | `REDIS_URL` | URL de conexion a Redis | `redis://localhost:6379` |
-| `DEMO` | Encolar jobs de ejemplo (`false` para desactivar) | `true`, salvo con `NODE_ENV=production` (la imagen Docker) |
+| `DEMO` | Encolar jobs de ejemplo (`false` para desactivar) | `true` con `NODE_ENV=development` o `test` (el `.env` de ejemplo); `false` con otro valor o sin `NODE_ENV` (la imagen Docker) |
 
 ## Retry y backoff
 

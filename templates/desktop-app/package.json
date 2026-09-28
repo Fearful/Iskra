@@ -4,7 +4,7 @@
     "private": true,
     "main": "src/main.ts",
     "scripts": {
-        "dev": "bun run --watch src/main.ts",
+        "dev": "NODE_ENV=development bun run --watch src/main.ts",
         "start": "bun run src/main.ts",
         "tauri": "tauri",
         "tauri:dev": "tauri dev",

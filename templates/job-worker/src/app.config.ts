@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isProductionEnv } from '@iskra-bun/core';
 
 export const AppConfigSchema = z.object({
     worker: z.object({
@@ -63,5 +64,5 @@ export const config: AppConfig = AppConfigSchema.parse({
     redis: {
         url: process.env.REDIS_URL,
     },
-    demo: demoEnabled(process.env.DEMO, process.env.NODE_ENV === 'production'),
+    demo: demoEnabled(process.env.DEMO, isProductionEnv()),
 });
