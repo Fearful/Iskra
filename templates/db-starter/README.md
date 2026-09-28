@@ -27,9 +27,9 @@ El servidor levanta en `http://localhost:3000`.
 |----------|-------------|---------|
 | `PORT` | Puerto del servidor HTTP | `3000` |
 | `DATABASE_URL` | Ruta del archivo SQLite (o `:memory:`) | `:memory:` |
-| `ORACLE_USER` | Usuario de Oracle (opcional): uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
-| `ORACLE_PASSWORD` | Password de Oracle (opcional) | — |
-| `ORACLE_CONNECTION_STRING` | Connection string de Oracle (opcional) | — |
+| `ORA_CONN` | Connection string de Oracle (opcional; sin ella el `OracleDriver` no arranca), p. ej. `localhost:1521/XEPDB1` | — |
+| `ORA_USER` | Usuario de Oracle: uno propio de la app con permisos minimos, nunca `SYSTEM`/`SYS` | — |
+| `ORA_PASSWORD` | Password de Oracle | — |
 
 ## Endpoints
 
@@ -57,7 +57,9 @@ src/
 
 ## Oracle (opcional)
 
-Si configuras las variables `ORACLE_*` en `.env`, el `OracleDriver` se conecta automaticamente via el Bridge/Sidecar. Si no estan definidas, se omite sin errores.
+Si defines `ORA_CONN`, `ORA_USER` y `ORA_PASSWORD` en `.env`, el `OracleDriver` se conecta via el Bridge/Sidecar al arrancar la app. Sin `ORA_CONN` se omite (con un aviso en el log).
+
+El puente es un proceso Node: necesita `node` en el `PATH` y el paquete `oracledb` (`bun add oracledb`). Si no puede conectarse, la app no arranca.
 
 Conectate con un usuario propio de la app, con solo los permisos que usa (`CREATE SESSION`
 y los de sus tablas), nunca con `SYSTEM` o `SYS`:
