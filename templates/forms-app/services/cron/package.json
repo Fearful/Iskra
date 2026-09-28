@@ -14,7 +14,7 @@
         "@iskra-bun/kv-kit": "workspace:*",
         "@forms-app/shared": "workspace:*",
         "hono": "^4.12.34",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "^0.45.3",
         "postgres": "^3.4.5"
     }
 }
