@@ -161,6 +161,20 @@ interface RestartBackoffConfig {
 }
 ```
 
+## Environment
+
+Iskra's production safeguards apply in every environment except `NODE_ENV=development` and `test`: an unset `NODE_ENV`, `production` and names like `staging` all count as production. So a deploy that forgets `NODE_ENV` still gets `Secure` session cookies, refuses sample secrets and plain-http auth URLs, ignores `disableCSRFCheck` and logs JSON; `app.start()` logs a warning when `NODE_ENV` is unset. For local development set `NODE_ENV=development` (the templates' `bun dev` and `.env.example` do).
+
+The same checks are exported for your code. They read `NODE_ENV` when called, so a binary built with `bun build` honors the value it runs with (a literal `process.env.NODE_ENV` is replaced at build time):
+
+```typescript
+import { isDevelopmentEnv, isProductionEnv, nodeEnv } from '@iskra-bun/core';
+
+nodeEnv();          // 'staging', or undefined when unset
+isProductionEnv();  // true unless NODE_ENV is 'development' or 'test'
+isDevelopmentEnv(); // the opposite
+```
+
 ## OpenTelemetry
 
 With an `otel` section, and the optional `@opentelemetry/*` packages installed, `app.start()` starts the OpenTelemetry Node SDK before the drivers, with OTLP/HTTP exporters and the Node auto-instrumentations (`fs` is off):

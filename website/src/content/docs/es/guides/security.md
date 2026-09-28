@@ -14,7 +14,7 @@ El `secret` de auth/web debe tener al menos **32 caracteres**. `createBetterAuth
 // tira: "auth secret must be at least 32 characters; received 8"
 ```
 
-En producción (`NODE_ENV=production`) también rechaza un secreto que sigue siendo un valor de ejemplo, uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder` (con cualquier mayúscula, con o sin `-`, `_`, `.` o espacios). Un secreto así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base: cualquiera podría falsificar una sesión. Los secretos de `SessionFeature` y `CsrfFeature` también necesitan 32 caracteres.
+En producción (cualquier `NODE_ENV` salvo `development` y `test`, también sin definir) también rechaza un secreto que sigue siendo un valor de ejemplo, uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder` (con cualquier mayúscula, con o sin `-`, `_`, `.` o espacios). Un secreto así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base: cualquiera podría falsificar una sesión. Los secretos de `SessionFeature` y `CsrfFeature` también necesitan 32 caracteres.
 
 Siempre traé los secretos del entorno, nunca los hardcodees:
 
@@ -56,12 +56,10 @@ El token solo no dice quién lo mandó: un subdominio hermano puede setear cooki
 - La cookie es `__Host-csrf` mientras sea Secure (el default), un nombre que solo el propio host de la app puede setear.
 - Con `SessionFeature`, el token se firma junto con el ID de la sesión almacenada, y `regenerateSession()` emite uno nuevo, así que un token de otra sesión no sirve.
 
-Las cookies usan por defecto `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` tiene un kill-switch `disableCSRFCheck` (para el chequeo propio de better-auth) para desarrollo local, pero se **ignora en producción** — incluso si una config lo trae habilitado, se neutraliza cuando `NODE_ENV === 'production'`:
+Las cookies usan por defecto `httpOnly`, `secure`, `sameSite: 'Strict'`. `AuthFeature` tiene un kill-switch `disableCSRFCheck` (para el chequeo propio de better-auth) para desarrollo local, pero se **ignora fuera de desarrollo** — incluso si una config lo trae habilitado, se neutraliza salvo que `NODE_ENV` sea `development` o `test` (sin definir cuenta como producción):
 
 ```typescript
-const disableCSRFCheck = process.env.NODE_ENV !== 'production'
-    ? this.config.disableCSRFCheck === true
-    : false; // siempre false en prod
+const disableCSRFCheck = isDevelopmentEnv() ? this.config.disableCSRFCheck === true : false;
 ```
 
 ## Autorización de WebSocket

@@ -30,7 +30,7 @@ createBetterAuth({ db, adapterType: 'postgres', secret: '' });        // lanza e
 createBetterAuth({ db, adapterType: 'postgres', secret: 'corto' });   // lanza error
 ```
 
-En producción (`NODE_ENV=production`) también lanza un error si el secret sigue siendo un valor de ejemplo: uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder`, comparado sin mayúsculas, `-`, `_`, `.` ni espacios (así que `changeme` y `CHANGE_ME` también cuentan). Un secret así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base de datos: cualquiera que lo conozca puede falsificar una sesión de cualquier usuario. El error nombra la palabra encontrada, nunca el secret:
+En producción (cualquier `NODE_ENV` salvo `development` y `test`, también sin definir) también lanza un error si el secret sigue siendo un valor de ejemplo: uno que contiene `change-me`, `dev-secret`, `dev-only`, `your-secret` o `placeholder`, comparado sin mayúsculas, `-`, `_`, `.` ni espacios (así que `changeme` y `CHANGE_ME` también cuentan). Un secret así es público, y firma la caché de sesión en cookie, que se acepta sin consultar la base de datos: cualquiera que lo conozca puede falsificar una sesión de cualquier usuario. El error nombra la palabra encontrada, nunca el secret:
 
 ```typescript
 // NODE_ENV=production
@@ -49,7 +49,7 @@ const auth = createBetterAuth({ db, adapterType: 'postgres', secret });
 
 ## URL base
 
-`baseURL` es el origen público de la app. Decide si las cookies de sesión llevan `Secure` (solo con un origen https) y siempre es un origen confiable. Si no se indica, se lee de `BETTER_AUTH_URL`, y fuera de producción cae en `http://localhost:3000`. Con `NODE_ENV=production` la construcción **lanza un error** si no hay ninguno de los dos, o si el origen es `http://` en un host que no sea `localhost`, `127.0.0.1` o `[::1]`:
+`baseURL` es el origen público de la app. Decide si las cookies de sesión llevan `Secure` (solo con un origen https) y siempre es un origen confiable. Si no se indica, se lee de `BETTER_AUTH_URL`, y fuera de producción cae en `http://localhost:3000`. En producción la construcción **lanza un error** si no hay ninguno de los dos, o si el origen es `http://` en un host que no sea `localhost`, `127.0.0.1` o `[::1]`:
 
 ```typescript
 // NODE_ENV=production

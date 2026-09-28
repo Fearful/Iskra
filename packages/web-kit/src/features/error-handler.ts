@@ -2,7 +2,7 @@ import type { Feature, ErrorHandlerConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { IskraError } from '@iskra-bun/core';
+import { IskraError, nodeEnv } from '@iskra-bun/core';
 import { HttpError, ValidationError } from '../errors';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -15,8 +15,7 @@ export class ErrorHandlerFeature implements Feature {
 
     constructor(config: ErrorHandlerConfig = {}) {
         this.config = {
-            includeStack:
-                config.includeStack !== undefined ? config.includeStack : process.env.NODE_ENV === 'development',
+            includeStack: config.includeStack !== undefined ? config.includeStack : nodeEnv() === 'development',
             customHandlers: config.customHandlers,
             logger: config.logger,
         };

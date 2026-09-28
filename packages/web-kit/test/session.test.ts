@@ -455,5 +455,22 @@ describe('Session Feature', () => {
             expect((await dev.a.request('/login')).headers.get('Set-Cookie')).not.toContain('Secure');
             await dev.kernel.shutdown();
         });
+
+        it('marks the cookie Secure when NODE_ENV is unset or another name (staging)', async () => {
+            // Only NODE_ENV=production did: a deploy that forgot it sent the
+            // session cookie over plain HTTP too.
+            const saved = process.env.NODE_ENV;
+            try {
+                for (const env of [undefined, 'staging']) {
+                    if (env === undefined) delete process.env.NODE_ENV;
+                    else process.env.NODE_ENV = env;
+                    const { a, kernel } = await app(new Kernel());
+                    expect((await a.request('/login')).headers.get('Set-Cookie')).toContain('Secure');
+                    await kernel.shutdown();
+                }
+            } finally {
+                process.env.NODE_ENV = saved;
+            }
+        });
     });
 });

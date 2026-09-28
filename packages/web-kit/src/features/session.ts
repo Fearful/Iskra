@@ -7,6 +7,7 @@ import { sql, eq, and, gte } from 'drizzle-orm';
 import { pgTable, text as pgText, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { mysqlTable, varchar as myVarchar, text as myText, bigint as myBigint } from 'drizzle-orm/mysql-core';
 import { sqliteTable, text as sqliteText, integer as sqliteInteger } from 'drizzle-orm/sqlite-core';
+import { isProductionEnv, nodeEnv } from '@iskra-bun/core';
 import { consoleLogger, type KernelLogger } from '../logging';
 import type { WebKitDrizzleDb } from './db';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -417,8 +418,9 @@ export class SessionFeature implements Feature {
     async initialize(kernel: Kernel): Promise<void> {
         const log = kernel.getLogger();
         log.debug(`Initializing Session: store=${this.config.store}`);
-        // Cookies are Secure by default in production (override with cookieOptions.secure).
-        this.secureDefault = (kernel.getConfig().environment ?? process.env.NODE_ENV) === 'production';
+        // Cookies are Secure by default outside development/test, NODE_ENV unset
+        // included (override with cookieOptions.secure).
+        this.secureDefault = isProductionEnv(kernel.getConfig().environment ?? nodeEnv());
 
         switch (this.config.store) {
             case 'memory':

@@ -7,6 +7,7 @@ import { type Auth, createBetterAuth, resolveAuthBaseURL } from '@iskra-bun/auth
 import { z } from '@hono/zod-openapi';
 import type { User } from '@iskra-bun/auth-kit';
 import { consoleLogger, type KernelLogger } from '../../logging';
+import { isDevelopmentEnv } from '@iskra-bun/core';
 
 declare module 'hono' {
     interface ContextVariableMap {
@@ -128,7 +129,7 @@ export class AuthFeature implements Feature {
         // CSRF kill-switch is honored only outside production. Even if a config
         // ships with disableCSRFCheck enabled, it is neutralized in prod so CSRF
         // protection cannot be silently turned off in a deployed environment.
-        const disableCSRFCheck = process.env.NODE_ENV !== 'production' ? this.config.disableCSRFCheck === true : false;
+        const disableCSRFCheck = isDevelopmentEnv() ? this.config.disableCSRFCheck === true : false;
 
         this.auth = this.createAuth({
             db,

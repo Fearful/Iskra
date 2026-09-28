@@ -18,12 +18,17 @@ repositorio (el `.dockerignore` de la raiz limita el contexto al workspace):
    esta etapa no instala nada (se construye sin red o detras de un proxy que inspecciona
    TLS) y corre con un UID no root en el grupo 0.
 
-:::caution[`NODE_ENV` se fija al compilar]
-`bun build` reemplaza `process.env.NODE_ENV` en el codigo (`"development"` salvo que
-este definido al compilar), asi que un binario compilado ignora el valor de runtime.
-Compila con `NODE_ENV=production`, como hacen los Dockerfiles de los templates: si no,
-la app corre en modo desarrollo en produccion (stack traces en las respuestas de error,
-cookies de sesion sin `Secure`).
+:::caution[`NODE_ENV` y los binarios compilados]
+Las protecciones de produccion de Iskra (cookies de sesion `Secure`, rechazo de
+secretos de ejemplo y de URLs de auth en http plano, `disableCSRFCheck` ignorado, logs
+JSON) rigen en todo entorno salvo `NODE_ENV=development` y `test`, tambien con
+`NODE_ENV` sin definir, e Iskra lo lee cuando la app corre. `app.start()` loguea un
+warning si no esta definido.
+
+Tu propio codigo es otra cosa: `bun build` reemplaza un `process.env.NODE_ENV` literal
+(`"development"` salvo que este definido al compilar). Compila con
+`NODE_ENV=production`, como hacen los Dockerfiles de los templates, o leelo con
+`nodeEnv()` / `isProductionEnv()` de `@iskra-bun/core`.
 :::
 
 ### Construir una Imagen

@@ -30,7 +30,7 @@ createBetterAuth({ db, adapterType: 'postgres', secret: '' });        // throws
 createBetterAuth({ db, adapterType: 'postgres', secret: 'short' });   // throws
 ```
 
-In production (`NODE_ENV=production`) it also throws for a secret that is still a sample value: one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder`, compared without case, `-`, `_`, `.` or spaces (so `changeme` and `CHANGE_ME` count too). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone who knows it can forge a session for any user. The error names the matching word, never the secret:
+In production (any `NODE_ENV` but `development` and `test`, unset included) it also throws for a secret that is still a sample value: one containing `change-me`, `dev-secret`, `dev-only`, `your-secret` or `placeholder`, compared without case, `-`, `_`, `.` or spaces (so `changeme` and `CHANGE_ME` count too). Such a secret is public, and it signs the session cookie cache, which is trusted without a database lookup: anyone who knows it can forge a session for any user. The error names the matching word, never the secret:
 
 ```typescript
 // NODE_ENV=production
@@ -49,7 +49,7 @@ const auth = createBetterAuth({ db, adapterType: 'postgres', secret });
 
 ## Base URL
 
-`baseURL` is the app's public origin. It decides whether the session cookies are marked `Secure` (only for an https origin) and is always a trusted origin. If omitted, it is read from `BETTER_AUTH_URL`, and outside production it falls back to `http://localhost:3000`. With `NODE_ENV=production` construction **throws** when neither is set, or when the origin is plain `http://` on a host other than `localhost`, `127.0.0.1` or `[::1]`:
+`baseURL` is the app's public origin. It decides whether the session cookies are marked `Secure` (only for an https origin) and is always a trusted origin. If omitted, it is read from `BETTER_AUTH_URL`, and outside production it falls back to `http://localhost:3000`. In production construction **throws** when neither is set, or when the origin is plain `http://` on a host other than `localhost`, `127.0.0.1` or `[::1]`:
 
 ```typescript
 // NODE_ENV=production

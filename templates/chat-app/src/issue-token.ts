@@ -10,6 +10,7 @@
  * despues de autenticar al usuario.
  */
 
+import { isProductionEnv } from '@iskra-bun/core';
 import { issueToken, resolveAuthSecret } from './auth';
 
 const [username, ttl] = process.argv.slice(2);
@@ -20,7 +21,7 @@ if (!username) {
 }
 
 try {
-    const { secret, warning } = resolveAuthSecret(process.env.CHAT_AUTH_SECRET, process.env.NODE_ENV === 'production');
+    const { secret, warning } = resolveAuthSecret(process.env.CHAT_AUTH_SECRET, isProductionEnv());
     if (warning) console.error(`[chat-app] ${warning}`);
     // El token va solo a stdout: `CHAT_TOKEN=$(bun run --silent token ana)`.
     console.log(issueToken(username, secret, { ttlSeconds: ttl === undefined ? undefined : Number(ttl) }));

@@ -69,6 +69,26 @@ describe('AuthFeature — CSRF kill-switch production guard', () => {
         await kernel.shutdown();
     });
 
+    it('ignores disableCSRFCheck when NODE_ENV is unset', async () => {
+        // Only NODE_ENV=production neutralized it: a deploy without NODE_ENV
+        // ran with CSRF protection off.
+        delete process.env.NODE_ENV;
+
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(new FakeDbFeature() as any);
+        kernel.registerFeature(
+            new AuthFeature(
+                { secret: VALID_SECRET, baseURL: 'https://app.example.com', disableCSRFCheck: true } as any,
+                fakeCreateAuth,
+            ),
+        );
+        await kernel.initialize();
+
+        expect(captured[captured.length - 1].disableCSRFCheck).toBe(false);
+
+        await kernel.shutdown();
+    });
+
     it('honors disableCSRFCheck outside production', async () => {
         process.env.NODE_ENV = 'development';
 

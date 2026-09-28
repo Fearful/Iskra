@@ -4,6 +4,7 @@
     "private": true,
     "main": "src/main.ts",
     "scripts": {
+        "dev": "NODE_ENV=development bun run --watch src/main.ts",
         "start": "bun run src/main.ts"
     },
     "dependencies": {
