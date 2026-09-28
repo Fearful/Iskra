@@ -36,7 +36,8 @@ describe('Kernel feature order', () => {
     it('rate-limits health routes of a HealthCheckFeature registered first', async () => {
         const kernel = new Kernel();
         kernel.registerFeature(new HealthCheckFeature({ path: '/health' }));
-        kernel.registerFeature(new RateLimitFeature({ max: 1, windowMs: 60_000 }));
+        // skipHealthChecks: false, since the limiter now leaves health routes out by default.
+        kernel.registerFeature(new RateLimitFeature({ max: 1, windowMs: 60_000, skipHealthChecks: false }));
         await kernel.initialize();
         const app = kernel.getApp();
         expect((await app.request('/health')).status).toBe(200);

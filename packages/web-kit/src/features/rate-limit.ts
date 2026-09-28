@@ -59,6 +59,10 @@ export class RateLimitFeature implements Feature {
      * per-process memory store.
      */
     dependencies?: string[];
+    private kernel?: Kernel;
+    /** The health feature's routes, looked up on the first request (it may be registered after this one). */
+    private healthPaths?: Set<string>;
+    private warnedUntrustedProxy = false;
     private config: Required<Omit<RateLimitConfig, 'name' | 'keyGenerator' | 'skip' | 'handler'>> & {
         keyGenerator?: RateLimitConfig['keyGenerator'];
         skip?: RateLimitConfig['skip'];
@@ -85,6 +89,7 @@ export class RateLimitFeature implements Feature {
             standardHeaders: config.standardHeaders ?? true,
             store: config.store || 'memory',
             maxKeys: config.maxKeys || DEFAULT_MAX_KEYS,
+            skipHealthChecks: config.skipHealthChecks ?? true,
             keyGenerator: config.keyGenerator,
             skip: config.skip,
             handler: config.handler,
@@ -99,6 +104,7 @@ export class RateLimitFeature implements Feature {
 
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
+        this.kernel = kernel;
         this.trustProxy = kernel.getConfig().trustProxy;
         this.clientIpHeader = kernel.getConfig().clientIpHeader;
 
@@ -123,8 +129,19 @@ export class RateLimitFeature implements Feature {
         this.log.debug('Rate limit feature initialized');
     }
 
+    /**
+     * Health probes are not client traffic: a kubelet probing every 10 s from
+     * the node's IP went over the default 100 per 15 min, got 429 on
+     * /health/live and restarted the pod.
+     */
+    private isHealthCheck(c: Context): boolean {
+        if (!this.config.skipHealthChecks) return false;
+        this.healthPaths ??= new Set(this.kernel?.getFeature('health')?.paths ?? []);
+        return this.healthPaths.has(c.req.path);
+    }
+
     private async middleware(c: Context, next: Next) {
-        if (this.config.skip && this.config.skip(c)) {
+        if (this.isHealthCheck(c) || (this.config.skip && this.config.skip(c))) {
             await next();
             return;
         }
@@ -154,6 +171,18 @@ export class RateLimitFeature implements Feature {
     }
 
     private defaultKeyGenerator(c: Context): string {
+        if (
+            !this.trustProxy &&
+            !this.warnedUntrustedProxy &&
+            (c.req.header('x-forwarded-for') || c.req.header('x-real-ip'))
+        ) {
+            this.warnedUntrustedProxy = true;
+            this.log.warn(
+                'rate-limit: requests carry X-Forwarded-For / X-Real-IP but trustProxy is not set, so clients are ' +
+                    "keyed by the socket address: behind a proxy they all share the proxy's bucket. " +
+                    'Set new Kernel({ trustProxy: n }) with the number of proxies in front of the app.',
+            );
+        }
         const ip = getClientIp(c, this.trustProxy, this.clientIpHeader);
         if (ip) return clientIpKey(ip);
         if (!this.warnedUnknownClient) {

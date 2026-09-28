@@ -173,6 +173,12 @@ export interface RateLimitConfig {
      * the oldest are dropped, and they start a new window.
      */
     maxKeys?: number;
+    /**
+     * Leave the health feature's routes (`/health`, `/health/ready`,
+     * `/health/live` or the ones it is configured with) out of the limit
+     * (default true): orchestrator probes come often and from one IP.
+     */
+    skipHealthChecks?: boolean;
 }
 
 export interface HealthCheckConfig {
