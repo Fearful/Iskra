@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Feature, OpenAPIConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context, Handler, Hono, Next } from 'hono';
@@ -5,6 +11,8 @@ import { OpenAPIHono, createRoute, z, type RouteConfig } from '@hono/zod-openapi
 import { ErrorCodes } from '../responses';
 import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
+import { documentRoutes, type RoutesDocument } from '../openapi-routes';
+import { withRouteDoc } from '../route-docs';
 
 /**
  * The API reference /docs loads: one release, with the SRI hash of that exact
@@ -17,6 +25,42 @@ const SCALAR_SCRIPT = {
 };
 
 const DEFAULT_SERVERS = [{ url: 'http://localhost:8000', description: 'Dev Server' }];
+
+/** Where `/docs` loads Scalar from with `scalar: 'local'` or `{ file }`. */
+const LOCAL_SCALAR_PATH = '/docs/scalar.js';
+
+/** The docs' own routes stay out of the spec. */
+const hidden = <H extends object>(handler: H): H => withRouteDoc(handler, { describe: { hidden: true } });
+
+/**
+ * Scalar's browser bundle in the installed @scalar/api-reference (an
+ * optional peer dependency), looked up from web-kit and from the app.
+ */
+function installedScalar(): string {
+    for (const base of [import.meta.url, pathToFileURL(join(process.cwd(), 'package.json')).href]) {
+        try {
+            // dist/index.js → dist/browser/standalone.js
+            const file = join(
+                dirname(createRequire(base).resolve('@scalar/api-reference')),
+                'browser',
+                'standalone.js',
+            );
+            if (existsSync(file)) return file;
+        } catch {
+            // Not installed where this base resolves.
+        }
+    }
+    throw new Error("OpenAPIFeature: scalar: 'local' needs @scalar/api-reference (bun add @scalar/api-reference)");
+}
+
+/** The spec's paths, by path and method. */
+type Existing = Record<string, Record<string, unknown> | undefined>;
+
+interface ScalarAsset {
+    body: Uint8Array;
+    integrity: string;
+    etag: string;
+}
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
@@ -40,6 +84,9 @@ export class OpenAPIFeature implements Feature {
     private queuedRoutes: Array<{ route: RouteConfig; handler: Handler }> = [];
     /** The kernel's app once routes() mounted this feature's routes on it. */
     private mountedOn?: Hono;
+    /** The spec of the app's own routes, for as many routes as the app had. */
+    private routesDoc?: { count: number; doc: RoutesDocument };
+    private scalarAsset?: Promise<ScalarAsset>;
 
     constructor(config: OpenAPIConfig) {
         this.config = config;
@@ -121,38 +168,114 @@ export class OpenAPIFeature implements Feature {
             await next();
         };
 
-        app.get('/openapi.json', guard, (c: Context) => {
-            if (!this.app) return responderOf(c).problem(c, problem(500, { message: 'OpenAPI not initialized' }));
+        app.get(
+            '/openapi.json',
+            hidden(guard),
+            hidden((c: Context) => {
+                if (!this.app) return responderOf(c).problem(c, problem(500, { message: 'OpenAPI not initialized' }));
 
-            const spec = this.app.getOpenAPIDocument({
-                openapi: '3.1.0',
-                info: {
-                    title: this.config.title,
-                    version: this.config.version,
-                    description: this.config.description || 'API Documentation',
-                    contact: this.config.contact,
-                    license: this.config.license,
-                },
-                servers: this.config.servers || DEFAULT_SERVERS,
-                tags: this.config.tags || [],
-                externalDocs: this.config.externalDocs,
-                security: this.config.security,
+                const spec = this.app.getOpenAPIDocument({
+                    openapi: '3.1.0',
+                    info: {
+                        title: this.config.title,
+                        version: this.config.version,
+                        description: this.config.description || 'API Documentation',
+                        contact: this.config.contact,
+                        license: this.config.license,
+                    },
+                    servers: this.config.servers || DEFAULT_SERVERS,
+                    tags: this.config.tags || [],
+                    externalDocs: this.config.externalDocs,
+                    security: this.config.security,
+                });
+
+                const routes =
+                    this.config.routes === false ? undefined : this.routesDocument(app, (spec.paths ?? {}) as Existing);
+                if (routes) {
+                    spec.paths = { ...spec.paths };
+                    for (const [path, item] of Object.entries(routes.paths)) {
+                        spec.paths[path] = { ...item, ...spec.paths[path] } as (typeof spec.paths)[string];
+                    }
+                }
+                const schemas = { ...routes?.schemas, ...spec.components?.schemas };
+                const securitySchemes = {
+                    ...routes?.securitySchemes,
+                    ...spec.components?.securitySchemes,
+                    ...this.config.securitySchemes,
+                };
+                if (Object.keys(schemas).length > 0 || Object.keys(securitySchemes).length > 0) {
+                    spec.components = {
+                        ...spec.components,
+                        ...(Object.keys(schemas).length > 0 ? { schemas: schemas as never } : {}),
+                        ...(Object.keys(securitySchemes).length > 0
+                            ? { securitySchemes: securitySchemes as never }
+                            : {}),
+                    };
+                }
+
+                return c.json(spec);
+            }),
+        );
+
+        const option = this.config.scalar ?? SCALAR_SCRIPT;
+        if (option === false) return;
+        const file = option === 'local' ? installedScalar() : 'file' in option ? option.file : undefined;
+        if (file !== undefined) {
+            // The bundle is public code: it is served without asking authorize().
+            app.get(
+                LOCAL_SCALAR_PATH,
+                hidden(async (c: Context) => {
+                    const asset = await this.loadScalar(file);
+                    const headers = { ETag: asset.etag, 'Cache-Control': 'no-cache' };
+                    if (c.req.header('If-None-Match') === asset.etag) return c.body(null, 304, headers);
+                    return c.body(asset.body as Uint8Array<ArrayBuffer>, 200, {
+                        ...headers,
+                        'Content-Type': 'text/javascript; charset=utf-8',
+                    });
+                }),
+            );
+        }
+        app.get(
+            '/docs',
+            hidden(guard),
+            hidden(async (c: Context) => {
+                const script =
+                    file === undefined
+                        ? (option as { src: string; integrity: string })
+                        : { src: LOCAL_SCALAR_PATH, integrity: (await this.loadScalar(file)).integrity };
+                c.header('Content-Security-Policy', this.docsPolicy(script.src));
+                return c.html(this.generateScalarHTML(script));
+            }),
+        );
+    }
+
+    /** The spec of the app's routes other than addRoute()'s, made again when routes are added. */
+    private routesDocument(app: Hono, existing: Existing): RoutesDocument {
+        const count = app.routes.length;
+        if (this.routesDoc?.count !== count) {
+            const doc = documentRoutes(app.routes, {
+                include: this.config.routes || 'described',
+                contract: this.kernel?.getResponder().contract,
+                skip: (method, path) => existing[path]?.[method.toLowerCase()] !== undefined,
             });
+            this.routesDoc = { count, doc };
+        }
+        return this.routesDoc.doc;
+    }
 
-            if (this.config.securitySchemes) {
-                if (!spec.components) spec.components = {};
-                spec.components.securitySchemes = this.config.securitySchemes;
-            }
-
-            return c.json(spec);
-        });
-
-        const script = this.config.scalar ?? SCALAR_SCRIPT;
-        if (script === false) return;
-        app.get('/docs', guard, (c) => {
-            c.header('Content-Security-Policy', this.docsPolicy(script.src));
-            return c.html(this.generateScalarHTML(script));
-        });
+    /** Scalar's bundle from disk, read once, with its SRI hash. */
+    private loadScalar(file: string): Promise<ScalarAsset> {
+        this.scalarAsset ??= readFile(file).then(
+            (body) => {
+                const digest = createHash('sha384').update(body).digest('base64');
+                return { body, integrity: `sha384-${digest}`, etag: `"${digest.slice(0, 32)}"` };
+            },
+            (error: unknown) => {
+                this.scalarAsset = undefined;
+                throw error;
+            },
+        );
+        return this.scalarAsset;
     }
 
     /**

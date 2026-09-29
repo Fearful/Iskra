@@ -4,6 +4,7 @@ import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
 import { matchKeys, queryFor, readBody, validationDetails, type ValidationDetails } from '../bind';
 import { HttpError } from '../errors';
+import { bodyTypes, withRouteDoc } from '../route-docs';
 
 /**
  * A Zod schema, v3 or v4 (web-kit's `z` is v3, the one re-exported for
@@ -68,8 +69,9 @@ export function validate<S extends ValidationSchema>(
     options: ValidationOptions = {},
 ): MiddlewareHandler<{ Variables: { validated: Validated<S> } }> {
     const { logErrors = true, status = 400, logger = consoleLogger, caseInsensitiveKeys = false } = options;
+    const allowForm = options.allowForm ?? true;
 
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { validated: Validated<S> } }> = async (c, next) => {
         /** The part parsed by its schema, or the problem response for it. */
         const check = (part: ZodSchemaLike, data: unknown, message: string) => {
             const parsed = part.safeParse(caseInsensitiveKeys ? matchKeys(data, part) : data);
@@ -102,7 +104,7 @@ export function validate<S extends ValidationSchema>(
             }
 
             if (schema.body) {
-                const body = await readBody(c, { allowForm: options.allowForm ?? true });
+                const body = await readBody(c, { allowForm });
                 const result = check(schema.body, body, 'Invalid body');
                 if (result.response) return result.response;
                 validated.body = result.data;
@@ -118,4 +120,8 @@ export function validate<S extends ValidationSchema>(
             return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
+    // The spec of the routes it is on: their params, query and body, and a 400.
+    return withRouteDoc(middleware, {
+        validates: { ...schema, ...(schema.body ? { bodyTypes: bodyTypes(allowForm) } : {}) },
+    });
 }

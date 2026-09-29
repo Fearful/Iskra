@@ -47,3 +47,18 @@ export {
     type ValidationIssue,
 } from './bind';
 export { statusForCode, codeForStatus } from './status-codes';
+export {
+    describeRoute,
+    withRouteDoc,
+    routeDocOf,
+    toJsonSchema,
+    type RouteDescription,
+    type ResponseDoc,
+    type RouteDocFragment,
+    type SchemaInput,
+    type JsonSchema,
+    type SecurityScheme,
+    type NamedScheme,
+    type GateSecurity,
+} from './route-docs';
+export { documentRoutes, type RouteEntry, type RoutesDocument, type RoutesDocumentOptions } from './openapi-routes';

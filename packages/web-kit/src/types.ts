@@ -481,11 +481,20 @@ export interface OpenAPIConfig {
     authorize?: (c: Context) => boolean | Response | Promise<boolean | Response>;
     /**
      * The Scalar API reference script `/docs` loads. Default: a pinned
-     * @scalar/api-reference release from jsDelivr, with its SRI hash. Give
-     * another `src` with its `integrity` (`sha384-…`) to update it or serve
-     * it from your own origin; `false` serves `/openapi.json` without the page.
+     * @scalar/api-reference release from jsDelivr, with its SRI hash.
+     * `'local'`: the one of the installed `@scalar/api-reference`, served by
+     * the app at `/docs/scalar.js` (nothing is loaded from a CDN).
+     * `{ file }`: that bundle (`standalone.js`) from disk, served the same
+     * way. `{ src, integrity }`: a script by URL with its `sha384-…` hash.
+     * `false` serves `/openapi.json` without the page.
      */
-    scalar?: false | { src: string; integrity: string };
+    scalar?: false | 'local' | { file: string } | { src: string; integrity: string };
+    /**
+     * Which of the app's own routes (not `addRoute()`'s) the spec lists:
+     * `'described'` (the default), those a `describeRoute()` describes, on
+     * the route or its group; `'all'`, every route; `false`, none.
+     */
+    routes?: 'described' | 'all' | false;
 }
 
 export type UploadAction = 'upload' | 'list' | 'download' | 'delete';

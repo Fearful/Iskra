@@ -8,6 +8,7 @@ import { successResponse } from './responses';
 import { codeForStatus, statusForCode } from './status-codes';
 import type { ErrorHandlerConfig } from './types';
 import type { ValidationDetails } from './bind';
+import type { JsonSchema } from './route-docs';
 
 /**
  * An error as the response contract sees it: what the client is told and with
@@ -94,6 +95,20 @@ export interface ResponseContract {
      * validation answers without throwing.
      */
     log?(problem: Problem, c: Context, error: unknown): void;
+    /** Its bodies' JSON Schemas, for the responses in OpenAPIFeature's spec. */
+    schemas?: ContractSchemas;
+}
+
+/** The JSON Schemas of a contract's bodies. */
+export interface ContractSchemas {
+    /** An error body. */
+    error?: JsonSchema;
+    /** The error body's media type. Default `application/json`. */
+    errorType?: string;
+    /** The body of `ok(c, data)`, given the schema of `data`. */
+    success?(data: JsonSchema): JsonSchema;
+    /** The body of `list(c, page)`, given the schema of an item. */
+    list?(item: JsonSchema): JsonSchema;
 }
 
 /** `value` without its undefined properties, so they are not serialized as absent keys. */
@@ -120,6 +135,46 @@ export const iskraContract: ResponseContract = {
     list: (page) => {
         const { items, ...meta } = page;
         return { success: true, data: items, meta: compact(meta) };
+    },
+    schemas: {
+        error: {
+            type: 'object',
+            properties: {
+                error: { type: 'string', description: 'What went wrong' },
+                status: { type: 'integer' },
+                code: { type: 'string', description: 'An ErrorCode: VALIDATION_ERROR, NOT_FOUND…' },
+                details: { description: 'Which fields failed and why' },
+                context: { type: 'object' },
+                requestId: { type: 'string' },
+            },
+            required: ['error', 'status', 'code'],
+        },
+        success: (data) => ({
+            type: 'object',
+            properties: { success: { const: true }, data, message: { type: 'string' } },
+            required: ['success'],
+        }),
+        list: (item) => ({
+            type: 'object',
+            properties: {
+                success: { const: true },
+                data: { type: 'array', items: item },
+                meta: {
+                    type: 'object',
+                    properties: {
+                        total: { type: 'integer' },
+                        filtered: { type: 'integer' },
+                        page: { type: 'integer' },
+                        pageSize: { type: 'integer' },
+                        offset: { type: 'integer' },
+                        limit: { type: 'integer' },
+                        pages: { type: 'integer' },
+                        nextCursor: { type: ['string', 'null'] },
+                    },
+                },
+            },
+            required: ['success', 'data', 'meta'],
+        }),
     },
 };
 
@@ -148,6 +203,24 @@ export function problemDetailsContract(options: { type?: (problem: Problem) => s
                 ),
                 { status: problem.status, headers: { 'Content-Type': 'application/problem+json' } },
             ),
+        schemas: {
+            ...iskraContract.schemas,
+            errorType: 'application/problem+json',
+            error: {
+                type: 'object',
+                properties: {
+                    type: { type: 'string' },
+                    title: { type: 'string' },
+                    status: { type: 'integer' },
+                    detail: { type: 'string' },
+                    code: { type: 'string' },
+                    instance: { type: 'string' },
+                    errors: { description: 'Which fields failed and why' },
+                    requestId: { type: 'string' },
+                },
+                required: ['type', 'title', 'status', 'detail', 'code'],
+            },
+        },
     };
 }
 

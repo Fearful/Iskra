@@ -271,7 +271,7 @@ El reporte (`HealthReport`) tiene `endpoint` (`health`, `ready` o `live`), `ok`,
 
 ## Documentacion OpenAPI
 
-`OpenAPIFeature` sirve el spec de las rutas agregadas con `addRoute()` en `/openapi.json`, y una pagina de referencia de la API ([Scalar](https://github.com/scalar/scalar)) en `/docs`:
+`OpenAPIFeature` sirve el spec en `/openapi.json`, y una página de referencia de la API ([Scalar](https://github.com/scalar/scalar)) en `/docs`. El spec tiene las rutas agregadas con `addRoute()` y las rutas Hono propias de la app que describe un `describeRoute()` (ver [abajo](#rutas-sin-addroute)):
 
 ```typescript
 new OpenAPIFeature({
@@ -280,18 +280,67 @@ new OpenAPIFeature({
     servers: [{ url: 'https://api.example.com' }],
     // Ambas rutas: false responde 403, una Response se envia tal cual.
     authorize: (c) => c.get('user')?.role === 'admin',
+    // routes: 'all', // toda ruta Hono, descrita o no; false para solo las de addRoute()
+    // scalar: 'local', // Scalar desde node_modules, nada desde un CDN
     // docs: false,   // no sirve ninguna (en produccion, por ejemplo)
     // scalar: false, // sirve /openapi.json sin la pagina
 });
 ```
 
 - La pagina carga una version fija de `@scalar/api-reference` desde jsDelivr, con su hash de Subresource Integrity y `crossorigin="anonymous"`: el navegador rechaza el script si el CDN sirve otra cosa (cargaba `@latest`, asi que lo ultimo que publicara Scalar corria en el origen de la app). Para actualizarlo, o servirlo desde tu propio origen, usa `scalar: { src, integrity }`, donde `integrity` es el hash `sha384-…` de ese archivo exacto.
+- Sin CDN (una intranet, una CSP estricta): `scalar: 'local'` sirve el bundle del `@scalar/api-reference` instalado (una peer dependency opcional: `bun add @scalar/api-reference`) desde la propia app, en `/docs/scalar.js`, y la CSP de la página permite scripts solo de `'self'`. `scalar: { file }` hace lo mismo con un `standalone.js` que guardes en disco. La app lee el archivo una vez, en el primer request, y calcula su hash SRI; si falta el paquete, falla al arrancar. `/docs/scalar.js` es código público y no pasa por `authorize`.
 - La pagina envia su propio `Content-Security-Policy`: scripts solo del origen de ese script, requests solo al origen de la app y a los `servers` del spec ("Try it"), nada mas se carga. Las fuentes web de Scalar y su agente de IA, que envia el spec a los servidores de Scalar, estan apagados. El titulo se escapa como HTML.
 - `/openapi.json` y `/docs` se registran en `routes()`, asi que un middleware agregado a la app despues de `initialize()` (un `basicAuth()`, por ejemplo) no corre para ellas: usa `authorize`, que corre para ambas. Devuelve una Response para responder con ella, como un pedido de Basic auth:
 
 ```typescript
 authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
 ```
+
+### Rutas sin addRoute()
+
+Las rutas escritas como Hono común (en un `Router`, en la app del Kernel, en una app Hono montada con el `router` de WebPlugin) también están en el spec, leídas de lo que llevan sus handlers. `describeRoute()` las describe; en runtime solo llama a `next()`:
+
+```typescript
+import { Router, anyOf, apiKey, bearer, describeRoute, requireActor, requireScopes, validate } from '@iskra-bun/web-kit';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+const api = new Router();
+// En un grupo: cada ruta debajo recibe el tag y la seguridad del gate.
+const users = api.group('/api/users', describeRoute({ tags: ['Users'] }), requireActor(anyOf(bearer(verify), apiKey(keys))));
+
+users.get('/:id', describeRoute({ summary: 'Un usuario', ok: User }), validate({ params: z.object({ id: z.coerce.number() }) }), getUser);
+users.get('', describeRoute({ summary: 'Usuarios', list: User }), listUsers);
+users.post(
+    '',
+    describeRoute({ summary: 'Crear un usuario', responses: { 201: { schema: User } } }),
+    requireScopes('users:write'),
+    validate({ body: z.object({ name: z.string().min(1) }) }),
+    createUser,
+);
+```
+
+Qué entra en cada operación:
+
+| De | En el spec |
+| --- | --- |
+| `describeRoute({ summary, description, tags, operationId, deprecated })` | Tal cual. Los tags de una ruta se suman a los de sus grupos; el resto de la ruta pisa al del grupo. |
+| `describeRoute({ ok: schema })` / `{ list: itemSchema }` | El 200 de `ok(c, data)` / `list(c, page)`, envuelto como responde el [contrato de respuestas](#contrato-de-respuestas) (`{ success, data, message }`, `{ success, data, meta }`). |
+| `describeRoute({ responses: { 201: { schema, description, contentType, headers } } })` | Esas respuestas. Sin ninguna, un `200 OK`. |
+| `describeRoute({ request: { params, query, headers, body, bodyTypes } })` | El request, para una ruta que lo lee con `bindBody()`/`bindQuery()` en vez de `validate()`. |
+| `validate()`, `validateJson()` | Parámetros de path, query y body (JSON, y formularios con `allowForm`), y un 400. |
+| `requireActor(gate)` | La seguridad del gate (`anyOf` da alternativas, `allOf` esquemas juntos) y un 401; los esquemas van a `components.securitySchemes` (`bearer`, `jwt`, `apiKey`, `session`). |
+| `identify(gate)` | La seguridad del gate, y `{}`: las credenciales son opcionales. |
+| `requireScopes(...scopes)` | Los scopes en cada requisito de seguridad, y un 403. |
+| El contrato | Una respuesta `default` y los 400/401/403 con el cuerpo de error (`components.schemas.ErrorResponse`); `problemDetailsContract()` como `application/problem+json`. |
+
+- Los esquemas pueden ser Zod v3 o v4, cualquier librería Standard Schema que exporte JSON Schema (Valibot, ArkType) o JSON Schema. Un esquema Zod v4 con nombre, `.meta({ id: 'User' })`, aparece una vez en `components.schemas` y se referencia. Lo que JSON Schema no puede representar (una fecha, la salida de un transform) se documenta como cualquier valor.
+- `describeRoute()` en un path de `app.use()` aplica a las rutas registradas después bajo ese path, como hace el middleware en runtime. `describeRoute({ hidden: true })` deja una ruta afuera, `security: []` marca una como pública bajo un `security` global.
+- `routes: 'described'` (el default) lista las rutas con un `describeRoute()`, en ellas o en su grupo; `routes: 'all'` toda ruta con un path que OpenAPI pueda expresar (sin comodines, con un método que no sea `all()`). Una operación de `addRoute()` gana sobre una común con el mismo método y path. Los parámetros opcionales (`/:page?`) y con regex (`/:id{[0-9]+}`) de Hono se vuelven dos paths y un `pattern`.
+- Un contrato propio documenta sus cuerpos en `schemas`: `{ error, errorType?, success?(data), list?(item) }`, como JSON Schema. Sin `schemas`, las respuestas de error tienen descripción y no cuerpo.
+- Un gate propio declara sus esquemas en su propiedad `openapi`: `Object.assign(gate, { openapi: [[{ name: 'mtls', scheme: { type: 'mutualTLS' } }]] })`. Un gate sin ella igual recibe su 401.
+- `documentRoutes(app.routes, { contract })` arma los mismos paths sin la Feature, para un spec propio.
 
 ## Access log
 

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
 import { Jwt } from 'hono/utils/jwt';
 import { AuthError, ForbiddenError, HttpError } from './errors';
+import { withRouteDoc, type GateSecurity, type NamedScheme } from './route-docs';
 
 /**
  * Who made a request, as a gate proved it: a user, an API key, a service.
@@ -47,13 +48,44 @@ export interface Gate<A extends Actor = Actor> {
     (c: Context): Promise<A | null | undefined> | A | null | undefined;
     /** The `WWW-Authenticate` challenge of a 401 when no credential came (`Bearer`). */
     challenge?: string;
+    /**
+     * Its security schemes for OpenAPIFeature's spec: alternatives, each the
+     * schemes presented together. The gates of web-kit set it; a gate of
+     * your own may (`[[{ name: 'mtls', scheme: { type: 'mutualTLS' } }]]`).
+     */
+    openapi?: GateSecurity;
 }
 
 type ActorOf<G> = G extends Gate<infer A> ? A : never;
 
-function gate<A extends Actor>(check: (c: Context) => Promise<A | null>, challenge?: string): Gate<A> {
-    return Object.assign(check, challenge ? { challenge } : {});
+function gate<A extends Actor>(
+    check: (c: Context) => Promise<A | null>,
+    challenge?: string,
+    openapi?: GateSecurity,
+): Gate<A> {
+    // An alternative without schemes would read as "no credentials needed";
+    // two gates may take the same one (a bearer token, a key as bearer).
+    const seen = new Set<string>();
+    const alternatives = (openapi ?? []).filter((schemes) => {
+        const key = schemes
+            .map((s) => s.name)
+            .sort()
+            .join(' ');
+        if (schemes.length === 0 || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    return Object.assign(
+        check,
+        challenge ? { challenge } : {},
+        alternatives.length > 0 ? { openapi: alternatives } : {},
+    );
 }
+
+/** A name for a spec's security scheme: letters, digits, `.`, `-` and `_`. */
+const schemeName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, '_');
+
+const BEARER: NamedScheme = { name: 'bearer', scheme: { type: 'http', scheme: 'bearer' } };
 
 /** The token of `Authorization: Bearer <token>`. */
 function bearerToken(c: Context): string | undefined {
@@ -70,13 +102,17 @@ const invalidToken = (message: string) =>
 export function bearer<A extends Actor>(
     verify: (token: string, c: Context) => Promise<A | null | undefined> | A | null | undefined,
 ): Gate<A> {
-    return gate(async (c) => {
-        const token = bearerToken(c);
-        if (!token) return null;
-        const actor = await verify(token, c);
-        if (!actor) throw invalidToken('Invalid token');
-        return actor;
-    }, 'Bearer');
+    return gate(
+        async (c) => {
+            const token = bearerToken(c);
+            if (!token) return null;
+            const actor = await verify(token, c);
+            if (!actor) throw invalidToken('Invalid token');
+            return actor;
+        },
+        'Bearer',
+        [[BEARER]],
+    );
 }
 
 /** The claims of a verified JWT. */
@@ -121,28 +157,32 @@ export function jwt<A extends Actor = JwtActor>(options: JwtGateOptions<A>): Gat
         ...(options.audience ? { aud: options.audience } : {}),
     };
     const toActor = options.toActor ?? ((claims: JwtClaims) => jwtActor(claims) as A | null);
-    return gate(async (c) => {
-        const token = bearerToken(c);
-        if (!token) return null;
-        let claims: JwtClaims;
-        try {
-            claims = options.secret
-                ? await Jwt.verify(token, options.secret, {
-                      alg: (options.algorithms?.[0] ?? 'HS256') as 'HS256',
-                      ...verification,
-                  })
-                : await Jwt.verifyWithJwks(token, {
-                      jwks_uri: options.jwksUri,
-                      allowedAlgorithms: (options.algorithms ?? ['RS256']) as ['RS256'],
-                      verification,
-                  });
-        } catch {
-            throw invalidToken('Invalid token');
-        }
-        const actor = await toActor(claims, c);
-        if (!actor) throw invalidToken('Invalid token');
-        return actor;
-    }, 'Bearer');
+    return gate(
+        async (c) => {
+            const token = bearerToken(c);
+            if (!token) return null;
+            let claims: JwtClaims;
+            try {
+                claims = options.secret
+                    ? await Jwt.verify(token, options.secret, {
+                          alg: (options.algorithms?.[0] ?? 'HS256') as 'HS256',
+                          ...verification,
+                      })
+                    : await Jwt.verifyWithJwks(token, {
+                          jwks_uri: options.jwksUri,
+                          allowedAlgorithms: (options.algorithms ?? ['RS256']) as ['RS256'],
+                          verification,
+                      });
+            } catch {
+                throw invalidToken('Invalid token');
+            }
+            const actor = await toActor(claims, c);
+            if (!actor) throw invalidToken('Invalid token');
+            return actor;
+        },
+        'Bearer',
+        [[{ name: 'jwt', scheme: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } }]],
+    );
 }
 
 /** An API key as a store knows it. */
@@ -238,6 +278,25 @@ export function apiKey<A extends Actor = ApiKeyActor>(store: KeyStore, options: 
             return toActor(record, c);
         },
         options.bearer ? 'Bearer' : undefined,
+        [
+            ...(header
+                ? [
+                      {
+                          name: header.toLowerCase() === 'x-api-key' ? 'apiKey' : schemeName(`apiKey.${header}`),
+                          scheme: { type: 'apiKey', in: 'header', name: header } as const,
+                      },
+                  ]
+                : []),
+            ...(options.bearer ? [BEARER] : []),
+            ...(options.query
+                ? [
+                      {
+                          name: schemeName(`apiKey.query.${options.query}`),
+                          scheme: { type: 'apiKey', in: 'query', name: options.query } as const,
+                      },
+                  ]
+                : []),
+        ].map((scheme) => [scheme]),
     );
 }
 
@@ -253,14 +312,23 @@ export interface UserActor extends Actor {
  * `c.get('user')`: null when there is none.
  */
 export function session<A extends Actor = UserActor>(
-    options: { toActor?: (user: { id: string; email?: string }, c: Context) => A } = {},
+    options: {
+        toActor?: (user: { id: string; email?: string }, c: Context) => A;
+        /** The session cookie, for the spec. Default better-auth's, `better-auth.session_token`. */
+        cookie?: string;
+    } = {},
 ): Gate<A> {
-    return gate(async (c) => {
-        const user = c.get('user' as never) as { id: string; email?: string } | null | undefined;
-        if (!user) return null;
-        if (options.toActor) return options.toActor(user, c);
-        return { kind: 'user', id: user.id, ...(user.email ? { email: user.email } : {}), user } as unknown as A;
-    });
+    const cookie = options.cookie ?? 'better-auth.session_token';
+    return gate(
+        async (c) => {
+            const user = c.get('user' as never) as { id: string; email?: string } | null | undefined;
+            if (!user) return null;
+            if (options.toActor) return options.toActor(user, c);
+            return { kind: 'user', id: user.id, ...(user.email ? { email: user.email } : {}), user } as unknown as A;
+        },
+        undefined,
+        [[{ name: 'session', scheme: { type: 'apiKey', in: 'cookie', name: cookie } }]],
+    );
 }
 
 /**
@@ -270,20 +338,24 @@ export function session<A extends Actor = UserActor>(
  */
 export function anyOf<G extends Gate<Actor>[]>(...gates: G): Gate<ActorOf<G[number]>> {
     const challenge = [...new Set(gates.map((g) => g.challenge).filter(Boolean))].join(', ') || undefined;
-    return gate(async (c) => {
-        let refused: HttpError | undefined;
-        for (const each of gates) {
-            try {
-                const actor = await each(c);
-                if (actor) return actor as ActorOf<G[number]>;
-            } catch (error) {
-                if (!(error instanceof HttpError) || error.status !== 401) throw error;
-                refused ??= error;
+    return gate(
+        async (c) => {
+            let refused: HttpError | undefined;
+            for (const each of gates) {
+                try {
+                    const actor = await each(c);
+                    if (actor) return actor as ActorOf<G[number]>;
+                } catch (error) {
+                    if (!(error instanceof HttpError) || error.status !== 401) throw error;
+                    refused ??= error;
+                }
             }
-        }
-        if (refused) throw refused;
-        return null;
-    }, challenge);
+            if (refused) throw refused;
+            return null;
+        },
+        challenge,
+        gates.flatMap((g) => g.openapi ?? []),
+    );
 }
 
 /** Every gate must prove an actor (a client certificate and a token); the first one's is the actor. */
@@ -299,6 +371,11 @@ export function allOf<G extends Gate<Actor>[]>(...gates: G): Gate<ActorOf<G[0]>>
             return (first ?? null) as ActorOf<G[0]> | null;
         },
         gates.find((g) => g.challenge)?.challenge,
+        // Every combination of one alternative of each gate.
+        gates.reduce<GateSecurity>(
+            (combined, g) => (g.openapi ? combined.flatMap((x) => g.openapi!.map((y) => [...x, ...y])) : combined),
+            [[]],
+        ),
     );
 }
 
@@ -308,7 +385,7 @@ export function allOf<G extends Gate<Actor>[]>(...gates: G): Gate<ActorOf<G[0]>>
  * credential, 401 with the gate's `WWW-Authenticate` challenge.
  */
 export function requireActor<A extends Actor>(gate: Gate<A>): MiddlewareHandler<{ Variables: { actor: A } }> {
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { actor: A } }> = async (c, next) => {
         const actor = await gate(c);
         if (!actor) {
             throw new AuthError(
@@ -319,6 +396,7 @@ export function requireActor<A extends Actor>(gate: Gate<A>): MiddlewareHandler<
         c.set('actor', actor);
         await next();
     };
+    return withRouteDoc(middleware, { gate: { security: gate.openapi, optional: false } });
 }
 
 /**
@@ -327,11 +405,12 @@ export function requireActor<A extends Actor>(gate: Gate<A>): MiddlewareHandler<
  * user). Invalid credentials are still a 401.
  */
 export function identify<A extends Actor>(gate: Gate<A>): MiddlewareHandler<{ Variables: { actor?: A } }> {
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { actor?: A } }> = async (c, next) => {
         const actor = await gate(c);
         if (actor) c.set('actor', actor);
         await next();
     };
+    return withRouteDoc(middleware, { gate: { security: gate.openapi, optional: true } });
 }
 
 /**
@@ -346,10 +425,13 @@ export function hasScopes(granted: readonly string[] | undefined, required: read
 
 /** Middleware after `requireActor`: 403 unless the actor has every scope (401 without an actor). */
 export function requireScopes(...scopes: string[]): MiddlewareHandler {
-    return async (c, next) => {
-        const actor = c.get('actor') as Actor | undefined;
-        if (!actor) throw new AuthError();
-        if (!hasScopes(actor.scopes, scopes)) throw new ForbiddenError('Insufficient scopes');
-        await next();
-    };
+    return withRouteDoc<MiddlewareHandler>(
+        async (c, next) => {
+            const actor = c.get('actor') as Actor | undefined;
+            if (!actor) throw new AuthError();
+            if (!hasScopes(actor.scopes, scopes)) throw new ForbiddenError('Insufficient scopes');
+            await next();
+        },
+        { scopes },
+    );
 }

@@ -8,6 +8,7 @@ import { problem, responderOf } from '../contract';
 import { readBody } from '../bind';
 import { HttpError } from '../errors';
 import { consoleLogger, type KernelLogger } from '../logging';
+import { bodyTypes, withRouteDoc } from '../route-docs';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -137,7 +138,10 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
         body: schema.body ? ajv.compile(schema.body) : null,
     };
 
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { validated: JsonValidated<Body, Query, Params> } }> = async (
+        c,
+        next,
+    ) => {
         try {
             const validated: { params?: unknown; query?: unknown; body?: unknown } = {};
 
@@ -203,6 +207,10 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
             return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
+    // The spec of the routes it is on: their params, query and body, and a 400.
+    return withRouteDoc(middleware, {
+        validates: { ...schema, ...(schema.body ? { bodyTypes: bodyTypes(true) } : {}) },
+    });
 }
 
 export { formatAjvErrors };
