@@ -46,7 +46,7 @@ import { Hono, HTTPException, createMiddleware, isHTTPException, statusText } fr
 import type { Context, MiddlewareHandler, ContentfulStatusCode } from '@iskra-bun/web-kit/hono';
 ```
 
-`isHTTPException(err)` también reconoce un `HTTPException` de otra copia de `hono` (un `Error` con un `status` HTTP y `getResponse()`); lo usan el manejador de errores del Kernel y `ErrorHandlerFeature`, así que esa excepción conserva su status en vez de convertirse en un 500. `statusText(404)` devuelve `"Not Found"`.
+`isHTTPException(err)` también reconoce un `HTTPException` de otra copia de `hono` (un `Error` con un `status` HTTP y `getResponse()`); lo usa el manejador de errores del Kernel, así que esa excepción conserva su status en vez de convertirse en un 500. `statusText(404)` devuelve `"Not Found"`.
 
 ## WebDriver (servidor standalone)
 
@@ -128,7 +128,7 @@ El Kernel y sus features reportan el arranque, los fallbacks y los errores que m
 | `HealthCheckFeature` | Health checks (readiness/liveness) |
 | `OpenAPIFeature` | Documentacion Swagger/OpenAPI |
 | `LoggerFeature` | Logging de request/response |
-| `ErrorHandlerFeature` | Manejo centralizado de errores |
+| `ErrorHandlerFeature` | Opciones del manejador de errores del Kernel: `includeStack`, un handler por status, un logger |
 | `RequestIdFeature` | Tracking de request con ID unico |
 | `OtelTracingFeature` | Tracing con OpenTelemetry (`@hono/otel`) |
 | `UploadFeature` | Subida de archivos |
@@ -260,24 +260,110 @@ new OtelTracingFeature({
 
 ## Errores HTTP
 
+Lanza un error desde una ruta o un middleware y el Kernel lo responde, con o sin `ErrorHandlerFeature`:
+
 ```typescript
 import { HttpError, NotFoundError, ValidationError } from '@iskra-bun/web-kit';
 
-// Tirar un error HTTP
 throw new NotFoundError('Usuario no encontrado');
+// 404 { "error": "Usuario no encontrado", "status": 404, "code": "NOT_FOUND" }
 
-// Con contexto
-throw new ValidationError('Datos invalidos', zodErrors, {
-    context: { field: 'email' },
-});
+throw new ValidationError('Datos inválidos', { field: 'email' });
+// 400 { "error": "Datos inválidos", "status": 400, "code": "VALIDATION_ERROR", "details": { "field": "email" } }
 
-// Error HTTP generico
-throw new HttpError(429, 'Demasiados requests', {
-    code: 'BAD_REQUEST',
+throw new HttpError(423, 'El pedido se está editando', { headers: { 'Retry-After': '30' } });
+// 423, código BAD_REQUEST (el del status) salvo que pases `code`
+```
+
+Por defecto todo error responde `{ error, status, code, details?, context?, stack?, requestId? }`, el cuerpo que leen los [SDKs](/es/guides/sdks/). Cómo se convierte un error en ese cuerpo:
+
+| Lanzado | Status y código | `error` (el mensaje) |
+|---|---|---|
+| `HttpError` (y sus subclases) | los suyos | su mensaje; `context` se envía en un 4xx |
+| `HTTPException` de Hono (lo que lanzan CSRF, el rate limiter y auth) | su status; el código de ese status (`429` → `RATE_LIMITED`) | su mensaje |
+| Cualquier otro `IskraError` | el status de su código (`NOT_FOUND` → 404, `CONFLICT` → 409, `TIMEOUT` → 504, 500 para el resto) | el texto del status (`Conflict`), o su mensaje si el error tiene `expose = true` |
+| Cualquier otra cosa | 500 `INTERNAL_ERROR` | `Internal Server Error` |
+
+- Una ruta que no existe responde **404** `{ "error": "Not Found", "status": 404, "code": "NOT_FOUND" }` (antes era el `404 Not Found` en texto plano de Hono).
+- Un request HEAD recibe el status y los headers, sin cuerpo.
+- `requestId` aparece cuando `RequestIdFeature` puso uno.
+- Un `HTTPException` que trae su propia respuesta (el 401 de `basicAuth`) se envía tal cual.
+- `includeStack` (`KernelConfig.includeStack` o `ErrorHandlerFeature`, activo por defecto sólo con `NODE_ENV=development`) agrega `stack`, y el mensaje y el contexto de los errores 5xx.
+- Los errores lanzados se loguean: un 4xx en `debug` (cualquier cliente puede causar todos los que quiera), un 5xx en `error`.
+
+`ErrorHandlerFeature` es opcional: fija `includeStack`, un handler por status (`customHandlers: { 404: (err, c) => … }`) y un `logger` para los errores.
+
+### Códigos de error
+
+Los códigos son los `ErrorCodes` de `@iskra-bun/core`, y una app agrega los suyos por declaration merging:
+
+```typescript
+declare module '@iskra-bun/core' {
+    interface ErrorCodeRegistry {
+        ORDER_LOCKED: true;
+    }
+}
+
+throw new HttpError(423, 'El pedido se está editando', { code: 'ORDER_LOCKED' });
+```
+
+`statusForCode('NOT_FOUND')` y `codeForStatus(404)` dan la correspondencia que usa el Kernel.
+
+## Contrato de respuestas
+
+El cuerpo de cada respuesta sale de un único **contrato de respuestas**, que se fija una vez en `KernelConfig.contract` (o en el de WebPlugin): lo siguen el manejador de errores del Kernel y su 404, y también `validate()` y `validateJson()`, el hook de validación y las rutas de OpenAPI, los rechazos de `ApiKeyFeature`, `AuthFeature`, `PermissionsFeature`, `CsrfFeature`, `RateLimitFeature` y de las rutas de upload, y los helpers `ok()`, `list()` y `fail()`. El de Iskra (`iskraContract`) es el de por defecto; `problemDetailsContract()` responde problem details según [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) (`application/problem+json`).
+
+```typescript
+import { WebPlugin, problemDetailsContract } from '@iskra-bun/web-kit';
+
+new WebPlugin({ router, contract: problemDetailsContract() });
+// 404 { "type": "about:blank", "title": "Not Found", "status": 404, "detail": "Not Found", "code": "NOT_FOUND", "instance": "/x" }
+```
+
+Un contrato propio conserva las respuestas de un servicio que estás migrando. Cada error le llega como un `Problem` (`{ status, code, message, details?, context?, stack?, requestId?, headers? }`):
+
+```typescript
+import type { ResponseContract } from '@iskra-bun/web-kit';
+
+const contract: ResponseContract = {
+    // Tus propias clases de error; undefined deja el resto a la correspondencia de Iskra.
+    toProblem: (error) =>
+        error instanceof AppError ? { status: statusOf(error.kind), code: 'APP_ERROR', message: error.message } : undefined,
+    // El cuerpo del error (o una Response).
+    error: (problem, c, error) =>
+        error instanceof AppError
+            ? { error: { code: problem.status, message: problem.message, metadata: error.fields ?? [] } }
+            : { message: problem.message },
+    // El cuerpo de ok(c, data) y de list(c, page).
+    success: (data, c, { message }) => ({ ...(message && { message }), data }),
+    list: (page, c) => ({
+        draw: c.req.query('draw') ? Number(c.req.query('draw')) : null,
+        recordsTotal: page.total,
+        recordsFiltered: page.filtered,
+        data: page.items,
+    }),
+    // Ve cada problema, también los 400 de una validación.
+    log: (problem, c) => { /* … */ },
+};
+```
+
+En las rutas:
+
+```typescript
+import { ok, list, fail } from '@iskra-bun/web-kit';
+
+app.get('/users/:id', async (c) => ok(c, await users.find(c.req.param('id'))));
+app.post('/users', async (c) => ok(c, await users.create(await c.req.json()), { status: 201, message: 'Creado' }));
+app.get('/users', async (c) => list(c, await oracle.paginate(query, pageParams(c.req.query()))));
+app.delete('/users/:id', async (c) => {
+    const error = await users.remove(c.req.param('id')); // un error como valor, no lanzado
+    return error ? fail(c, error) : c.body(null, 204);
 });
 ```
 
-El `ErrorHandlerFeature` captura estos errores automaticamente y los devuelve como JSON. Loguea los errores del cliente (4xx) con nivel `debug` y los del servidor (5xx) con `error`: cualquier cliente puede provocar tantos 4xx como quiera, y antes llenaban el log de errores. Un `HttpError` 5xx conserva su mensaje, pero su `context` (que suele describir el servidor: un DSN, un host) solo se envia con `includeStack`.
+`list()` acepta tal cual los resultados de `paginate()` y `paginateByCursor()` de db-oracle (`items` o `rows`, `total`, `filtered`, `page`, `pageSize`, `offset`, `limit`, `pages`, `nextCursor`). Con el contrato de Iskra, `ok()` responde `{ success: true, data, message? }` y `list()` `{ success: true, data, meta: { total, … } }`. `fail(c, error)` responde lo mismo que lanzar `error`, como valor de retorno.
+
+Para apagar del todo los headers de seguridad (los pone un proxy), `securityHeaders: false`.
 
 ## Rate limiting e IP del cliente
 
@@ -321,7 +407,7 @@ new Kernel({
 });
 ```
 
-Solo `false` desactiva un header por defecto (`xFrameOptions: false`). Una opcion `undefined`, `null` o vacia mantiene el default: antes `xFrameOptions: process.env.X_FRAME_OPTIONS` con la variable sin definir quitaba el header.
+Solo `false` desactiva un header por defecto (`xFrameOptions: false`). Una opcion `undefined`, `null` o vacia mantiene el default: antes `xFrameOptions: process.env.X_FRAME_OPTIONS` con la variable sin definir quitaba el header. `securityHeaders: false` no pone ninguno (los pone un proxy adelante).
 
 **Notas de hardening de seguridad:**
 
@@ -416,14 +502,4 @@ Las requests con un metodo fuera de `ignoreMethods` (`GET`, `HEAD` y `OPTIONS` p
 
 ## Respuestas Estandarizadas
 
-```typescript
-import { successResponse, errorResponse } from '@iskra-bun/web-kit';
-
-// Exito
-return c.json(successResponse({ id: 1, name: 'Juan' }, 'Creado'));
-// { success: true, data: { id: 1, name: 'Juan' }, message: 'Creado' }
-
-// Error
-return c.json(errorResponse('No encontrado', 'NOT_FOUND'), 404);
-// { success: false, error: 'No encontrado', code: 'NOT_FOUND', timestamp: '...' }
-```
+`ok()` y `list()` (ver [Contrato de respuestas](#contrato-de-respuestas)) arman los cuerpos de éxito según el contrato de la app. `successResponse(data, message)` da el objeto `{ success, data, message }` de Iskra para código que arma su propia respuesta; `errorResponse()` se mantiene para código anterior, pero un error lanzado (o `fail()`) responde según el contrato y se loguea.

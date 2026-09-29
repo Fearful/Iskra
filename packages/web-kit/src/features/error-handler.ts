@@ -1,16 +1,15 @@
 import type { Feature, ErrorHandlerConfig } from '../types';
 import type { Kernel } from '../kernel';
-import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isHTTPException } from '../hono';
-import { IskraError, nodeEnv } from '@iskra-bun/core';
-import { HttpError, ValidationError } from '../errors';
-import { consoleLogger, type KernelLogger } from '../logging';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { nodeEnv } from '@iskra-bun/core';
 
+/**
+ * How the Kernel reports errors: `includeStack`, a handler per status
+ * (`customHandlers`) and a logger for them. The Kernel answers every error by
+ * the response contract with or without this feature; it only changes those.
+ */
 export class ErrorHandlerFeature implements Feature {
     name = 'error-handler';
-    private log: KernelLogger = consoleLogger;
 
     private config: ErrorHandlerConfig;
 
@@ -23,139 +22,12 @@ export class ErrorHandlerFeature implements Feature {
     }
 
     async initialize(kernel: Kernel): Promise<void> {
-        this.log = kernel.getLogger();
-        const app = kernel.getApp();
-
-        app.onError((err, c) => {
-            return this.handleError(err, c);
+        kernel.configureErrors({
+            includeStack: this.config.includeStack === true,
+            customHandlers: this.config.customHandlers,
+            logger: this.config.logger,
         });
-
-        this.log.debug('Error handler feature initialized');
-    }
-
-    private handleError(err: Error | HTTPException, c: Context): Response {
-        const clientErrorStatus =
-            (err instanceof HttpError || isHTTPException(err)) && err.status < 500 ? err.status : undefined;
-        if (this.config.logger) {
-            this.config.logger(err as Error, c);
-        } else if (clientErrorStatus) {
-            // Any client can cause as many 4xx as it likes: logged at error
-            // level, they flooded the error log.
-            this.log.debug(`Request failed with ${clientErrorStatus}`, err);
-        } else {
-            this.log.error('Unhandled error', err);
-        }
-
-        // Iskra HttpError — convertir a HTTPException para mantener compatibilidad con Hono
-        if (err instanceof HttpError) {
-            const status = err.status;
-            if (this.config.customHandlers?.[status]) {
-                return this.config.customHandlers[status](err, c);
-            }
-
-            const response: Record<string, unknown> = {
-                error: err.message,
-                status,
-                code: err.code,
-            };
-
-            if (err instanceof ValidationError && err.details !== undefined) {
-                response.details = err.details;
-            }
-
-            // A 5xx's context describes the server's internals (a DSN, a host),
-            // not the client's request: kept out unless includeStack is on.
-            if (Object.keys(err.context).length > 0 && (status < 500 || this.config.includeStack)) {
-                response.context = err.context;
-            }
-
-            if (this.config.includeStack && err.stack) {
-                response.stack = err.stack;
-            }
-
-            const requestId = c.get('requestId');
-            if (requestId) response.requestId = requestId;
-
-            return c.json(response, status as ContentfulStatusCode);
-        }
-
-        // IskraError genérico (no-HTTP) — devolver como 500
-        if (err instanceof IskraError) {
-            const status = 500;
-            if (this.config.customHandlers?.[status]) {
-                return this.config.customHandlers[status](err, c);
-            }
-
-            const response: Record<string, unknown> = {
-                error: this.config.includeStack ? err.message : 'Internal Server Error',
-                status,
-                code: err.code,
-            };
-
-            if (this.config.includeStack && err.stack) {
-                response.stack = err.stack;
-            }
-
-            const requestId = c.get('requestId');
-            if (requestId) response.requestId = requestId;
-
-            return c.json(response, status);
-        }
-
-        // Hono HTTPException, also from another copy of hono in the app
-        if (isHTTPException(err)) {
-            const status = err.status;
-            if (this.config.customHandlers?.[status]) {
-                return this.config.customHandlers[status](err, c);
-            }
-            // A custom response (e.g. basicAuth's 401 with WWW-Authenticate,
-            // which makes the browser prompt) is sent as is.
-            if (err.res) return err.getResponse();
-
-            const response: Record<string, unknown> = {
-                error: err.message || this.getStatusText(status),
-                status,
-            };
-
-            if (this.config.includeStack && err.stack) {
-                response.stack = err.stack;
-            }
-
-            return c.json(response, status);
-        }
-
-        // Error genérico
-        const status = 500;
-        if (this.config.customHandlers?.[status]) {
-            return this.config.customHandlers[status](err, c);
-        }
-
-        const response: Record<string, unknown> = {
-            error: this.config.includeStack ? err.message : 'Internal Server Error',
-            status,
-        };
-
-        if (this.config.includeStack && err.stack) {
-            response.stack = err.stack;
-        }
-
-        const requestId = c.get('requestId');
-        if (requestId) {
-            response.requestId = requestId;
-        }
-
-        return c.json(response, status);
-    }
-
-    private getStatusText(status: number): string {
-        const statusTexts: Record<number, string> = {
-            400: 'Bad Request',
-            401: 'Unauthorized',
-            403: 'Forbidden',
-            404: 'Not Found',
-            500: 'Internal Server Error',
-        };
-        return statusTexts[status] || 'Error';
+        kernel.getLogger().debug('Error handler feature initialized');
     }
 }
 

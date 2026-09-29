@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { WebDriver } from '../src/server';
+import { NotFoundError } from '../src/errors';
 import { App } from '@iskra-bun/core';
 
 // Hardening parity for the standalone WebDriver HTTP stack (src/server.ts).
@@ -32,6 +33,13 @@ describe('WebDriver — error/header hardening', () => {
                 },
                 {
                     method: 'GET',
+                    path: '/missing',
+                    handler: () => {
+                        throw new NotFoundError('No such widget');
+                    },
+                },
+                {
+                    method: 'GET',
                     path: '/deny',
                     handler: () =>
                         new Response('framed never', {
@@ -56,6 +64,18 @@ describe('WebDriver — error/header hardening', () => {
         // The raw exception message (and any embedded secret) must not leak.
         expect(bodyText).not.toContain(SECRET_MARKER);
         expect(bodyText).not.toContain('p4ss');
+    });
+
+    it('answers an HttpError with its status, like the Kernel', async () => {
+        const res = await fetch(`http://localhost:${PORT}/missing`);
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({ error: 'No such widget', status: 404, code: 'NOT_FOUND' });
+    });
+
+    it('answers an unknown route with a JSON 404', async () => {
+        const res = await fetch(`http://localhost:${PORT}/nowhere`);
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({ error: 'Not Found', status: 404, code: 'NOT_FOUND' });
     });
 
     it('sets standard security headers on responses', async () => {

@@ -12,6 +12,7 @@ import {
     safeBasename,
 } from './helper';
 import { consoleLogger, type KernelLogger } from '../../logging';
+import { problem, responderOf } from '../../contract';
 
 declare module 'hono' {
     interface ContextVariableMap {
@@ -97,16 +98,18 @@ export class UploadFeature implements Feature {
 
         const prefix = this.config.routePrefix;
         const authorize = this.config.authorize!;
+        const refuse = (c: Context, status: number, message: string) =>
+            responderOf(c).problem(c, problem(status, { message }));
         const guard =
             (action: UploadAction, target?: (c: Context) => UploadTarget) => async (c: Context, next: Next) => {
-                if (!(await authorize(c, action, target?.(c)))) return c.json({ error: 'Forbidden' }, 403);
+                if (!(await authorize(c, action, target?.(c)))) return refuse(c, 403, 'Forbidden');
                 await next();
             };
         // Internal errors are logged, never echoed: storage errors can carry
         // paths, bucket names or credentials hints.
         const fail = (c: Context, action: UploadAction, e: unknown) => {
             this.log.error(`[upload] ${action} failed`, e);
-            return c.json({ error: `${action[0].toUpperCase()}${action.slice(1)} failed` }, 500);
+            return refuse(c, 500, `${action[0].toUpperCase()}${action.slice(1)} failed`);
         };
 
         // POST — upload a file. `authorize` runs before the body is read, then
@@ -115,24 +118,24 @@ export class UploadFeature implements Feature {
             const upload = c.get('upload');
             const limit = this.config.maxFileSize + MULTIPART_OVERHEAD_BYTES;
             if (Number(c.req.header('content-length')) > limit) {
-                return c.json({ error: 'File too large' }, 413);
+                return refuse(c, 413, 'File too large');
             }
             let formData: FormData | null;
             try {
                 formData = await readFormDataWithin(c.req.raw, limit);
             } catch {
-                return c.json({ error: 'Invalid multipart body' }, 400);
+                return refuse(c, 400, 'Invalid multipart body');
             }
-            if (!formData) return c.json({ error: 'File too large' }, 413);
+            if (!formData) return refuse(c, 413, 'File too large');
 
             try {
                 const file = formData.get('file');
-                if (!file || !(file instanceof File)) return c.json({ error: 'No file' }, 400);
+                if (!file || !(file instanceof File)) return refuse(c, 400, 'No file');
 
-                if (file.size > this.config.maxFileSize) return c.json({ error: 'File too large' }, 413);
+                if (file.size > this.config.maxFileSize) return refuse(c, 413, 'File too large');
                 const filename = safeBasename(file.name);
                 if (!extensionAllowed(filename, this.config.allowedExtensions))
-                    return c.json({ error: 'Invalid extension' }, 400);
+                    return refuse(c, 400, 'Invalid extension');
 
                 // The type comes from the extension, never from file.type (which
                 // Bun derives from the name: image/svg+xml, text/html...).
@@ -145,7 +148,7 @@ export class UploadFeature implements Feature {
                     size: file.size,
                     type,
                 };
-                if (!(await authorize(c, 'upload', target))) return c.json({ error: 'Forbidden' }, 403);
+                if (!(await authorize(c, 'upload', target))) return refuse(c, 403, 'Forbidden');
 
                 const data = new Uint8Array(await file.arrayBuffer());
                 const result = await upload.upload(filename, data, subfolder, {
@@ -154,7 +157,7 @@ export class UploadFeature implements Feature {
                 });
                 return c.json({ success: true, ...result });
             } catch (e) {
-                if (e instanceof FileExistsError) return c.json({ error: 'File already exists' }, 409);
+                if (e instanceof FileExistsError) return refuse(c, 409, 'File already exists');
                 return fail(c, 'upload', e);
             }
         });
@@ -181,7 +184,7 @@ export class UploadFeature implements Feature {
                 const { filename, subfolder } = this.fileTarget(c);
                 const stream = await upload.getStream(filename, subfolder);
                 if (!stream) {
-                    return c.json({ error: 'File not found' }, 404);
+                    return refuse(c, 404, 'File not found');
                 }
 
                 // Only raster images are shown inline; anything else (HTML,

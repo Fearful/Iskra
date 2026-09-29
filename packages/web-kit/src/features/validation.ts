@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
-import { ErrorCodes, errorResponse } from '../responses';
+import { ErrorCodes } from '../responses';
+import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /**
  * A Zod schema, v3 or v4 (web-kit's `z` is v3, the one re-exported for
@@ -58,9 +58,13 @@ export function validate<S extends ValidationSchema>(
             if (schema.params) {
                 const parsed = schema.params.safeParse(c.req.param());
                 if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid route params', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid route params',
+                            details: parsed.error.flatten(),
+                        }),
                     );
                 }
                 validated.params = parsed.data;
@@ -69,9 +73,13 @@ export function validate<S extends ValidationSchema>(
             if (schema.query) {
                 const parsed = schema.query.safeParse(c.req.query());
                 if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid query params', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid query params',
+                            details: parsed.error.flatten(),
+                        }),
                     );
                 }
                 validated.query = parsed.data;
@@ -91,9 +99,13 @@ export function validate<S extends ValidationSchema>(
 
                 const parsed = schema.body.safeParse(data);
                 if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid body', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid body',
+                            details: parsed.error.flatten(),
+                        }),
                     );
                 }
                 validated.body = parsed.data;
@@ -104,7 +116,7 @@ export function validate<S extends ValidationSchema>(
             await next();
         } catch (err) {
             if (logErrors) logger.error('Validation error', err);
-            return c.json(errorResponse('Validation middleware failed', ErrorCodes.INTERNAL_ERROR), 500);
+            return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
 }

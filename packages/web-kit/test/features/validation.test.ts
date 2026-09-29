@@ -44,7 +44,7 @@ describe('validate - body', () => {
         });
         expect(res.status).toBe(400);
         const body = (await res.json()) as any;
-        expect(body.success).toBe(false);
+        expect(body.status).toBe(400);
         expect(body.code).toBe('VALIDATION_ERROR');
         expect(body.error).toBe('Invalid body');
         expect(body.details).toBeDefined();

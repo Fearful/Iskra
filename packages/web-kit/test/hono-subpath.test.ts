@@ -69,7 +69,7 @@ describe('a HTTPException from another copy of hono', () => {
 
         const denied = await app.request('/denied');
         expect(denied.status).toBe(403);
-        expect(await denied.json()).toEqual({ message: 'Denied' });
+        expect(await denied.json()).toEqual({ error: 'Denied', status: 403, code: 'FORBIDDEN' });
 
         const custom = await app.request('/custom');
         expect(custom.status).toBe(401);
@@ -86,6 +86,6 @@ describe('a HTTPException from another copy of hono', () => {
 
         const res = await kernel.getApp().request('/denied');
         expect(res.status).toBe(403);
-        expect(await res.json()).toEqual({ error: 'Denied', status: 403 });
+        expect(await res.json()).toEqual({ error: 'Denied', status: 403, code: 'FORBIDDEN' });
     });
 });

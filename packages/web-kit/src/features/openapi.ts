@@ -2,7 +2,8 @@ import type { Feature, OpenAPIConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context, Handler, Hono, Next } from 'hono';
 import { OpenAPIHono, createRoute, z, type RouteConfig } from '@hono/zod-openapi';
-import { ErrorCodes, errorResponse } from '../responses';
+import { ErrorCodes } from '../responses';
+import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
 
 /**
@@ -82,9 +83,13 @@ export class OpenAPIFeature implements Feature {
         return new OpenAPIHono({
             defaultHook: (result, c: Context) => {
                 if (!result.success) {
-                    return c.json(
-                        errorResponse('Validation Error', ErrorCodes.VALIDATION_ERROR, result.error.flatten()),
-                        400,
+                    return responderOf(c).problem(
+                        c,
+                        problem(400, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Validation Error',
+                            details: result.error.flatten(),
+                        }),
                     );
                 }
             },
@@ -112,12 +117,12 @@ export class OpenAPIFeature implements Feature {
         const guard = async (c: Context, next: Next) => {
             const decision = authorize ? await authorize(c) : true;
             if (decision instanceof Response) return decision;
-            if (!decision) return c.json({ error: 'Forbidden' }, 403);
+            if (!decision) return responderOf(c).problem(c, problem(403));
             await next();
         };
 
         app.get('/openapi.json', guard, (c: Context) => {
-            if (!this.app) return c.json({ error: 'OpenAPI not initialized' }, 500);
+            if (!this.app) return responderOf(c).problem(c, problem(500, { message: 'OpenAPI not initialized' }));
 
             const spec = this.app.getOpenAPIDocument({
                 openapi: '3.1.0',

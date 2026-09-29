@@ -5,6 +5,7 @@ import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
 import type { ClientIpHeader, TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
+import type { ResponseContract } from './contract';
 
 export type { Kernel };
 
@@ -24,7 +25,19 @@ export interface KernelConfig {
     /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
     shutdownGraceMs?: number;
     environment?: 'development' | 'production' | 'test';
-    securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
+    /** Headers set on every response, merged over the defaults; `false` sets none. */
+    securityHeaders?: SecurityHeadersConfig | false;
+    /**
+     * The shape of every response: errors, 404s, failed validations and the
+     * `ok()`/`list()` helpers. Default: Iskra's (`iskraContract`), which the
+     * SDKs read; `problemDetailsContract()` answers RFC 9457 problem details.
+     */
+    contract?: ResponseContract;
+    /**
+     * Send the stack, and the message and context of 5xx errors, in error
+     * responses. Default: only with NODE_ENV=development.
+     */
+    includeStack?: boolean;
     /**
      * Number of reverse proxies in front of the app (`true` = 1). Only then is
      * `clientIpHeader` used to identify clients (rate limiting); by default the

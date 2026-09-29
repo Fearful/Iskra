@@ -3,9 +3,9 @@ import Ajv from 'ajv';
 import addErrors from 'ajv-errors';
 import addFormats from 'ajv-formats';
 import type { ErrorObject } from 'ajv';
-import { ErrorCodes, errorResponse } from '../responses';
+import { ErrorCodes } from '../responses';
+import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -144,9 +144,13 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
                 const valid = validators.params(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.params.errors);
-                    return c.json(
-                        errorResponse('Invalid route params', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid route params',
+                            details: details,
+                        }),
                     );
                 }
                 validated.params = data;
@@ -157,9 +161,13 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
                 const valid = validators.query(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.query.errors);
-                    return c.json(
-                        errorResponse('Invalid query params', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid query params',
+                            details: details,
+                        }),
                     );
                 }
                 validated.query = data;
@@ -180,9 +188,13 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
                 const valid = validators.body(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.body.errors);
-                    return c.json(
-                        errorResponse('Invalid body', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid body',
+                            details: details,
+                        }),
                     );
                 }
                 validated.body = data;
@@ -193,7 +205,7 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
             await next();
         } catch (err) {
             if (logErrors) logger.error('JSON Schema validation error', err);
-            return c.json(errorResponse('Validation middleware failed', ErrorCodes.INTERNAL_ERROR), 500);
+            return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
 }

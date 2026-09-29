@@ -1,24 +1,34 @@
 import { IskraError, ErrorCodes, type ErrorCode } from '@iskra-bun/core';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { codeForStatus } from './status-codes';
 
 // ─── HTTP Errors ─────────────────────────────────────────────────────────────
 
 export class HttpError extends IskraError {
     public readonly status: number;
+    /** Headers the error response carries (`Allow`, `WWW-Authenticate`, `Retry-After`). */
+    public readonly headers?: Record<string, string>;
 
     constructor(
         status: number,
         message: string,
-        options?: { code?: ErrorCode; cause?: Error; context?: Record<string, unknown> },
+        options?: {
+            code?: ErrorCode;
+            cause?: Error;
+            context?: Record<string, unknown>;
+            headers?: Record<string, string>;
+        },
     ) {
         super(message, {
-            code: options?.code ?? ErrorCodes.INTERNAL_ERROR,
+            // The status's code (429 → RATE_LIMITED) unless one is given.
+            code: options?.code ?? codeForStatus(status),
             cause: options?.cause,
             context: options?.context,
         });
         this.name = 'HttpError';
         this.status = status;
+        if (options?.headers) this.headers = options.headers;
     }
 
     toHTTPException(): HTTPException {

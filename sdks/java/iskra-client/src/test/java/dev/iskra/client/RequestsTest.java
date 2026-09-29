@@ -168,8 +168,16 @@ class RequestsTest {
     @Test
     void plainTextErrorBody() {
         NotFoundException e = assertThrows(NotFoundException.class,
-                () -> iskra.get("/contract/does-not-exist", Object.class));
+                () -> iskra.get("/contract/text-not-found", Object.class));
         assertTrue(e.getMessage().contains("Not Found"), e.getMessage());
+    }
+
+    @Test
+    void unknownRouteIsATypedNotFound() {
+        NotFoundException e = assertThrows(NotFoundException.class,
+                () -> iskra.get("/contract/does-not-exist", Object.class));
+        assertEquals("Not Found", e.getMessage());
+        assertEquals("NOT_FOUND", e.getErrorCode());
     }
 
     @Test

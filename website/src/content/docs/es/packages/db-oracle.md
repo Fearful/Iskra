@@ -204,23 +204,18 @@ Dentro de `transaction(fn)`, `oracle.query()`, `oracle.execute()`, `oracle.db` y
 ## Paginación, búsqueda y orden
 
 ```typescript
-import { search, sortBy, QueryInputError } from '@iskra-bun/db-oracle';
-import { defineRoute, ValidationError } from '@iskra-bun/web-kit';
+import { search, sortBy } from '@iskra-bun/db-oracle';
+import { defineRoute } from '@iskra-bun/web-kit';
 
 defineRoute({
     method: 'GET',
     path: '/people',
     handler: async (ctx) => {
         const param = (name: string) => ctx.raw.req.query(name);
-        try {
-            let q = oracle.db!.selectFrom('PEOPLE').select(['ID', 'NAME', 'CITY']);
-            q = search(q, ['NAME', 'CITY'], param('q'));
-            q = sortBy(q, param('sort'), ['NAME', 'CITY']).orderBy('ID');
-            return await oracle.paginate(q, { page: param('page'), pageSize: param('pageSize') });
-        } catch (error) {
-            if (error instanceof QueryInputError) throw new ValidationError(error.message);
-            throw error;
-        }
+        let q = oracle.db!.selectFrom('PEOPLE').select(['ID', 'NAME', 'CITY']);
+        q = search(q, ['NAME', 'CITY'], param('q'));
+        q = sortBy(q, param('sort'), ['NAME', 'CITY']).orderBy('ID');
+        return oracle.paginate(q, { page: param('page'), pageSize: param('pageSize') });
     },
 });
 // → { items, total, page, pageSize, pages }
@@ -231,7 +226,7 @@ defineRoute({
 - **`search(query, columns, term)`** deja las filas donde alguna de `columns` contiene `term`, sin distinguir mayúsculas (`upper(col) like :term escape '\'`). El término es un bind, y sus `%` y `_` se buscan literalmente. Un término vacío deja la consulta como está.
 - **`sortBy(query, sort, allowed)`** ordena por un parámetro como `name,-created` (`-` para descendente), aceptando solo los campos de `allowed`. Agregá una columna única después para desempatar.
 
-Un cursor mal formado o un campo fuera de `allowed` lanza un `QueryInputError` (código `VALIDATION_ERROR`). Viene del cliente, así que respondé 400, como arriba.
+Un cursor mal formado o un campo fuera de `allowed` lanza un `QueryInputError` (código `VALIDATION_ERROR`). Viene del cliente: web-kit lo responde 400 con su mensaje (está marcado `expose`); en otro lado, respondé 400 vos.
 
 ## Streaming
 
@@ -346,10 +341,10 @@ Los binds pueden tener datos personales: registralos solo donde eso sea aceptabl
 | Error | Cuándo |
 |---|---|
 | `ConnectionError` | `start()` no pudo abrir el pool ni llegar a la base. Su mensaje trae el de Oracle (`ORA-01017: …`); su contexto, el connect string y el usuario, nunca la contraseña. |
-| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Para HTTP: `ORA-00001` (restricción única) → 409; `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`) → 503; `NJS-123` (se pasó el `callTimeout`) → 503 o 504; `ORA-01013` (cancelada). `error.timedOut` es `true` para NJS-123 y para un `DeadlineError`. |
-| `DeadlineError` | Un `QueryError`: una llamada pasó su [plazo](#el-plazo) y el driver abandonó su conexión. `error.deadlineMs` es el plazo. Para HTTP, 503 o 504. |
+| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Su `code` le dice a web-kit cómo responder: `CONFLICT` (409) para `ORA-00001` (restricción única), `SERVICE_UNAVAILABLE` (503) para `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`), `TIMEOUT` (504) para `NJS-123` (se pasó el `callTimeout`), `QUERY_ERROR` (500) si no; el mensaje queda en el log. `error.timedOut` es `true` para NJS-123 y para un `DeadlineError`. |
+| `DeadlineError` | Un `QueryError`: una llamada pasó su [plazo](#el-plazo) y el driver abandonó su conexión. `error.deadlineMs` es el plazo; su código es `TIMEOUT` (504). |
 | `MigrationError` | Falló una migración (su contexto nombra el archivo y la sentencia), cambió después de aplicarse, o venció la espera del lock. |
-| `QueryInputError` | Un cursor de paginación o un campo de orden del request no es válido: un 400. |
+| `QueryInputError` | Un cursor de paginación o un campo de orden del request no es válido: web-kit responde 400 con su mensaje. |
 | `ConfigError` (core) | `app.config.oracle` no es válida. |
 
 ## Actualizar desde 0.1

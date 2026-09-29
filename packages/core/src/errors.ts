@@ -26,8 +26,13 @@ export const ErrorCodes = {
     UNAUTHORIZED: 'UNAUTHORIZED',
     FORBIDDEN: 'FORBIDDEN',
     NOT_FOUND: 'NOT_FOUND',
+    METHOD_NOT_ALLOWED: 'METHOD_NOT_ALLOWED',
     CONFLICT: 'CONFLICT',
+    PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
     VALIDATION_ERROR: 'VALIDATION_ERROR',
+    RATE_LIMITED: 'RATE_LIMITED',
+    SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+    TIMEOUT: 'TIMEOUT',
 
     // Data
     DATABASE_ERROR: 'DATABASE_ERROR',
@@ -50,7 +55,23 @@ export const ErrorCodes = {
     SOCKET_MESSAGE_ERROR: 'SOCKET_MESSAGE_ERROR',
 } as const;
 
-export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
+/**
+ * Every error code, as keys: Iskra's own (`ErrorCodes`) and the ones an app
+ * adds by merging into this interface, which `ErrorCode` then accepts:
+ *
+ * ```ts
+ * declare module '@iskra-bun/core' {
+ *     interface ErrorCodeRegistry {
+ *         ORDER_LOCKED: true;
+ *     }
+ * }
+ * throw new HttpError(423, 'The order is being edited', { code: 'ORDER_LOCKED' });
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- extended by declaration merging
+export interface ErrorCodeRegistry extends Record<(typeof ErrorCodes)[keyof typeof ErrorCodes], true> {}
+
+export type ErrorCode = keyof ErrorCodeRegistry & string;
 
 export interface IskraErrorOptions {
     code: ErrorCode;

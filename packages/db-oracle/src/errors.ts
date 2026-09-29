@@ -1,4 +1,4 @@
-import { IskraError, ErrorCodes } from '@iskra-bun/core';
+import { IskraError, ErrorCodes, type ErrorCode } from '@iskra-bun/core';
 
 type ErrorOptions = { cause?: Error; context?: Record<string, unknown> };
 
@@ -21,10 +21,15 @@ export class ConnectionError extends IskraError {
  * `pool.queueTimeout`) or `'NJS-123'` (`callTimeout` exceeded). For a
  * database error `context.errorNum` holds its number (1 for ORA-00001) and
  * `context.oracleCode` its code. The original error is `cause`.
+ *
+ * Its `code` tells an HTTP handler (web-kit's response contract) how to
+ * answer: `TIMEOUT` (504) for NJS-123 and a DeadlineError,
+ * `SERVICE_UNAVAILABLE` (503) for NJS-040, `CONFLICT` (409) for ORA-00001,
+ * `QUERY_ERROR` (500) for the rest. The message stays server-side.
  */
 export class QueryError extends IskraError {
-    constructor(message: string, options?: ErrorOptions) {
-        super(message, { code: ErrorCodes.QUERY_ERROR, ...options });
+    constructor(message: string, options?: ErrorOptions & { code?: ErrorCode }) {
+        super(message, { ...options, code: options?.code ?? codeOf(options?.context?.errorCode) });
         this.name = 'QueryError';
     }
 
@@ -46,6 +51,21 @@ export class QueryError extends IskraError {
     }
 }
 
+/** The error code of a database or driver code (`'NJS-123'`…). */
+function codeOf(errorCode: unknown): ErrorCode {
+    switch (errorCode) {
+        case 'NJS-123':
+        case 'DPI-1067':
+            return ErrorCodes.TIMEOUT;
+        case 'NJS-040':
+            return ErrorCodes.SERVICE_UNAVAILABLE;
+        case 'ORA-00001':
+            return ErrorCodes.CONFLICT;
+        default:
+            return ErrorCodes.QUERY_ERROR;
+    }
+}
+
 // ─── Deadline Error ──────────────────────────────────────────────────────────
 
 /**
@@ -56,6 +76,7 @@ export class QueryError extends IskraError {
 export class DeadlineError extends QueryError {
     constructor(readonly deadlineMs: number) {
         super(`Oracle did not answer within ${deadlineMs} ms: the call was given up and its connection dropped`, {
+            code: ErrorCodes.TIMEOUT,
             context: { deadlineMs },
         });
         this.name = 'DeadlineError';
@@ -79,9 +100,12 @@ export class MigrationError extends IskraError {
 
 /**
  * A pagination cursor or a sort field from a request is not valid. It comes
- * from the client, so an HTTP handler answers 400 (web-kit's ValidationError).
+ * from the client, so web-kit answers 400 with its message (`expose`).
  */
 export class QueryInputError extends IskraError {
+    /** Its message is meant for the client. */
+    readonly expose = true;
+
     constructor(message: string, options?: ErrorOptions) {
         super(message, { code: ErrorCodes.VALIDATION_ERROR, ...options });
         this.name = 'QueryInputError';

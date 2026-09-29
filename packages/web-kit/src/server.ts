@@ -2,6 +2,8 @@ import { OpenAPIHono, createRoute, type RouteConfig } from '@hono/zod-openapi';
 import { z } from 'zod';
 import type { Driver, App } from '@iskra-bun/core';
 import type { RouteOptions } from './router';
+import { ErrorCodes } from '@iskra-bun/core';
+import { problem, responderOf } from './contract';
 
 export interface WebServerOptions {
     port?: number;
@@ -30,7 +32,23 @@ export class WebDriver implements Driver {
 
     constructor(options: WebServerOptions = {}) {
         this.options = options;
-        this.server = new OpenAPIHono();
+        // Answers like the Kernel, by Iskra's response contract: a failed
+        // validation, an unknown route and a thrown error.
+        this.server = new OpenAPIHono({
+            defaultHook: (result, c) => {
+                if (!result.success) {
+                    return responderOf(c).problem(
+                        c,
+                        problem(400, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Validation Error',
+                            details: result.error.flatten(),
+                        }),
+                    );
+                }
+            },
+        });
+        this.server.notFound((c) => responderOf(c).problem(c, problem(404)));
     }
 
     init(app: App) {
@@ -139,11 +157,13 @@ export class WebDriver implements Driver {
                     if (result instanceof Response) return result;
                     return c.json(result);
                 } catch (err) {
-                    // Log the detail server-side; never serialize the raw error
-                    // message (it may embed connection strings or other secrets)
-                    // to the client. Return only a generic body.
-                    this.app.logger.error({ err, route: route.path }, 'Route handler failed');
-                    return c.json({ error: 'Internal Server Error' }, 500);
+                    // By the contract, like the Kernel: an HttpError keeps its
+                    // status, anything else is a 500 whose message (it may embed
+                    // connection strings or other secrets) stays in the log.
+                    const responder = responderOf(c);
+                    const found = responder.toProblem(err, c);
+                    if (found.status >= 500) this.app.logger.error({ err, route: route.path }, 'Route handler failed');
+                    return responder.problem(c, found, err);
                 }
             });
         }
