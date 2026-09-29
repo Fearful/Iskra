@@ -20,7 +20,7 @@ experimental policy below to set expectations per package.
 | Tier | Packages | Stability |
 | :--- | :--- | :--- |
 | **Stable** | `core`, `web-kit`, `db-kit`, `kv-kit`, `socket-kit`, `worker-kit`, `process-kit` | SemVer applies normally. Breaking changes bump MAJOR (once 1.0) or MINOR (while 0.x). |
-| **Experimental** | `desktop-kit`, `mobile-kit`, `db-oracle` | Stay on `0.x` indefinitely. **Breaking changes may ship in a MINOR bump.** APIs are not yet stable; pin an exact version if you depend on them. |
+| **Experimental** | `desktop-kit`, `mobile-kit`, `db-oracle`, `ldap-kit` | Stay on `0.x` indefinitely. **Breaking changes may ship in a MINOR bump.** APIs are not yet stable; pin an exact version if you depend on them. |
 
 Experimental packages carry an `"experimental"` keyword in their `package.json`
 and an **Experimental** callout in their docs.

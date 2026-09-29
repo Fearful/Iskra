@@ -65,7 +65,8 @@ describe('documentation', () => {
             ...walk(CONTENT, (name) => /\.mdx?$/.test(name)).filter((f) => !/guides\/upgrading-/.test(f)),
             ...walk(ROOT, (name) => name === 'README.md' || name === 'README.es.md'),
         ];
-        const importRe = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](@iskra-bun\/[\w-]+|create-iskra)['"]/g;
+        const importRe =
+            /import\s+(type\s+)?\{([^}]*)\}\s*from\s*['"](@iskra-bun\/[\w-]+(?:\/[\w-]+)?|create-iskra)['"]/g;
         const modules = new Map<string, Record<string, unknown>>();
         const sources = new Map<string, string>();
         const missing: string[] = [];
@@ -74,7 +75,8 @@ describe('documentation', () => {
             const text = readFileSync(file, 'utf8');
             for (const [, typeOnly, list, spec] of text.matchAll(importRe)) {
                 if (typeOnly) continue;
-                const pkg = spec === 'create-iskra' ? 'create-iskra' : spec.slice('@iskra-bun/'.length);
+                // A subpath (`@iskra-bun/web-kit/hono`) is declared in the same package's src.
+                const pkg = spec === 'create-iskra' ? 'create-iskra' : spec.split('/')[1];
                 if (!modules.has(spec)) modules.set(spec, await import(spec));
                 const names = list
                     .split(',')

@@ -100,7 +100,7 @@ describe('OpenAPI Feature', () => {
 
         expect(res.status).toBe(400);
         const json = (await res.json()) as any;
-        expect(json.success).toBe(false);
+        expect(json.status).toBe(400);
         expect(json.code).toBe('VALIDATION_ERROR');
 
         await kernel.shutdown();

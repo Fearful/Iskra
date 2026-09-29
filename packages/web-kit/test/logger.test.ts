@@ -3,6 +3,7 @@ import { Kernel } from '../src/kernel';
 import { LoggerFeature } from '../src/features/logger';
 import { RequestIdFeature } from '../src/features/request-id';
 import type { LoggerConfig } from '../src/types';
+import { fromStructuredLogger, type StructuredLogger } from '../src/logging';
 
 /** Which of debug/info/warn/error a handler's `c.get("logger")` writes at `level`. */
 async function written(level: LoggerConfig['level']): Promise<string[]> {
@@ -97,6 +98,49 @@ describe('Request logging and request IDs', () => {
             expect(header).toBe(body);
         }
 
+        await kernel.shutdown();
+    });
+});
+
+describe('LoggerFeature over a structured logger (the App pino)', () => {
+    /** A pino-like logger that records each line with the fields of its children. */
+    function recordingPino() {
+        const lines: Array<{ level: string; msg: string; fields: Record<string, unknown> }> = [];
+        const make = (bindings: Record<string, unknown>): StructuredLogger => {
+            const at = (level: string) => (obj: object, msg: string) =>
+                void lines.push({ level, msg, fields: { ...bindings, ...(obj as Record<string, unknown>) } });
+            return {
+                debug: at('debug'),
+                info: at('info'),
+                warn: at('warn'),
+                error: at('error'),
+                child: (more) => make({ ...bindings, ...more }),
+            };
+        };
+        return { logger: fromStructuredLogger(make({})), lines };
+    }
+
+    it('gives each request a logger whose lines carry its id, and writes one access line per request', async () => {
+        const { logger, lines } = recordingPino();
+        const kernel = new Kernel({ logger });
+        kernel.registerFeature(new LoggerFeature({ accessLog: true }));
+        kernel.registerFeature(new RequestIdFeature());
+        await kernel.initialize();
+        kernel.getApp().get('/orders/:id', (c) => {
+            c.get('logger').info('loading order', { id: c.req.param('id') });
+            return c.json({});
+        });
+
+        await kernel.getApp().request('/orders/7', { headers: { 'X-Request-ID': 'req-7' } });
+
+        expect(lines.find((l) => l.msg === 'loading order')?.fields).toEqual({
+            requestId: 'req-7',
+            details: { id: '7' },
+        });
+        const access = lines.find((l) => l.msg === 'request completed')!;
+        expect(access.level).toBe('info');
+        expect(access.fields).toMatchObject({ method: 'GET', path: '/orders/7', status: 200, requestId: 'req-7' });
+        expect(typeof access.fields.durationMs).toBe('number');
         await kernel.shutdown();
     });
 });

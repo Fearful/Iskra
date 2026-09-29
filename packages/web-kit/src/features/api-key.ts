@@ -8,8 +8,8 @@ import { consoleLogger, type KernelLogger } from '../logging';
 // defaults, while the genuinely optional callbacks stay optional. This replaces
 // the previous `as unknown as Required<ApiKeyConfig>` cast, which masked shape
 // drift by pretending the callbacks were always present.
-type ResolvedApiKeyConfig = Required<Omit<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated'>> &
-    Pick<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated'>;
+type ResolvedApiKeyConfig = Required<Omit<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated' | 'store'>> &
+    Pick<ApiKeyConfig, 'customExtractor' | 'onError' | 'onValidated' | 'store'>;
 
 // --- ApiKeyStore ---
 
@@ -89,6 +89,25 @@ export class ApiKeyStore {
             }
         }
 
+        // Then the keys of the store (a database table), if there is one.
+        const record = await this.config.store?.find(key);
+        if (record) {
+            if (this.isExpired(record.expiresAt ?? undefined)) return { isValid: false, error: 'API key has expired' };
+            return {
+                isValid: true,
+                key: {
+                    id: record.id,
+                    key,
+                    name: record.name,
+                    scopes: record.scopes ? [...record.scopes] : undefined,
+                    expiresAt: record.expiresAt ?? undefined,
+                    createdAt: new Date(),
+                    lastUsedAt: new Date(),
+                    metadata: record.metadata,
+                },
+            };
+        }
+
         return { isValid: false, error: 'Invalid API key' };
     }
 
@@ -149,6 +168,7 @@ export class ApiKeyFeature implements Feature {
             skipPaths: config.skipPaths || [],
             onError: config.onError,
             onValidated: config.onValidated,
+            store: config.store,
         };
         this.config = defaults;
     }

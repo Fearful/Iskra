@@ -40,12 +40,16 @@ class SimpleLogger implements RequestLogger {
         if (this.shouldLog('debug')) console.debug(`[DEBUG] ${message}`, ...args);
     }
 
-    /** Without a configured level everything is written, as before `level` was honored. */
     private shouldLog(level: Level) {
-        const min = this.config.level;
-        if (!min) return true;
-        return LEVELS.indexOf(level) >= LEVELS.indexOf(min);
+        return shouldLog(this.config, level);
     }
+}
+
+/** Without a configured level everything is written, as before `level` was honored. */
+function shouldLog(config: LoggerConfig, level: Level) {
+    const min = config.level;
+    if (!min) return true;
+    return LEVELS.indexOf(level) >= LEVELS.indexOf(min);
 }
 /* eslint-enable no-console */
 
@@ -61,8 +65,33 @@ function printablePath(path: string): string {
     );
 }
 
+/** A request's logger over a logger with fields: its lines carry the request id. */
+class BoundLogger implements RequestLogger {
+    constructor(
+        private readonly log: KernelLogger,
+        private readonly config: LoggerConfig,
+    ) {}
+
+    info(message: string, ...args: unknown[]) {
+        if (shouldLog(this.config, 'info')) this.log.info(message, detailsOf(args));
+    }
+    error(message: string, ...args: unknown[]) {
+        if (shouldLog(this.config, 'error')) this.log.error(message, detailsOf(args));
+    }
+    warn(message: string, ...args: unknown[]) {
+        if (shouldLog(this.config, 'warning')) this.log.warn(message, detailsOf(args));
+    }
+    debug(message: string, ...args: unknown[]) {
+        if (shouldLog(this.config, 'debug')) this.log.debug(message, detailsOf(args));
+    }
+}
+
+const detailsOf = (args: unknown[]) => (args.length === 0 ? undefined : args.length === 1 ? args[0] : args);
+
 export class LoggerFeature implements Feature {
     name = 'logger';
+    /** After RequestIdFeature, so a request's logger knows its id. */
+    optionalDependencies = ['request-id'];
     private log: KernelLogger = consoleLogger;
 
     private config: LoggerConfig;
@@ -76,11 +105,33 @@ export class LoggerFeature implements Feature {
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         const app = kernel.getApp();
+        const log = this.log;
 
+        // With a logger that has fields (the App's pino), a request's logger
+        // is its child with the request id; the console keeps its [LEVEL] lines.
         app.use('*', async (c: Context, next: Next) => {
-            c.set('logger', this.logger);
+            const requestId = c.get('requestId');
+            c.set('logger', log.child ? new BoundLogger(log.child({ requestId }), this.config) : this.logger);
             await next();
         });
+
+        if (this.config.accessLog) {
+            app.use('*', async (c: Context, next: Next) => {
+                const start = performance.now();
+                await next();
+                const actor = c.get('actor');
+                const fields = {
+                    method: c.req.method,
+                    path: printablePath(c.req.path),
+                    status: c.res.status,
+                    durationMs: Math.round(performance.now() - start),
+                    ...(c.get('requestId') ? { requestId: c.get('requestId') } : {}),
+                    ...(actor ? { actor: `${actor.kind}:${actor.id}` } : {}),
+                };
+                if (log.child) log.child(fields).info('request completed');
+                else log.info(`${fields.method} ${fields.path} ${fields.status} ${fields.durationMs}ms`, fields);
+            });
+        }
 
         if (this.config.logRequests) {
             app.use('*', async (c: Context, next: Next) => {

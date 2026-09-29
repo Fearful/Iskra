@@ -30,6 +30,7 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | `@iskra-bun/auth-kit` | Transport-agnostic better-auth (config + Drizzle schema), usable outside HTTP | [Auth Kit](https://iskra-docs.fly.dev/packages/auth-kit/) |
 | `@iskra-bun/db-kit` | SQL database with Drizzle ORM (PostgreSQL, MySQL, SQLite) | [DB Kit](https://iskra-docs.fly.dev/packages/db-kit/) |
 | `@iskra-bun/db-oracle` | Oracle Database: in-process pool, Kysely, pagination, migrations (experimental) | [DB Oracle](https://iskra-docs.fly.dev/packages/db-oracle/) |
+| `@iskra-bun/ldap-kit` | LDAP and Active Directory: logins, users, nested groups, changes (experimental) | [LDAP Kit](https://iskra-docs.fly.dev/packages/ldap-kit/) |
 | `@iskra-bun/socket-kit` | Native Bun WebSocket with router and broadcast | [Socket Kit](https://iskra-docs.fly.dev/packages/socket-kit/) |
 | `@iskra-bun/kv-kit` | Key-Value store with Redis and in-memory adapters | [KV Kit](https://iskra-docs.fly.dev/packages/kv-kit/) |
 | `@iskra-bun/cache-kit` | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit | [Cache Kit](https://iskra-docs.fly.dev/packages/cache-kit/) |

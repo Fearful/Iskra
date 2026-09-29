@@ -201,6 +201,18 @@ HTTP spans export the URL of each request (`url.full`, or `http.url` and `http.t
 
 The startup log names the endpoint by its origin only: its path, query or userinfo can hold an API key. A plain `http://` endpoint on another host (not `localhost`, a private address, or a name without a dot or ending in `.local` or `.internal`) also logs a warning, since spans would travel unencrypted: use `https://`.
 
+### Spans of your own
+
+`traced(name, fn)` wraps a function in a span named by its layer, domain and method (`repo.usuarios.buscar`): the span is the active one while it runs, so the spans started inside (a query with db-oracle's `instrumentOracle()`, an outgoing request) are its children, and a throw or a rejection marks it as an error. Without an OpenTelemetry SDK it costs a no-op span.
+
+```typescript
+import { traced } from '@iskra-bun/core';
+
+export const buscarUsuario = traced('repo.usuarios.buscar', async (id: number) =>
+    oracle.one('SELECT * FROM usuarios WHERE id = :id', { id }),
+);
+```
+
 ## Errors
 
 Every error extends `IskraError`:
@@ -233,4 +245,14 @@ if (err instanceof IskraError) {
 
 ### ErrorCodes
 
-Available codes: `INTERNAL_ERROR`, `NOT_INITIALIZED`, `CONFIG_INVALID`, `CONFIG_MISSING`, `DRIVER_INIT_FAILED`, `DRIVER_START_FAILED`, `DRIVER_STOP_FAILED`, `LIFECYCLE_START_FAILED`, `LIFECYCLE_STOP_FAILED`, `VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `DATABASE_ERROR`, `CONNECTION_ERROR`, `QUERY_ERROR`, `MIGRATION_ERROR`, `QUEUE_ERROR`, `JOB_ERROR`, and more.
+Available codes: `INTERNAL_ERROR`, `NOT_INITIALIZED`, `CONFIG_INVALID`, `CONFIG_MISSING`, `DRIVER_INIT_FAILED`, `DRIVER_START_FAILED`, `DRIVER_STOP_FAILED`, `LIFECYCLE_START_FAILED`, `LIFECYCLE_STOP_FAILED`, `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`, `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `TIMEOUT`, `DATABASE_ERROR`, `CONNECTION_ERROR`, `QUERY_ERROR`, `MIGRATION_ERROR`, `QUEUE_ERROR`, `JOB_ERROR`, and more. web-kit answers an error with the status of its code (`NOT_FOUND` → 404, see [HTTP Errors](/packages/web-kit/#http-errors)).
+
+An app adds its own codes by declaration merging, and `ErrorCode` accepts them:
+
+```typescript
+declare module '@iskra-bun/core' {
+    interface ErrorCodeRegistry {
+        ORDER_LOCKED: true;
+    }
+}
+```

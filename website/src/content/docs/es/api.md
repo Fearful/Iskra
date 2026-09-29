@@ -7,7 +7,7 @@ La referencia de API completa se genera a partir del código fuente TypeScript d
 
 👉 **[Abrir la referencia de API generada](/api/)**
 
-La referencia cubre los diez paquetes:
+La referencia cubre estos once paquetes:
 
 - `@iskra-bun/core`
 - `@iskra-bun/web-kit`
@@ -19,6 +19,7 @@ La referencia cubre los diez paquetes:
 - `@iskra-bun/desktop-kit` _(experimental)_
 - `@iskra-bun/mobile-kit` _(experimental)_
 - `@iskra-bun/db-oracle` _(experimental)_
+- `@iskra-bun/ldap-kit` _(experimental)_
 
 ## Regenerar localmente
 

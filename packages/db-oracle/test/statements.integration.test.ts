@@ -3,7 +3,8 @@ import { App } from '@iskra-bun/core';
 import { sql, type Generated } from 'kysely';
 import oracledb from 'oracledb';
 import { OracleDriver } from '../src/driver';
-import { QueryError } from '../src/errors';
+import { DeadlineError, NoRowsError, QueryError } from '../src/errors';
+import { col, rowSpec } from '../src/rows';
 import { paginateByCursor, type CursorPage } from '../src/pagination';
 import { ORACLE, oracleUp } from './oracle-env';
 
@@ -77,20 +78,62 @@ async function startDriver(config: Record<string, unknown> = {}) {
         }
     }
 
-    test('a timeout cancels a statement waiting on a lock, and the pool keeps serving', async () => {
+    test('a timeout ends a statement waiting on a lock, and the pool keeps serving', async () => {
+        // node-oracledb's cancel travels in band and a session waiting on a
+        // lock may not read it: then no NJS-123 comes, and the deadline
+        // (timeout + deadlineGrace, 2 s here) gives up on the connection.
         await whileLocked(async () => {
             const started = performance.now();
             const error = (await oracle
                 .execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 1000 })
                 .catch((e: unknown) => e)) as QueryError;
             expect(error).toBeInstanceOf(QueryError);
-            expect(error.errorCode).toBe('NJS-123');
-            expect(performance.now() - started).toBeLessThan(15_000);
+            expect(error.timedOut).toBe(true);
+            if (error instanceof DeadlineError) expect(error.deadlineMs).toBe(2000);
+            expect(performance.now() - started).toBeLessThan(5000);
             expect(await oracle.queryOne<{ ONE: number }>('SELECT 1 AS one FROM DUAL')).toEqual({ ONE: 1 });
         });
-        expect(await oracle.queryOne<{ NAME: string }>(`SELECT name FROM ${T} WHERE id = 1`)).toEqual({
-            NAME: 'locked',
-        });
+        // Its outcome is not asserted: an UPDATE outside a transaction that
+        // the database never cancelled runs, and commits, once the lock frees.
+    });
+
+    test('a given up connection goes back to the pool at once', async () => {
+        const small = await startDriver({ pool: { max: 1, queueTimeout: 3000 }, deadlineGrace: 0 });
+        try {
+            await whileLocked(async () => {
+                await expect(
+                    small.execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 500 }),
+                ).rejects.toThrow();
+                // With one connection, the next statement waits for the lost one to leave.
+                expect(await small.queryOne<{ ONE: number }>('SELECT 1 AS one FROM DUAL')).toEqual({ ONE: 1 });
+            });
+        } finally {
+            await small.stop();
+        }
+    });
+
+    test('a transaction with a statement past its deadline is lost, and the database rolls it back', async () => {
+        const strict = await startDriver({ deadlineGrace: 0, pool: { max: 2 } });
+        try {
+            await oracle.execute(`INSERT INTO ${T} (id, name, city) VALUES (2, 'other', 'before')`);
+            await whileLocked(async () => {
+                const error = await strict
+                    .transaction(async (tx) => {
+                        await tx.execute(`UPDATE ${T} SET city = 'tx' WHERE id = 2`);
+                        await tx.execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 1000 });
+                    })
+                    .catch((e: unknown) => e);
+                expect((error as QueryError).timedOut).toBe(true);
+            });
+            // Neither UPDATE commits: the session dies once it answers, and the database rolls it back.
+            await Bun.sleep(500);
+            expect(await strict.query(`SELECT id, name, city FROM ${T} ORDER BY id`)).toEqual([
+                { ID: 1, NAME: 'locked', CITY: null },
+                { ID: 2, NAME: 'other', CITY: 'before' },
+            ]);
+        } finally {
+            await strict.stop();
+        }
     });
 
     test('an AbortSignal cancels a statement waiting on a lock', async () => {
@@ -233,5 +276,103 @@ async function startDriver(config: Record<string, unknown> = {}) {
         await expect(
             paginateByCursor(oracle.db!.selectFrom(T).select(['NAME', 'CREATED']), { keys: ['CREATED'] }),
         ).rejects.toThrow("type: 'timestamp'");
+    });
+
+    test('positional binds: a reserved word, an unused param, another case and an IN list run as written', async () => {
+        const positional = await startDriver({ bindStyle: 'positional' });
+        try {
+            await positional.execute(`INSERT INTO ${T} (id, name, city) VALUES (:id, :name, :city)`, {
+                id: 1,
+                name: 'Ana',
+                city: 'Rosario',
+            });
+            await positional.execute(`INSERT INTO ${T} (id, name) VALUES (:ID, :Name)`, {
+                id: 2,
+                name: 'Leo',
+                extra: 1,
+            });
+            const rows = await positional.query(
+                `SELECT name FROM ${T} WHERE id IN (:ids) AND created <= :date ORDER BY id`,
+                { ids: [1, 2], date: new Date(Date.now() + 60_000) },
+            );
+            expect(rows).toEqual([{ NAME: 'Ana' }, { NAME: 'Leo' }]);
+
+            // SQL copied from Go, with sqlx's :: for a literal colon.
+            const [row] = await positional.query<{ T: string }>(
+                `SELECT TO_CHAR(DATE '2024-05-01' + 1/24, 'HH24::MI') AS t FROM dual WHERE :x = 1`,
+                { x: 1 },
+                { bindDialect: 'sqlx' },
+            );
+            expect(row).toEqual({ T: '01:00' });
+        } finally {
+            await positional.stop();
+        }
+    });
+
+    test("a stored procedure's RAISE_APPLICATION_ERROR is a CONFLICT with its own message, and OUT binds come back by name", async () => {
+        const positional = await startDriver({ bindStyle: 'positional' });
+        try {
+            const error = (await positional
+                .execute(`BEGIN RAISE_APPLICATION_ERROR(-20001, 'El legajo ya tiene un alta vigente'); END;`, {})
+                .catch((e: unknown) => e)) as QueryError;
+            expect(error.code).toBe('CONFLICT');
+            expect(error.message).toBe('El legajo ya tiene un alta vigente');
+            expect(error.applicationError?.number).toBe(20001);
+
+            const result = await positional.execute(`BEGIN :doubled := :n * 2; :greeting := 'hola ' || :who; END;`, {
+                n: 21,
+                who: 'ana',
+                doubled: { dir: 'out', type: 'number' },
+                greeting: { dir: 'out', type: 'string' },
+            });
+            expect(result.outBinds).toEqual({ doubled: 42, greeting: 'hola ana' });
+        } finally {
+            await positional.stop();
+        }
+    });
+
+    test('list() pages and counts, one() finds or throws, and a row spec reads CHAR(1) and NUMBER exactly', async () => {
+        const exact = await startDriver({ bindStyle: 'positional', fetchAsString: ['number'] });
+        try {
+            await exact.executeMany(
+                `INSERT INTO ${T} (id, name, city) VALUES (:id, :name, :city)`,
+                Array.from({ length: 12 }, (_, i) => ({ id: i + 1, name: `P${i + 1}`, city: i % 3 === 0 ? 'A' : 'B' })),
+            );
+            const query = (filters: { city?: string }, orders: string | null) => ({
+                sql: `SELECT id, name, CASE WHEN MOD(id, 2) = 0 THEN 'S' ELSE 'N' END AS par, 9007199254740993 AS big
+                      FROM ${T}${filters.city ? ' WHERE city = :city' : ''}${orders ? ` ORDER BY ${orders}` : ''}`,
+                params: { city: filters.city },
+            });
+            const page = await exact.list({
+                query,
+                filters: { city: 'B' },
+                orders: 'id',
+                totalFilters: {},
+                offset: 2,
+                limit: 3,
+                rows: rowSpec({ id: col.int(), name: col.string(), par: col.boolean(), big: col.bigint() }),
+            });
+            expect(page).toEqual({
+                rows: [
+                    { id: 5, name: 'P5', par: false, big: 9007199254740993n },
+                    { id: 6, name: 'P6', par: true, big: 9007199254740993n },
+                    { id: 8, name: 'P8', par: true, big: 9007199254740993n },
+                ],
+                total: 12,
+                filtered: 8,
+                offset: 2,
+                limit: 3,
+                pages: 3,
+            });
+
+            expect(await exact.one<{ NAME: string }>(`SELECT name FROM ${T} WHERE id = :id`, { id: 4 })).toEqual({
+                NAME: 'P4',
+            });
+            await expect(exact.one(`SELECT name FROM ${T} WHERE id = :id`, { id: 99 })).rejects.toBeInstanceOf(
+                NoRowsError,
+            );
+        } finally {
+            await exact.stop();
+        }
     });
 });

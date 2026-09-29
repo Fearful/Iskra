@@ -42,7 +42,7 @@ describe('JSON Schema Validation Feature', () => {
 
         expect(res.status).toBe(400);
         const json = (await res.json()) as any;
-        expect(json.success).toBe(false);
+        expect(json.status).toBe(400);
         expect(json.code).toBe('VALIDATION_ERROR');
         expect(json.details.fields).toBeDefined();
         expect(json.details.errors.length).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { App } from '@iskra-bun/core';
 import type { Generated } from 'kysely';
+import oracledb from 'oracledb';
 import { OracleDriver } from '../src/driver';
 import type { OracleBinds } from '../src/binds';
 import { ConnectionError, QueryError } from '../src/errors';
@@ -205,8 +206,15 @@ async function startDriver<D = DB>(config: Record<string, unknown> = {}) {
                 await tx.db.insertInto(T).values({ NAME: 'Tx2', CREATED: created }).execute();
                 const inside = await tx.query<{ N: number }>(`SELECT COUNT(*) AS n FROM ${T} WHERE name LIKE 'Tx%'`);
                 expect(inside[0]!.N).toBe(2);
-                // Other connections do not see it before the commit.
-                expect(await count(`name LIKE 'Tx%'`)).toBe(0);
+                // Other connections do not see it before the commit. (oracle.query()
+                // would join the transaction: it runs in its async context.)
+                const other = await oracledb.getConnection(ORACLE);
+                try {
+                    const seen = await other.execute<[number]>(`SELECT COUNT(*) FROM ${T} WHERE name LIKE 'Tx%'`);
+                    expect(seen.rows![0]![0]).toBe(0);
+                } finally {
+                    await other.close();
+                }
                 throw new Error('undo');
             }),
         ).rejects.toThrow('undo');

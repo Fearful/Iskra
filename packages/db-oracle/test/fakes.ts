@@ -28,18 +28,50 @@ export class FakeConnection implements OracleConnectionLike {
     closed = 0;
     dropped = false;
     breaks = 0;
+    /** Times its socket was closed under it (Thin's forceDisconnect). */
+    disconnects = 0;
     callTimeout = 0;
     /** callTimeout while each statement ran. */
     timeouts: number[] = [];
     readonly oracleServerVersion = 1_903_000_000;
+    /** The call running, if any: like node-oracledb's, close() waits for it to end. */
+    private running: Promise<unknown> | undefined;
+    /** Fails the running call, as a closed socket does. */
+    private cut: ((error: Error) => void) | undefined;
 
-    constructor(private readonly pool: FakePool) {}
+    /** node-oracledb's Thin internals: a network session whose socket can be closed. */
+    readonly _impl: { nscon: { forceDisconnect(): void } } | undefined;
+
+    constructor(private readonly pool: FakePool) {
+        this._impl = pool.thin
+            ? {
+                  nscon: {
+                      forceDisconnect: () => {
+                          this.disconnects++;
+                          this.cut?.(
+                              Object.assign(new Error('NJS-500: connection to Oracle Database was closed or broken'), {
+                                  code: 'NJS-500',
+                              }),
+                          );
+                      },
+                  },
+              }
+            : undefined;
+    }
+
+    /** Runs a call as node-oracledb does: close() waits for it, a closed socket fails it. */
+    private track<T>(call: Promise<T>): Promise<T> {
+        const cut = new Promise<never>((_, reject) => (this.cut = reject));
+        const pending = Promise.race([call, cut]);
+        this.running = pending.catch(() => {});
+        return pending;
+    }
 
     async execute(sql: string, binds: unknown, options: Record<string, unknown>): Promise<OracleRawResult> {
         const call = { sql, binds, options, connection: this };
         this.pool.calls.push(call);
         this.timeouts.push(this.callTimeout);
-        const result = await this.pool.respond(call);
+        const result = await this.track(Promise.resolve(this.pool.respond(call)));
         if (result instanceof Error) throw result;
         return result;
     }
@@ -50,6 +82,7 @@ export class FakeConnection implements OracleConnectionLike {
     }
 
     async commit() {
+        await this.track(this.pool.onCommit?.() ?? Promise.resolve());
         this.commits++;
     }
 
@@ -58,6 +91,7 @@ export class FakeConnection implements OracleConnectionLike {
     }
 
     async close(options?: { drop?: boolean }) {
+        await this.running;
         this.closed++;
         this.dropped = options?.drop === true;
     }
@@ -75,6 +109,10 @@ export class FakePool implements OraclePoolLike {
 
     /** Replaces getConnection() (e.g. never resolving, for a pool with no free connection). */
     waitForConnection: (() => Promise<void>) | undefined;
+    /** Runs before each commit (e.g. never resolving, for a database that does not answer). */
+    onCommit: (() => Promise<void>) | undefined;
+    /** Connections with Thin's network session (forceDisconnect); false for one without. */
+    thin = true;
 
     async getConnection() {
         await this.waitForConnection?.();

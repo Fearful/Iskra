@@ -3,9 +3,12 @@ import Ajv from 'ajv';
 import addErrors from 'ajv-errors';
 import addFormats from 'ajv-formats';
 import type { ErrorObject } from 'ajv';
-import { ErrorCodes, errorResponse } from '../responses';
+import { ErrorCodes } from '../responses';
+import { problem, responderOf } from '../contract';
+import { readBody } from '../bind';
+import { HttpError } from '../errors';
 import { consoleLogger, type KernelLogger } from '../logging';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { bodyTypes, withRouteDoc } from '../route-docs';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -135,7 +138,10 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
         body: schema.body ? ajv.compile(schema.body) : null,
     };
 
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { validated: JsonValidated<Body, Query, Params> } }> = async (
+        c,
+        next,
+    ) => {
         try {
             const validated: { params?: unknown; query?: unknown; body?: unknown } = {};
 
@@ -144,9 +150,13 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
                 const valid = validators.params(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.params.errors);
-                    return c.json(
-                        errorResponse('Invalid route params', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid route params',
+                            details: details,
+                        }),
                     );
                 }
                 validated.params = data;
@@ -157,32 +167,32 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
                 const valid = validators.query(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.query.errors);
-                    return c.json(
-                        errorResponse('Invalid query params', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid query params',
+                            details: details,
+                        }),
                     );
                 }
                 validated.query = data;
             }
 
             if (validators.body) {
-                let data: unknown = {};
-                const contentType = c.req.header('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    data = await c.req.json().catch(() => ({}));
-                } else if (
-                    contentType.includes('application/x-www-form-urlencoded') ||
-                    contentType.includes('multipart/form-data')
-                ) {
-                    data = await c.req.parseBody();
-                }
+                // Malformed JSON is a 400 and another content type a 415 (see the catch).
+                const data = await readBody(c, { allowForm: true });
 
                 const valid = validators.body(data);
                 if (!valid) {
                     const details = formatAjvErrors(validators.body.errors);
-                    return c.json(
-                        errorResponse('Invalid body', ErrorCodes.VALIDATION_ERROR, details),
-                        status as ContentfulStatusCode,
+                    return responderOf(c).problem(
+                        c,
+                        problem(status, {
+                            code: ErrorCodes.VALIDATION_ERROR,
+                            message: 'Invalid body',
+                            details: details,
+                        }),
                     );
                 }
                 validated.body = data;
@@ -192,10 +202,15 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
             c.set('validated', validated as JsonValidated<Body, Query, Params>);
             await next();
         } catch (err) {
+            if (err instanceof HttpError) return responderOf(c).error(err, c);
             if (logErrors) logger.error('JSON Schema validation error', err);
-            return c.json(errorResponse('Validation middleware failed', ErrorCodes.INTERNAL_ERROR), 500);
+            return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
+    // The spec of the routes it is on: their params, query and body, and a 400.
+    return withRouteDoc(middleware, {
+        validates: { ...schema, ...(schema.body ? { bodyTypes: bodyTypes(true) } : {}) },
+    });
 }
 
 export { formatAjvErrors };

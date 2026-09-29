@@ -32,7 +32,17 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js",
             "default": "./dist/index.js"
+        },
+        "./parity": {
+            "source": "./src/parity.ts",
+            "bun": "./src/parity.ts",
+            "types": "./dist/parity.d.ts",
+            "import": "./dist/parity.js",
+            "default": "./dist/parity.js"
         }
+    },
+    "bin": {
+        "iskra-parity": "./src/parity-cli.ts"
     },
     "files": [
         "dist",

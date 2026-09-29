@@ -166,7 +166,7 @@ asi que interpretan lo que el servicio realmente responde.
 Para que tu aplicacion Iskra sea consumible por los SDKs, asegurate de:
 
 1. **Usar `WebPlugin`** con las features que necesites (Auth, Health, etc.)
-2. **Usar `successResponse()` y `errorResponse()`** en tus rutas personalizadas para mantener el formato de respuesta estandar
+2. **Mantener el contrato de respuestas de Iskra** (el de por defecto): responde con `ok()` y `list()`, y lanza `HttpError` (o `NotFoundError`, `ValidationError`…) para los errores; salen como `{ error, status, code, details?, requestId? }`, que los SDKs convierten en excepciones tipadas
 3. **Habilitar `ApiKeyFeature`** si necesitas autenticacion por API key desde los clientes
 4. **Habilitar `HealthCheckFeature`** para que los clientes puedan verificar la disponibilidad
 5. **Habilitar `CorsFeature`** si los clientes se conectan desde diferentes origenes

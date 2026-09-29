@@ -11,9 +11,12 @@ import {
     type OracleBinds,
     type OutBinds,
 } from './binds';
-import { resolveConfig, type ResolvedOracleConfig } from './config';
+import { resolveConfig, type OracleBindStyle, type ResolvedOracleConfig } from './config';
 import { OracleDialect, type StatementRunner } from './dialect';
-import { ConnectionError, MigrationError, QueryError, toQueryError } from './errors';
+import { ConnectionError, DeadlineError, MigrationError, NoRowsError, QueryError, toQueryError } from './errors';
+import { listRows, type ListOptions, type ListResult } from './list';
+import { compileNamed, type BindDialect, type CompiledSql } from './named';
+import { decodeRows, type RowsOption } from './rows';
 import { runMigrations, type MigrationOptions } from './migrations';
 import { paginate, type Page, type PageOptions } from './pagination';
 import type {
@@ -44,12 +47,25 @@ export interface QueryEnd {
 export type OnQueryHook = (sql: string, binds: unknown) => unknown;
 
 export interface StatementOptions {
-    /** Milliseconds this statement may run, instead of `callTimeout` (0 for no limit). */
+    /**
+     * Milliseconds this statement may run, instead of `callTimeout` (0 for no
+     * limit). Its deadline follows: this plus `deadlineGrace`.
+     */
     timeout?: number;
     /** Cancels the statement when aborted (a QueryError ORA-01013). */
     signal?: AbortSignal;
     /** Leave out the binds by name that the SQL does not use, instead of `dropUnusedBinds`. */
     dropUnusedBinds?: boolean;
+    /** `'positional'` compiles binds by name to binds by position, instead of the config's `bindStyle`. */
+    bindStyle?: OracleBindStyle;
+    /** How `'positional'` reads `:name`, instead of the config's `bindDialect`. */
+    bindDialect?: BindDialect;
+}
+
+/** A query's options: a statement's, and how its rows are decoded. */
+export interface QueryOptions<T> extends StatementOptions {
+    /** Decodes each row: a `rowSpec()` or a Standard Schema (Zod…). A row that does not fit is a RowDecodeError. */
+    rows?: RowsOption<T>;
 }
 
 export interface ExecuteManyOptions extends Omit<StatementOptions, 'dropUnusedBinds'> {
@@ -78,21 +94,47 @@ export interface ExecuteManyResult {
     outBinds: unknown[];
 }
 
-/** What `transaction()` hands its callback: everything runs on its one connection. */
-export interface OracleTransaction<DB> {
-    db: Kysely<DB>;
-    query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: StatementOptions): Promise<T[]>;
+/**
+ * What runs statements, the driver or a transaction: a repository typed
+ * against it works with both, and with a test fake.
+ */
+export interface OracleSession {
+    /** The rows of a query. */
+    query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T[]>;
+    /** The first row of a query (fetching only that one), or undefined. */
     queryOne<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined>;
+    /** The first row of a query, or a `NoRowsError` (NOT_FOUND, a 404 in web-kit). */
+    one<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T>;
     execute<T = Record<string, unknown>, const B extends OracleBinds = OracleBinds>(
         sql: string,
         binds?: B,
         options?: StatementOptions,
     ): Promise<ExecuteResult<T, OutBinds<B>>>;
     executeMany(sql: string, rows: readonly OracleBinds[], options?: ExecuteManyOptions): Promise<ExecuteManyResult>;
+    /** A page of rows and its counts (see `ListOptions`). */
+    list<T = Record<string, unknown>, F = unknown, O = unknown>(
+        options: ListOptions<T, F, O>,
+        statement?: StatementOptions,
+    ): Promise<ListResult<T>>;
+}
+
+/** What `transaction()` hands its callback: everything runs on its one connection. */
+export interface OracleTransaction<DB> extends OracleSession {
+    db: Kysely<DB>;
+}
+
+/**
+ * The driver as a repository needs it: statements, transactions and a ping.
+ * `OracleDriver` and `fakeOracle()` (`@iskra-bun/db-oracle/testing`) are both one.
+ */
+export interface OracleDatabase extends OracleSession {
+    transaction<R>(fn: (tx: OracleSession) => Promise<R>): Promise<R>;
+    /** True when the database answers in time; never throws. */
+    ping(): Promise<boolean>;
 }
 
 /** Errors after which a connection is dropped instead of going back to the pool. */
@@ -107,6 +149,44 @@ const DROP_ON = new Set([
     'ORA-03135',
 ]);
 
+/**
+ * Closes the socket under a Thin connection, so the call waiting on it fails
+ * (NJS-500) and node-oracledb lets the connection go. node-oracledb has no
+ * public API for this: its cancel (a break) travels in band, and a database
+ * waiting on a lock does not read it, so neither callTimeout nor
+ * breakExecution() ends that wait. False without such a socket (Thick mode,
+ * another node-oracledb version): then only breakExecution() is tried.
+ */
+function forceDisconnect(connection: OracleConnectionLike): boolean {
+    const session = (connection as { _impl?: { nscon?: { forceDisconnect?: unknown } } })._impl?.nscon;
+    if (typeof session?.forceDisconnect !== 'function') return false;
+    try {
+        (session.forceDisconnect as (error: Error) => void).call(session, new Error('Oracle call given up'));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+const OUT_DIRECTIONS = new Set(['out', 'inout', 'returning']);
+
+/**
+ * The OUT binds of a statement compiled to positions, back by name:
+ * node-oracledb returns them as an array, in the order of the OUT positions.
+ */
+function namedOutBinds(outBinds: unknown, compiled: CompiledSql): unknown {
+    if (!Array.isArray(outBinds)) return outBinds;
+    const named: Record<string, unknown> = {};
+    let k = 0;
+    compiled.binds.forEach((bind, i) => {
+        const dir = (bind as { dir?: unknown } | null)?.dir;
+        if (typeof dir !== 'string' || !OUT_DIRECTIONS.has(dir)) return;
+        const value = outBinds[k++];
+        if (!Object.hasOwn(named, compiled.names[i]!)) named[compiled.names[i]!] = value;
+    });
+    return named;
+}
+
 async function loadOracledb(): Promise<OracledbModule> {
     const mod = (await import('oracledb')) as OracledbModule & { default?: OracledbModule };
     return mod.default ?? mod;
@@ -119,7 +199,7 @@ async function loadOracledb(): Promise<OracledbModule> {
  * migrations. Configured by `app.config.oracle`, or ORA_CONN, ORA_USER and
  * ORA_PASSWORD; without either it does not start.
  */
-export class OracleDriver<DB = Record<string, never>> implements Driver {
+export class OracleDriver<DB = Record<string, never>> implements Driver, OracleDatabase {
     name = 'OracleDriver';
     /** Kysely over the pool, typed by `DB`; set by start(). */
     public db: Kysely<DB> | undefined;
@@ -131,7 +211,10 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     private config: ResolvedOracleConfig | undefined;
     private pool: OraclePoolLike | undefined;
     private fetchHandler: ReturnType<typeof fetchTypeHandler> | undefined;
-    private onQuery: OnQueryHook | undefined;
+    /** setOnQuery()'s hook. */
+    private setHook: OnQueryHook | undefined;
+    /** The hooks added with onQuery(), besides setOnQuery()'s. */
+    private readonly queryHooks = new Set<OnQueryHook>();
     private pingInFlight: Promise<boolean> | undefined;
     /** The connection of the transaction() running in the current async context. */
     private readonly activeTx = new AsyncLocalStorage<ConnectionHandle>();
@@ -139,6 +222,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     private readonly runner: StatementRunner = {
         run: (handle, sql, binds, options) => this.run(handle, sql, binds, options),
         streamRows: (handle, sql, binds, chunkSize, options) => this.streamRows(handle, sql, binds, chunkSize, options),
+        end: (handle, action) => this.end(handle, action),
     };
 
     async init(app: App) {
@@ -217,7 +301,17 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
      * a query.
      */
     setOnQuery(onQuery: OnQueryHook | undefined): void {
-        this.onQuery = onQuery;
+        this.setHook = onQuery;
+    }
+
+    /**
+     * Adds a callback for every statement, commit and rollback, besides the
+     * others (a tracer and a logger each keep their own); returns what removes it.
+     * See OnQueryHook.
+     */
+    onQuery(hook: OnQueryHook): () => void {
+        this.queryHooks.add(hook);
+        return () => void this.queryHooks.delete(hook);
     }
 
     /**
@@ -228,19 +322,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     async ping(): Promise<boolean> {
         const { pool, config } = this;
         if (!pool || !config) return false;
-        this.pingInFlight ??= (async () => {
-            let connection: OracleConnectionLike | undefined;
-            try {
-                connection = await pool.getConnection();
-                connection.callTimeout = config.pingTimeout;
-                await connection.execute('SELECT 1 FROM DUAL', [], {});
-                return true;
-            } catch {
-                return false;
-            } finally {
-                await connection?.close({ drop: false }).catch(() => {});
-            }
-        })().finally(() => {
+        this.pingInFlight ??= this.pingOnce(pool, config.pingTimeout).finally(() => {
             this.pingInFlight = undefined;
         });
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -254,24 +336,72 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         }
     }
 
-    /** The rows of a query. */
+    /** SELECT 1 on a pool connection; a connection still running it after `timeout` is dropped. */
+    private async pingOnce(pool: OraclePoolLike, timeout: number): Promise<boolean> {
+        let connection: OracleConnectionLike | undefined;
+        let late = false;
+        const timer = setTimeout(() => {
+            if (!connection) return;
+            late = true;
+            if (!forceDisconnect(connection)) void connection.breakExecution?.().catch(() => {});
+        }, timeout);
+        try {
+            connection = await pool.getConnection();
+            connection.callTimeout = timeout;
+            await connection.execute('SELECT 1 FROM DUAL', [], {});
+            return true;
+        } catch {
+            return false;
+        } finally {
+            clearTimeout(timer);
+            // One that answered late is in an unknown state.
+            await connection?.close({ drop: late }).catch(() => {});
+        }
+    }
+
+    /** The rows of a query, decoded by `options.rows` when given. */
     async query<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T[]> {
-        return this.withConnection(
-            async (handle) => (await this.executeOn<T, OracleBinds>(handle, sql, binds, options)).rows,
-        );
+        return this.withConnection((handle) => this.queryOn<T>(handle, sql, binds, options));
     }
 
     /** The first row of a query (fetching only that one), or undefined. */
     async queryOne<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined> {
         return this.withConnection((handle) => this.queryOneOn<T>(handle, sql, binds, options));
+    }
+
+    /** The first row of a query, or a `NoRowsError` (NOT_FOUND: web-kit answers 404). */
+    async one<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T> {
+        const row = await this.queryOne<T>(sql, binds, options);
+        if (row === undefined) throw new NoRowsError();
+        return row;
+    }
+
+    /**
+     * A page of a query's rows and its counts: SQL with params by name, or a
+     * function of the filters and orders; `offset`/`limit` or `page`/`pageSize`.
+     *
+     * ```ts
+     * const page = await oracle.list({
+     *     query: (filters, orders) => usuariosQuery(filters, orders), // { sql, params }
+     *     filters, orders, totalFilters: {},
+     *     offset: c.req.query('start'), limit: c.req.query('length'),
+     *     rows: Usuario,
+     * }); // { rows, total, filtered, offset, limit, pages }
+     * ```
+     */
+    async list<T = Record<string, unknown>, F = unknown, O = unknown>(
+        options: ListOptions<T, F, O>,
+        statement?: StatementOptions,
+    ): Promise<ListResult<T>> {
+        return listRows((sql, params) => this.query(sql, params as OracleBinds, statement), options);
     }
 
     /**
@@ -340,10 +470,17 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         };
         const tx: OracleTransaction<DB> = {
             db: this.createKysely(async () => pinned),
-            query: async <T>(sql: string, binds?: OracleBinds, options?: StatementOptions) =>
-                (await this.executeOn<T, OracleBinds>(pinned, sql, binds, options)).rows,
-            queryOne: <T>(sql: string, binds?: OracleBinds, options?: StatementOptions) =>
+            query: <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) =>
+                this.queryOn<T>(pinned, sql, binds, options),
+            queryOne: <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) =>
                 this.queryOneOn<T>(pinned, sql, binds, options),
+            one: async <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) => {
+                const row = await this.queryOneOn<T>(pinned, sql, binds, options);
+                if (row === undefined) throw new NoRowsError();
+                return row;
+            },
+            list: (options, statement) =>
+                listRows((sql, params) => this.queryOn(pinned, sql, params as OracleBinds, statement), options),
             execute: <T, const B extends OracleBinds>(sql: string, binds?: B, options?: StatementOptions) =>
                 this.executeOn<T, B>(pinned, sql, binds, options),
             executeMany: (sql, rows, options) => this.executeManyOn(pinned, sql, rows, options),
@@ -351,14 +488,14 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         try {
             const result = await this.activeTx.run(pinned, () => fn(tx));
             try {
-                await handle.connection.commit();
+                await this.end(pinned, 'commit');
             } catch (error) {
                 throw toQueryError(error, 'Failed to commit the transaction');
             }
             return result;
         } catch (error) {
             try {
-                await handle.connection.rollback();
+                await this.end(pinned, 'rollback');
             } catch (rollbackError) {
                 this.app?.logger.error({ error: rollbackError }, 'Failed to roll back an Oracle transaction');
             }
@@ -366,6 +503,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         } finally {
             pinned.ended = true;
             handle.broken ||= pinned.broken;
+            handle.lost ||= pinned.lost;
             await handle.release();
         }
     }
@@ -452,11 +590,12 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             connection,
             inTransaction: false,
             release: async () => {
-                try {
-                    await connection.close({ drop: handle.broken === true });
-                } catch (error) {
+                const closing = connection.close({ drop: handle.broken === true }).catch((error: unknown) => {
                     this.app?.logger.warn({ error }, 'Failed to release an Oracle connection');
-                }
+                });
+                // node-oracledb closes a connection only after the call on it
+                // ends: a lost one's call may never end.
+                if (!handle.lost) await closing;
             },
         };
         return handle;
@@ -483,18 +622,23 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     /** Calls the OnQuery hook; returns what to call when the statement ends. */
     private startHook(sql: string, binds: unknown): (info: Omit<QueryEnd, 'durationMs'>) => void {
         const started = performance.now();
-        let end: ((end: QueryEnd) => void) | undefined;
-        try {
-            const returned = this.onQuery?.(sql, binds);
-            if (typeof returned === 'function') end = returned as (end: QueryEnd) => void;
-        } catch {
-            // Observability must never break the query.
-        }
-        return (info) => {
+        const ends: ((end: QueryEnd) => void)[] = [];
+        for (const hook of this.setHook ? [this.setHook, ...this.queryHooks] : this.queryHooks) {
             try {
-                end?.({ durationMs: performance.now() - started, ...info });
+                const returned = hook(sql, binds);
+                if (typeof returned === 'function') ends.push(returned as (end: QueryEnd) => void);
             } catch {
                 // Observability must never break the query.
+            }
+        }
+        return (info) => {
+            const end = { durationMs: performance.now() - started, ...info };
+            for (const each of ends) {
+                try {
+                    each(end);
+                } catch {
+                    // Observability must never break the query.
+                }
             }
         };
     }
@@ -504,6 +648,120 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         const error = toQueryError(caught);
         if (error.errorCode && DROP_ON.has(error.errorCode)) handle.broken = true;
         return error;
+    }
+
+    /**
+     * How long the driver waits for a call with this timeout before it gives
+     * up on it: the timeout plus `deadlineGrace`; 0 (never) without a timeout.
+     */
+    private deadline(timeout: number): number {
+        if (timeout <= 0) return 0;
+        const grace = this.ready().config.deadlineGrace;
+        return timeout + (grace ?? Math.min(timeout, 5000));
+    }
+
+    /**
+     * Runs one call on the handle's connection: after the calls already on it
+     * (node-oracledb queues them anyway, and the callTimeout set for one must
+     * not be the next one's), armed with the statement's options, and no
+     * longer than its deadline. Nothing runs on a lost connection.
+     */
+    private async guarded<R>(
+        handle: ConnectionHandle,
+        options: StatementOptions | undefined,
+        call: () => Promise<R>,
+    ): Promise<R> {
+        const previous = handle.idle;
+        let done!: () => void;
+        handle.idle = new Promise<void>((resolve) => (done = resolve));
+        try {
+            await previous;
+            if (handle.lost) {
+                throw new QueryError(
+                    'The connection was given up after a call on it did not end in time: nothing more runs on it, ' +
+                        'and the database rolls back its transaction when it closes',
+                );
+            }
+            const disarm = this.arm(handle, options);
+            try {
+                return await this.withDeadline(handle, options, call);
+            } finally {
+                disarm();
+            }
+        } finally {
+            done();
+        }
+    }
+
+    /**
+     * `call`, unless its deadline passes first, or an abort is not honored
+     * within `deadlineGrace` (1 s by default): then the connection is given up.
+     */
+    private async withDeadline<R>(
+        handle: ConnectionHandle,
+        options: StatementOptions | undefined,
+        call: () => Promise<R>,
+    ): Promise<R> {
+        const { config } = this.ready();
+        const deadline = this.deadline(options?.timeout ?? config.callTimeout);
+        const signal = options?.signal;
+        const pending = call();
+        if (deadline === 0 && !signal) return pending;
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        let onAbort: (() => void) | undefined;
+        const givenUp = new Promise<never>((_, reject) => {
+            if (deadline > 0) {
+                timers.push(setTimeout(() => reject(this.giveUp(handle, new DeadlineError(deadline))), deadline));
+            }
+            if (signal) {
+                const grace = config.deadlineGrace ?? 1000;
+                onAbort = () => {
+                    const error = new QueryError(
+                        `The statement was aborted and did not stop within ${grace} ms: its connection was given up`,
+                        { context: { errorCode: 'ORA-01013' } },
+                    );
+                    timers.push(setTimeout(() => reject(this.giveUp(handle, error)), grace));
+                };
+                signal.addEventListener('abort', onAbort, { once: true });
+            }
+        });
+        try {
+            return await Promise.race([pending, givenUp]);
+        } finally {
+            for (const timer of timers) clearTimeout(timer);
+            if (onAbort) signal?.removeEventListener('abort', onAbort);
+        }
+    }
+
+    /**
+     * Gives up on the call running on the handle's connection: marks it lost
+     * and closes its socket (or, failing that, asks node-oracledb to cancel),
+     * so the call fails and the connection can be dropped. Returns `error`.
+     */
+    private giveUp(handle: ConnectionHandle, error: QueryError): QueryError {
+        handle.lost = true;
+        handle.broken = true;
+        if (!forceDisconnect(handle.connection)) void handle.connection.breakExecution?.().catch(() => {});
+        this.app?.logger.error({ error }, 'An Oracle call was given up: its connection is dropped');
+        return error;
+    }
+
+    /**
+     * Commits or rolls back on the handle's connection, bounded like a
+     * statement. A lost connection has nothing to roll back (the database
+     * does it when the connection closes), so a rollback there is a no-op.
+     */
+    private async end(handle: ConnectionHandle, action: 'commit' | 'rollback'): Promise<void> {
+        if (action === 'rollback' && handle.lost) return;
+        const finish = this.startHook(action.toUpperCase(), []);
+        try {
+            await this.guarded(handle, undefined, () => handle.connection[action]());
+            finish({});
+        } catch (caught) {
+            const error = this.failed(handle, caught);
+            finish({ error });
+            throw error;
+        }
     }
 
     /**
@@ -536,19 +794,34 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         counts: (result: R) => Omit<QueryEnd, 'durationMs' | 'error'>,
     ): Promise<R> {
         const finish = this.startHook(sql, binds);
-        let disarm: (() => void) | undefined;
         try {
-            disarm = this.arm(handle, options);
-            const result = await call();
+            const result = await this.guarded(handle, options, call);
             finish(counts(result));
             return result;
         } catch (caught) {
             const error = this.failed(handle, caught);
             finish({ error });
             throw error;
-        } finally {
-            disarm?.();
         }
+    }
+
+    /**
+     * The statement as it runs: with `bindStyle: 'positional'`, binds by
+     * name compiled to binds by position (the hook still sees them by name).
+     */
+    private prepare(sql: string, binds: unknown, options?: StatementOptions) {
+        const { oracledb, config } = this.ready();
+        const byName = typeof binds === 'object' && binds !== null && !Array.isArray(binds);
+        const compiled =
+            byName && (options?.bindStyle ?? config.bindStyle) === 'positional'
+                ? compileNamed(sql, binds as Record<string, unknown>, options?.bindDialect ?? config.bindDialect)
+                : undefined;
+        const text = compiled?.sql ?? sql;
+        const oracleBinds = toOracleBinds(oracledb, (compiled?.binds ?? binds) as OracleBinds, {
+            sql: text,
+            dropUnused: compiled ? false : (options?.dropUnusedBinds ?? config.dropUnusedBinds),
+        });
+        return { text, oracleBinds, compiled };
     }
 
     private async run(
@@ -558,19 +831,26 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         options?: StatementOptions,
         extra: Record<string, unknown> = {},
     ): Promise<OracleRawResult> {
-        const { oracledb, config } = this.ready();
-        const oracleBinds = toOracleBinds(oracledb, binds as OracleBinds, {
-            sql,
-            dropUnused: options?.dropUnusedBinds ?? config.dropUnusedBinds,
-        });
-        return this.observe(
+        const { text, oracleBinds, compiled } = this.prepare(sql, binds, options);
+        const result = await this.observe(
             handle,
             sql,
             binds,
             options,
-            () => handle.connection.execute(sql, oracleBinds, { ...this.options(handle), ...extra }),
-            (result) => ({ rows: result.rows?.length, rowsAffected: result.rowsAffected }),
+            () => handle.connection.execute(text, oracleBinds, { ...this.options(handle), ...extra }),
+            (r) => ({ rows: r.rows?.length, rowsAffected: r.rowsAffected }),
         );
+        return compiled ? { ...result, outBinds: namedOutBinds(result.outBinds, compiled) } : result;
+    }
+
+    private async queryOn<T>(
+        handle: ConnectionHandle,
+        sql: string,
+        binds: OracleBinds | undefined,
+        options?: QueryOptions<T>,
+    ): Promise<T[]> {
+        const rows = (await this.run(handle, sql, binds, options)).rows ?? [];
+        return options?.rows ? decodeRows(rows, options.rows) : (rows as T[]);
     }
 
     private async executeOn<T, B>(
@@ -598,10 +878,12 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         handle: ConnectionHandle,
         sql: string,
         binds: OracleBinds | undefined,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined> {
         const result = await this.run(handle, sql, binds, options, { maxRows: 1 });
-        return result.rows?.[0] as T | undefined;
+        const row = result.rows?.[0];
+        if (row === undefined || !options?.rows) return row as T | undefined;
+        return (await decodeRows([row], options.rows))[0];
     }
 
     private async executeManyOn(
@@ -640,33 +922,29 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         chunkSize: number,
         options?: StatementOptions,
     ): AsyncGenerator<unknown[]> {
-        const { oracledb, config } = this.ready();
-        const oracleBinds = toOracleBinds(oracledb, binds as OracleBinds, {
-            sql,
-            dropUnused: options?.dropUnusedBinds ?? config.dropUnusedBinds,
-        });
+        const { text, oracleBinds } = this.prepare(sql, binds, options);
         // One hook call for the whole stream: the execute and every fetch.
         const finish = this.startHook(sql, binds);
         let total = 0;
         let failure: QueryError | undefined;
-        let disarm: (() => void) | undefined;
         let resultSet: OracleResultSetLike | undefined;
         try {
-            disarm = this.arm(handle, options);
+            // Each call (the execute, every fetch) has the statement's
+            // timeout and deadline: the time between them is the consumer's.
             try {
-                const result = await handle.connection.execute(sql, oracleBinds, {
-                    ...this.options(handle),
-                    resultSet: true,
-                });
+                const result = await this.guarded(handle, options, () =>
+                    handle.connection.execute(text, oracleBinds, { ...this.options(handle), resultSet: true }),
+                );
                 resultSet = result.resultSet;
             } catch (caught) {
                 throw this.failed(handle, caught);
             }
             if (!resultSet) throw new QueryError('stream() needs a query that returns rows');
+            const open = resultSet;
             for (;;) {
                 let rows: unknown[];
                 try {
-                    rows = await resultSet.getRows(chunkSize);
+                    rows = await this.guarded(handle, options, () => open.getRows(chunkSize));
                 } catch (caught) {
                     throw this.failed(handle, caught);
                 }
@@ -678,8 +956,9 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             failure = error as QueryError;
             throw error;
         } finally {
-            disarm?.();
-            await resultSet?.close().catch(() => {});
+            const open = resultSet;
+            // Not on a lost connection: close() would wait for the call it lost.
+            if (open) await this.guarded(handle, undefined, () => open.close()).catch(() => {});
             finish(failure ? { error: failure } : { rows: total });
         }
     }

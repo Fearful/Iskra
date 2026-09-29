@@ -5,6 +5,8 @@ import type { BetterAuthConfigOptions } from '@iskra-bun/auth-kit';
 import type { ClientIpHeader, TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
+import type { ResponseContract } from './contract';
+import type { KeyStore } from './gates';
 
 export type { Kernel };
 
@@ -24,7 +26,19 @@ export interface KernelConfig {
     /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
     shutdownGraceMs?: number;
     environment?: 'development' | 'production' | 'test';
-    securityHeaders?: SecurityHeadersConfig; // Always applied, non-pluggable
+    /** Headers set on every response, merged over the defaults; `false` sets none. */
+    securityHeaders?: SecurityHeadersConfig | false;
+    /**
+     * The shape of every response: errors, 404s, failed validations and the
+     * `ok()`/`list()` helpers. Default: Iskra's (`iskraContract`), which the
+     * SDKs read; `problemDetailsContract()` answers RFC 9457 problem details.
+     */
+    contract?: ResponseContract;
+    /**
+     * Send the stack, and the message and context of 5xx errors, in error
+     * responses. Default: only with NODE_ENV=development.
+     */
+    includeStack?: boolean;
     /**
      * Number of reverse proxies in front of the app (`true` = 1). Only then is
      * `clientIpHeader` used to identify clients (rate limiting); by default the
@@ -95,6 +109,11 @@ export interface ApiKeyMetadata {
 
 export interface ApiKeyConfig {
     staticKeys?: Array<Partial<ApiKeyMetadata> & { key: string }>;
+    /**
+     * Keys looked up on each request after `staticKeys`, such as a database
+     * table: `hashedKeys((hash) => …)` or any `KeyStore`.
+     */
+    store?: KeyStore;
     headerName?: string;
     queryParamName?: string;
     extractStrategies?: ('header' | 'bearer' | 'query' | 'custom')[];
@@ -188,10 +207,49 @@ export interface RateLimitConfig {
     passOnStoreError?: boolean;
 }
 
+/** What a health endpoint found, for a custom {@link HealthCheckConfig.body}. */
+export interface HealthReport {
+    /** The endpoint: `path` (`health`), `readinessPath` (`ready`) or `livenessPath` (`live`). */
+    endpoint: 'health' | 'ready' | 'live';
+    /** Whether every check passed: the endpoint answers 200, otherwise 503. */
+    ok: boolean;
+    /**
+     * Each check by name: the db/cache probes and `checks` for `health`, the
+     * readiness checks for `ready`, none for `live`. A custom check's result
+     * is kept as it returned it.
+     */
+    checks: Record<string, { status: 'ok' | 'error'; [key: string]: unknown }>;
+    /** The names of the checks that failed. */
+    failed: string[];
+    /** ISO 8601 time of the report. */
+    timestamp: string;
+    /** Seconds the process has been running. */
+    uptime: number;
+}
+
+/**
+ * Builds an endpoint's body from its report. The status code is still 200 or
+ * 503 (from `report.ok`) unless it returns a `Response`, which is sent as is.
+ */
+export type HealthBody = (report: HealthReport, c: Context) => unknown;
+
 export interface HealthCheckConfig {
-    path?: string;
-    readinessPath?: string;
-    livenessPath?: string;
+    /** The health endpoint, `/health` by default; `false` leaves it out. */
+    path?: string | false;
+    /** The readiness endpoint, `/health/ready` by default; `false` leaves it out. */
+    readinessPath?: string | false;
+    /** The liveness endpoint, `/health/live` by default; `false` leaves it out. */
+    livenessPath?: string | false;
+    /**
+     * Custom bodies per endpoint, instead of `{ status, … }`: for example
+     * `{ live: () => ({ message: 'ok' }) }`. The report carries the check
+     * names whatever `includeDetails` says; leave out what must not be public.
+     */
+    body?: {
+        health?: HealthBody;
+        ready?: HealthBody;
+        live?: HealthBody;
+    };
     includeDetails?: boolean;
     /** Per-check timeout for /health probes, in ms. Default 2000. */
     checkTimeoutMs?: number;
@@ -231,8 +289,16 @@ export interface LoggerConfig {
           }
         | Sink
     >;
+    /** Writes `Incoming request METHOD path` for each request (console format). */
     logRequests?: boolean;
+    /** With `logRequests`, also `Request completed STATUS Nms`. */
     logResponses?: boolean;
+    /**
+     * One line per request when it ends, through the Kernel's logger (the
+     * App's pino with WebPlugin): `request completed` with `method`, `path`,
+     * `status`, `durationMs`, `requestId` and `actor` (`kind:id`) as fields.
+     */
+    accessLog?: boolean;
 }
 
 export interface AuthConfig {
@@ -415,11 +481,20 @@ export interface OpenAPIConfig {
     authorize?: (c: Context) => boolean | Response | Promise<boolean | Response>;
     /**
      * The Scalar API reference script `/docs` loads. Default: a pinned
-     * @scalar/api-reference release from jsDelivr, with its SRI hash. Give
-     * another `src` with its `integrity` (`sha384-…`) to update it or serve
-     * it from your own origin; `false` serves `/openapi.json` without the page.
+     * @scalar/api-reference release from jsDelivr, with its SRI hash.
+     * `'local'`: the one of the installed `@scalar/api-reference`, served by
+     * the app at `/docs/scalar.js` (nothing is loaded from a CDN).
+     * `{ file }`: that bundle (`standalone.js`) from disk, served the same
+     * way. `{ src, integrity }`: a script by URL with its `sha384-…` hash.
+     * `false` serves `/openapi.json` without the page.
      */
-    scalar?: false | { src: string; integrity: string };
+    scalar?: false | 'local' | { file: string } | { src: string; integrity: string };
+    /**
+     * Which of the app's own routes (not `addRoute()`'s) the spec lists:
+     * `'described'` (the default), those a `describeRoute()` describes, on
+     * the route or its group; `'all'`, every route; `false`, none.
+     */
+    routes?: 'described' | 'all' | false;
 }
 
 export type UploadAction = 'upload' | 'list' | 'download' | 'delete';
