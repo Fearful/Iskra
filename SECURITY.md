@@ -9,7 +9,7 @@ Iskra is pre-1.0. Security fixes are released for the latest minor version of ea
 | Latest minor of each package (0.x) | ✅ |
 | Older minors | ❌ |
 
-The experimental kits (`@iskra-bun/desktop-kit`, `@iskra-bun/mobile-kit`, `@iskra-bun/db-oracle`) are provided as-is and are not yet covered by the same support guarantees.
+The experimental kits (`@iskra-bun/desktop-kit`, `@iskra-bun/mobile-kit`, `@iskra-bun/db-oracle`, `@iskra-bun/ldap-kit`) are provided as-is and are not yet covered by the same support guarantees.
 
 ## Reporting a vulnerability
 

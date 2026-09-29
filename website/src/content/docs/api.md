@@ -7,7 +7,7 @@ The full API reference is generated from the TypeScript source of every package 
 
 👉 **[Open the generated API reference](/api/)**
 
-The reference covers all ten packages:
+The reference covers these eleven packages:
 
 - `@iskra-bun/core`
 - `@iskra-bun/web-kit`
@@ -19,6 +19,7 @@ The reference covers all ten packages:
 - `@iskra-bun/desktop-kit` _(experimental)_
 - `@iskra-bun/mobile-kit` _(experimental)_
 - `@iskra-bun/db-oracle` _(experimental)_
+- `@iskra-bun/ldap-kit` _(experimental)_
 
 ## Regenerating locally
 

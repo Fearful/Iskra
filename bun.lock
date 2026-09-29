@@ -150,6 +150,28 @@
         "@types/node": "^22.10.2",
       },
     },
+    "packages/ldap-kit": {
+      "name": "@iskra-bun/ldap-kit",
+      "version": "0.0.0",
+      "dependencies": {
+        "@iskra-bun/core": "workspace:^",
+        "ldapts": "^9.2.0",
+      },
+      "devDependencies": {
+        "@iskra-bun/web-kit": "workspace:^",
+        "@types/bun": "^1.3.5",
+        "@types/node": "^22.10.2",
+        "hono": "^4.12.34",
+      },
+      "peerDependencies": {
+        "@iskra-bun/web-kit": "workspace:^",
+        "hono": "^4.12.34",
+      },
+      "optionalPeers": [
+        "@iskra-bun/web-kit",
+        "hono",
+      ],
+    },
     "packages/mailer-kit": {
       "name": "@iskra-bun/mailer-kit",
       "version": "0.1.0",
@@ -846,6 +868,8 @@
 
     "@iskra-bun/kv-kit": ["@iskra-bun/kv-kit@workspace:packages/kv-kit"],
 
+    "@iskra-bun/ldap-kit": ["@iskra-bun/ldap-kit@workspace:packages/ldap-kit"],
+
     "@iskra-bun/mailer-kit": ["@iskra-bun/mailer-kit@workspace:packages/mailer-kit"],
 
     "@iskra-bun/mobile-kit": ["@iskra-bun/mobile-kit@workspace:packages/mobile-kit"],
@@ -1426,6 +1450,8 @@
 
     "kysely": ["kysely@0.29.6", "", {}, "sha512-hHaB8C/rfzDDtr/t8YZwxAuPJTT0zHyaPoVzcXwDYhYNAgH/4sIfVhi/XLLIY+bL/FqaIJnjATDbi8ObSELmxg=="],
 
+    "ldapts": ["ldapts@9.2.0", "", { "dependencies": { "strict-event-emitter-types": "2.0.0" } }, "sha512-5mDg3OT5fDP9DUXga9dCLW8cMW24OTOKT4pv/Qj+f2zCV3qxb+gkZLCzMAqzVTOANoycidKkYpPvkclUQU2aXw=="],
+
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
     "libsql": ["libsql@0.5.29", "", { "dependencies": { "@neon-rs/load": "^0.0.4", "detect-libc": "2.0.2" }, "optionalDependencies": { "@libsql/darwin-arm64": "0.5.29", "@libsql/darwin-x64": "0.5.29", "@libsql/linux-arm-gnueabihf": "0.5.29", "@libsql/linux-arm-musleabihf": "0.5.29", "@libsql/linux-arm64-gnu": "0.5.29", "@libsql/linux-arm64-musl": "0.5.29", "@libsql/linux-x64-gnu": "0.5.29", "@libsql/linux-x64-musl": "0.5.29", "@libsql/win32-x64-msvc": "0.5.29" }, "os": [ "linux", "win32", "darwin", ], "cpu": [ "arm", "x64", "arm64", ] }, "sha512-8lMP8iMgiBzzoNbAPQ59qdVcj6UaE/Vnm+fiwX4doX4Narook0a4GPKWBEv+CR8a1OwbfkgL18uBfBjWdF0Fzg=="],
@@ -1671,6 +1697,8 @@
     "standard-as-callback": ["standard-as-callback@2.1.0", "", {}, "sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A=="],
 
     "starter-app": ["starter-app@workspace:templates/starter-app"],
+
+    "strict-event-emitter-types": ["strict-event-emitter-types@2.0.0", "", {}, "sha512-Nk/brWYpD85WlOgzw5h173aci0Teyv8YdIAEtV+N88nDB0dLlazZyJMIsN6eo1/AR61l+p6CJTG1JIyFaoNEEA=="],
 
     "strip-ansi": ["strip-ansi@6.0.1", "", { "dependencies": { "ansi-regex": "^5.0.1" } }, "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A=="],
 

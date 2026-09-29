@@ -11,7 +11,8 @@
     "../packages/process-kit/src/index.ts",
     "../packages/desktop-kit/src/index.ts",
     "../packages/mobile-kit/src/index.ts",
-    "../packages/db-oracle/src/index.ts"
+    "../packages/db-oracle/src/index.ts",
+    "../packages/ldap-kit/src/index.ts"
   ],
   "tsconfig": "./typedoc.tsconfig.json",
   "out": "./public/api",
