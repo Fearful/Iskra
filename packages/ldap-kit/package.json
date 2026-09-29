@@ -62,7 +62,7 @@
         "ldapts": "^9.2.0"
     },
     "peerDependencies": {
-        "@iskra-bun/web-kit": "workspace:^",
+        "@iskra-bun/web-kit": ">=0.4.0",
         "hono": "^4.12.34"
     },
     "peerDependenciesMeta": {
