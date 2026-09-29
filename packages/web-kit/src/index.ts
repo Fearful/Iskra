@@ -3,7 +3,7 @@ export * from './kernel';
 // types.ts also re-exports Kernel (type-only, for features); without this the
 // two `export *` collide and TypeScript users could not `new Kernel()`.
 export { Kernel } from './kernel';
-export { consoleLogger, silentLogger, fromStructuredLogger, type KernelLogger } from './logging';
+export { consoleLogger, silentLogger, fromStructuredLogger, type KernelLogger, type StructuredLogger } from './logging';
 export type { FeatureRegistry } from './feature-registry';
 export * from './driver';
 export * from './server';

@@ -10,6 +10,8 @@ export interface KernelLogger {
     info(message: string, details?: unknown): void;
     warn(message: string, details?: unknown): void;
     error(message: string, details?: unknown): void;
+    /** A logger whose lines carry `bindings` as fields (pino's child), when the logger has fields. */
+    child?(bindings: Record<string, unknown>): KernelLogger;
 }
 
 /* eslint-disable no-console -- the console sink: writing there is its job. */
@@ -38,17 +40,27 @@ export const silentLogger: KernelLogger = { debug: noop, info: noop, warn: noop,
  * Adapts a pino-style logger (`logger.info(obj, msg)`, as the App's): details
  * go in the structured object (`err` for errors), not appended to the text.
  */
-export function fromStructuredLogger(logger: {
+export interface StructuredLogger {
     debug(obj: object, msg: string): void;
     info(obj: object, msg: string): void;
     warn(obj: object, msg: string): void;
     error(obj: object, msg: string): void;
-}): KernelLogger {
+    child?(bindings: Record<string, unknown>): StructuredLogger;
+}
+
+export function fromStructuredLogger(logger: StructuredLogger): KernelLogger {
     const at =
         (level: 'debug' | 'info' | 'warn' | 'error') =>
         (message: string, details?: unknown): void => {
             const obj = details === undefined ? {} : details instanceof Error ? { err: details } : { details };
             logger[level](obj, message);
         };
-    return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
+    const child = logger.child?.bind(logger);
+    return {
+        debug: at('debug'),
+        info: at('info'),
+        warn: at('warn'),
+        error: at('error'),
+        ...(child ? { child: (bindings: Record<string, unknown>) => fromStructuredLogger(child(bindings)) } : {}),
+    };
 }

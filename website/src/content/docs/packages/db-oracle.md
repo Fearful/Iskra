@@ -369,20 +369,14 @@ health.addReadinessCheck('oracle', () => oracle.ping());
 oracle.setOnQuery((sql, binds) => app.logger.debug({ sql }, 'oracle query'));
 ```
 
-The callback may return a function, called when the statement ends with `{ durationMs, rows, rowsAffected, error }`: the end of a trace span. A stream calls it once, with all the rows it yielded.
+The callback may return a function, called when the statement ends with `{ durationMs, rows, rowsAffected, error }`: the end of a trace span. A stream calls it once, with all the rows it yielded; commits and rollbacks call it too (`COMMIT`, `ROLLBACK`). `setOnQuery()` holds one callback; `oracle.onQuery(callback)` adds one more (a tracer and a logger each keep their own) and returns what removes it.
+
+`instrumentOracle(oracle)` does the tracing: a CLIENT span per statement, commit and rollback (`oracle SELECT`), the child of the span active when it ran (such as core's `traced()`), with `db.system.name`, `db.operation.name`, `db.query.text` (the SQL as written, never the bind values; `queryText: false` leaves it out) and `db.response.returned_rows`; a failure records its error code.
 
 ```typescript
-import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { instrumentOracle } from '@iskra-bun/db-oracle';
 
-const tracer = trace.getTracer('oracle');
-oracle.setOnQuery((sql) => {
-    const span = tracer.startSpan('oracle.query', { attributes: { 'db.system': 'oracle', 'db.statement': sql } });
-    return ({ rows, rowsAffected, error }) => {
-        span.setAttributes({ 'db.rows': rows ?? rowsAffected ?? 0 });
-        if (error) span.setStatus({ code: SpanStatusCode.ERROR, message: error.errorCode });
-        span.end();
-    };
-});
+instrumentOracle(oracle); // the global tracer provider's, or { tracer }
 ```
 
 Binds may hold personal data: log them only where that is acceptable.

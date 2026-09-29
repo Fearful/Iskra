@@ -201,7 +201,10 @@ export class OracleDriver<DB = Record<string, never>> implements Driver, OracleS
     private config: ResolvedOracleConfig | undefined;
     private pool: OraclePoolLike | undefined;
     private fetchHandler: ReturnType<typeof fetchTypeHandler> | undefined;
-    private onQuery: OnQueryHook | undefined;
+    /** setOnQuery()'s hook. */
+    private setHook: OnQueryHook | undefined;
+    /** The hooks added with onQuery(), besides setOnQuery()'s. */
+    private readonly queryHooks = new Set<OnQueryHook>();
     private pingInFlight: Promise<boolean> | undefined;
     /** The connection of the transaction() running in the current async context. */
     private readonly activeTx = new AsyncLocalStorage<ConnectionHandle>();
@@ -288,7 +291,17 @@ export class OracleDriver<DB = Record<string, never>> implements Driver, OracleS
      * a query.
      */
     setOnQuery(onQuery: OnQueryHook | undefined): void {
-        this.onQuery = onQuery;
+        this.setHook = onQuery;
+    }
+
+    /**
+     * Adds a callback for every statement, commit and rollback, besides the
+     * others (a tracer and a logger each keep their own); returns what removes it.
+     * See OnQueryHook.
+     */
+    onQuery(hook: OnQueryHook): () => void {
+        this.queryHooks.add(hook);
+        return () => void this.queryHooks.delete(hook);
     }
 
     /**
@@ -599,18 +612,23 @@ export class OracleDriver<DB = Record<string, never>> implements Driver, OracleS
     /** Calls the OnQuery hook; returns what to call when the statement ends. */
     private startHook(sql: string, binds: unknown): (info: Omit<QueryEnd, 'durationMs'>) => void {
         const started = performance.now();
-        let end: ((end: QueryEnd) => void) | undefined;
-        try {
-            const returned = this.onQuery?.(sql, binds);
-            if (typeof returned === 'function') end = returned as (end: QueryEnd) => void;
-        } catch {
-            // Observability must never break the query.
-        }
-        return (info) => {
+        const ends: ((end: QueryEnd) => void)[] = [];
+        for (const hook of this.setHook ? [this.setHook, ...this.queryHooks] : this.queryHooks) {
             try {
-                end?.({ durationMs: performance.now() - started, ...info });
+                const returned = hook(sql, binds);
+                if (typeof returned === 'function') ends.push(returned as (end: QueryEnd) => void);
             } catch {
                 // Observability must never break the query.
+            }
+        }
+        return (info) => {
+            const end = { durationMs: performance.now() - started, ...info };
+            for (const each of ends) {
+                try {
+                    each(end);
+                } catch {
+                    // Observability must never break the query.
+                }
             }
         };
     }
@@ -725,10 +743,14 @@ export class OracleDriver<DB = Record<string, never>> implements Driver, OracleS
      */
     private async end(handle: ConnectionHandle, action: 'commit' | 'rollback'): Promise<void> {
         if (action === 'rollback' && handle.lost) return;
+        const finish = this.startHook(action.toUpperCase(), []);
         try {
             await this.guarded(handle, undefined, () => handle.connection[action]());
+            finish({});
         } catch (caught) {
-            throw this.failed(handle, caught);
+            const error = this.failed(handle, caught);
+            finish({ error });
+            throw error;
         }
     }
 

@@ -21,6 +21,7 @@ export {
     type StandardSchemaLike,
 } from './rows';
 export type { ListOptions, ListResult, ListQuery } from './list';
+export { instrumentOracle, type OracleTracingOptions } from './tracing';
 export type {
     OracleType,
     OracleValue,

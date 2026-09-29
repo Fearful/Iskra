@@ -201,6 +201,18 @@ HTTP spans export the URL of each request (`url.full`, or `http.url` and `http.t
 
 The startup log names the endpoint by its origin only: its path, query or userinfo can hold an API key. A plain `http://` endpoint on another host (not `localhost`, a private address, or a name without a dot or ending in `.local` or `.internal`) also logs a warning, since spans would travel unencrypted: use `https://`.
 
+### Spans of your own
+
+`traced(name, fn)` wraps a function in a span named by its layer, domain and method (`repo.usuarios.buscar`): the span is the active one while it runs, so the spans started inside (a query with db-oracle's `instrumentOracle()`, an outgoing request) are its children, and a throw or a rejection marks it as an error. Without an OpenTelemetry SDK it costs a no-op span.
+
+```typescript
+import { traced } from '@iskra-bun/core';
+
+export const buscarUsuario = traced('repo.usuarios.buscar', async (id: number) =>
+    oracle.one('SELECT * FROM usuarios WHERE id = :id', { id }),
+);
+```
+
 ## Errors
 
 Every error extends `IskraError`:

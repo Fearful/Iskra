@@ -289,8 +289,16 @@ export interface LoggerConfig {
           }
         | Sink
     >;
+    /** Writes `Incoming request METHOD path` for each request (console format). */
     logRequests?: boolean;
+    /** With `logRequests`, also `Request completed STATUS Nms`. */
     logResponses?: boolean;
+    /**
+     * One line per request when it ends, through the Kernel's logger (the
+     * App's pino with WebPlugin): `request completed` with `method`, `path`,
+     * `status`, `durationMs`, `requestId` and `actor` (`kind:id`) as fields.
+     */
+    accessLog?: boolean;
 }
 
 export interface AuthConfig {

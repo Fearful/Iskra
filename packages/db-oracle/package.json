@@ -52,6 +52,7 @@
         "build": "tsup --config ../../tsup.config.ts"
     },
     "dependencies": {
+        "@opentelemetry/api": "^1.9.0",
         "@iskra-bun/core": "workspace:^",
         "kysely": "^0.29.6",
         "oracledb": "^6.10.0"

@@ -293,6 +293,15 @@ new OpenAPIFeature({
 authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
 ```
 
+## Access log
+
+`LoggerFeature` gives each request a logger (`c.get('logger')`) and, with `accessLog: true`, writes one line per request when it ends. Through WebPlugin they go to the App's pino: the request's logger is its child, so every line carries the `requestId` (register `RequestIdFeature`), and the access line is `request completed` with `method`, `path`, `status`, `durationMs`, `requestId` and `actor` (`kind:id`, from a [gate](#gates-who-made-the-request)) as fields. On the Kernel's console logger they are text.
+
+```typescript
+new WebPlugin({ router, features: [new RequestIdFeature(), new LoggerFeature({ accessLog: true })] });
+// {"level":30,"requestId":"…","method":"GET","path":"/api/users/7","status":200,"durationMs":12,"msg":"request completed"}
+```
+
 ## Tracing
 
 `OtelTracingFeature` creates a span per request with [`@hono/otel`](https://github.com/honojs/middleware/tree/main/packages/otel), through the app's OpenTelemetry setup (the global tracer provider, or the `tracer` or `tracerProvider` you pass):
