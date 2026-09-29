@@ -147,6 +147,35 @@ describe('OracleDriver.runMigrations', () => {
         expect([work!.rollbacks, work!.commits, work!.closed, lock!.closed]).toEqual([1, 0, 1, 1]);
     });
 
+    test('PL/SQL created with compilation errors fails the migration with its USER_ERRORS, unrecorded', async () => {
+        const { driver, pool } = await startedDriver();
+        const base = database();
+        pool.respond = (call) => {
+            if (call.sql.startsWith('CREATE OR REPLACE PROCEDURE')) {
+                return { warning: { code: 'NJS-700', message: 'NJS-700: creation succeeded with compilation errors' } };
+            }
+            if (call.sql.includes('FROM user_errors')) {
+                return { rows: [{ LINE: 3, POSITION: 5, TEXT: "PLS-00201: identifier 'NOPE' must be declared\n" }] };
+            }
+            return base(call);
+        };
+        const path = migrations({
+            '1_proc.sql': 'CREATE OR REPLACE PROCEDURE broken_proc IS\nBEGIN\n    nope;\nEND;\n/\n',
+        });
+        const error = (await driver.runMigrations(path).catch((e: unknown) => e)) as MigrationError;
+        expect(error).toBeInstanceOf(MigrationError);
+        expect(error.message).toBe(
+            'Migration 1_proc.sql failed at statement 1: NJS-700: creation succeeded with compilation errors: ' +
+                "PROCEDURE BROKEN_PROC (line 3, column 5: PLS-00201: identifier 'NOPE' must be declared)",
+        );
+        expect(error.context).toMatchObject({ migration: '1_proc.sql', statement: 1, compilationErrors: true });
+        expect(pool.calls.find((c) => c.sql.includes('FROM user_errors'))!.binds).toEqual({
+            name: 'BROKEN_PROC',
+            type: 'PROCEDURE',
+        });
+        expect(pool.statements.some((sql) => sql.startsWith('INSERT INTO ISKRA_MIGRATIONS'))).toBe(false);
+    });
+
     test('another runner holding the lock past lockTimeout', async () => {
         const { driver, pool } = await startedDriver();
         pool.respond = database({}, ({ sql }) =>

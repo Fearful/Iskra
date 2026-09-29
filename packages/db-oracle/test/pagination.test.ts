@@ -19,7 +19,11 @@ interface DB {
 
 // Compiles only: nothing runs on this one.
 const db = new Kysely<DB>({
-    dialect: new OracleDialect({ acquire: () => Promise.reject(new Error('no database')), runner: {} as never }),
+    dialect: new OracleDialect({
+        acquire: () => Promise.reject(new Error('no database')),
+        runner: {} as never,
+        compatibility: '19c',
+    }),
 });
 const users = () => db.selectFrom('USERS').select(['ID', 'NAME']);
 
@@ -125,6 +129,7 @@ describe('search, sortBy', () => {
             dialect: new OracleDialect({
                 acquire: () => Promise.reject(new Error('no database')),
                 runner: {} as never,
+                compatibility: '19c',
             }),
             plugins: [new CamelCasePlugin({ upperCase: true })],
         });
@@ -163,38 +168,65 @@ describe('paginate, paginateByCursor', () => {
 
     test('paginateByCursor() orders by its keys, fetches one extra row and continues after the cursor', async () => {
         const { driver, pool } = await startedDriver<DB>();
-        const created = new Date('2026-01-01T00:00:00Z');
-        pool.respond = () => ({
-            rows: [
-                { ID: 1, CREATED: created },
-                { ID: 2, CREATED: created },
-                { ID: 3, CREATED: created },
-            ],
-        });
-        const q = () => driver.db!.selectFrom('USERS').select(['ID', 'CREATED']);
-        const first = await paginateByCursor(q(), { keys: ['CREATED', 'ID'], direction: 'desc', pageSize: 2 });
-        expect(first.items).toHaveLength(2);
+        pool.respond = () => ({ rows: [3, 2, 1].map((n) => ({ ID: n, NAME: `n${n}` })) });
+        const q = () => driver.db!.selectFrom('USERS').select(['ID', 'NAME']);
+        const first = await paginateByCursor(q(), { keys: ['ID'], direction: 'desc', pageSize: 2 });
+        expect(first.items).toEqual([
+            { ID: 3, NAME: 'n3' },
+            { ID: 2, NAME: 'n2' },
+        ]);
         expect(pool.calls.at(-1)!.sql).toBe(
-            'select "ID", "CREATED" from "USERS" order by "CREATED" desc, "ID" desc fetch next :1 rows only',
+            'select "ID", "NAME" from "USERS" order by "ID" desc fetch next :1 rows only',
         );
         expect(pool.calls.at(-1)!.binds).toEqual([3]);
-        expect(decodeCursor(first.nextCursor!, 2)).toEqual([created, 2]);
+        expect(decodeCursor(first.nextCursor!, 1)).toEqual([2]);
 
-        pool.respond = () => ({ rows: [{ ID: 1, CREATED: created }] });
+        pool.respond = () => ({ rows: [{ ID: 1, NAME: 'n1' }] });
         const second = await paginateByCursor(q(), {
-            keys: ['CREATED', 'ID'],
+            keys: ['ID'],
             direction: 'desc',
             pageSize: 2,
             after: first.nextCursor,
         });
         expect(second.nextCursor).toBeNull();
         expect(pool.calls.at(-1)!.sql).toBe(
-            'select "ID", "CREATED" from "USERS" where (("CREATED" < :1) or ("CREATED" = :2 and "ID" < :3)) ' +
-                'order by "CREATED" desc, "ID" desc fetch next :4 rows only',
+            'select "ID", "NAME" from "USERS" where (("ID" < :1)) order by "ID" desc fetch next :2 rows only',
         );
-        expect(pool.calls.at(-1)!.binds).toEqual([created, created, 2, 3]);
+        expect(pool.calls.at(-1)!.binds).toEqual([2, 3]);
 
         await expect(paginateByCursor(q().orderBy('ID'), { keys: ['ID'] })).rejects.toThrow('leave orderBy out');
         await expect(paginateByCursor(q(), { keys: ['ID'], after: 'bad' })).rejects.toThrow(QueryInputError);
+    });
+
+    test('paginateByCursor(): a timestamp key goes in the cursor as text with all its digits', async () => {
+        const { driver, pool } = await startedDriver<DB>();
+        const ts = (n: number) => `2026-01-01 00:00:00.00000${n}000`;
+        pool.respond = () => ({
+            rows: [3, 2, 1].map((n) => ({ ID: n, CREATED: new Date('2026-01-01T00:00:00Z'), iskracursor0: ts(n) })),
+        });
+        const q = () => driver.db!.selectFrom('USERS').select(['ID', 'CREATED']);
+        const keys = [{ key: 'CREATED', type: 'timestamp' }, 'ID'] as const;
+        const first = await paginateByCursor(q(), { keys, direction: 'desc', pageSize: 2 });
+        // The hidden column is not in the items.
+        expect(first.items).toEqual([3, 2].map((n) => ({ ID: n, CREATED: new Date('2026-01-01T00:00:00Z') })));
+        expect(pool.calls.at(-1)!.sql).toBe(
+            'select "ID", "CREATED", to_char(cast("CREATED" as timestamp(9)), \'YYYY-MM-DD HH24:MI:SS.FF9\') "iskracursor0" ' +
+                'from "USERS" order by "CREATED" desc, "ID" desc fetch next :1 rows only',
+        );
+        expect(decodeCursor(first.nextCursor!, 2)).toEqual([{ ts: ts(2) }, 2]);
+
+        await paginateByCursor(q(), { keys, direction: 'desc', pageSize: 2, after: first.nextCursor });
+        expect(pool.calls.at(-1)!.sql).toContain(
+            'where (("CREATED" < to_timestamp(:1, \'YYYY-MM-DD HH24:MI:SS.FF9\')) or ' +
+                '("CREATED" = to_timestamp(:2, \'YYYY-MM-DD HH24:MI:SS.FF9\') and "ID" < :3))',
+        );
+        expect(pool.calls.at(-1)!.binds).toEqual([ts(2), ts(2), 2, 3]);
+
+        // A date key that is not declared refuses to page.
+        await expect(paginateByCursor(q(), { keys: ['CREATED', 'ID'], pageSize: 2 })).rejects.toThrow(
+            "declare it { key: 'CREATED', type: 'timestamp' }",
+        );
+        // A cursor that does not match the keys is a bad request.
+        await expect(paginateByCursor(q(), { keys, after: encodeCursor([5, 2]) })).rejects.toThrow(QueryInputError);
     });
 });

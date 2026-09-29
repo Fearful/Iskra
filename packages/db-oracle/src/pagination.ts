@@ -22,12 +22,20 @@ export interface Page<T> {
     pages: number;
 }
 
+/**
+ * A cursor key: a column name, or `{ key, type: 'timestamp' }` for a DATE or
+ * TIMESTAMP column. A JS Date keeps milliseconds and TIMESTAMP(6)
+ * microseconds, so a timestamp key goes in the cursor as text with all its
+ * digits; rows would repeat or be skipped otherwise.
+ */
+export type CursorKey<K extends string> = K | { key: K; type: 'timestamp' };
+
 export interface CursorPageOptions<K extends string> extends Omit<PageOptions, 'page'> {
     /**
      * Columns the rows are ordered by, selected under their own names. They
      * must not be NULL, and together unique: end with the primary key.
      */
-    keys: readonly [K, ...K[]];
+    keys: readonly [CursorKey<K>, ...CursorKey<K>[]];
     /** Default 'asc'. */
     direction?: 'asc' | 'desc';
     /** The `nextCursor` of the previous page; none for the first. */
@@ -97,7 +105,11 @@ export async function paginate<DB, TB extends keyof DB, O>(
     return { items, total, page, pageSize, pages: Math.ceil(total / pageSize) };
 }
 
-type CursorValue = string | number | boolean | Date;
+type CursorValue = string | number | boolean | Date | { ts: string };
+
+/** TO_CHAR/TO_TIMESTAMP format of a timestamp key in a cursor: every digit a TIMESTAMP can hold. */
+const TS_FORMAT = 'YYYY-MM-DD HH24:MI:SS.FF9';
+const TS_TEXT = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{9}$/;
 
 /** A cursor for the key values of a row: opaque base64url JSON. */
 export function encodeCursor(values: readonly unknown[]): string {
@@ -120,20 +132,47 @@ export function decodeCursor(cursor: string, length: number): CursorValue[] {
         if (typeof value === 'string' || typeof value === 'boolean') return value;
         if (typeof value === 'number' && Number.isFinite(value)) return value;
         if (typeof value === 'object' && value !== null && Object.keys(value).length === 1) {
-            const iso = (value as { d?: unknown }).d;
-            const date = typeof iso === 'string' ? new Date(iso) : undefined;
+            const { d, ts } = value as { d?: unknown; ts?: unknown };
+            if (typeof ts === 'string' && TS_TEXT.test(ts)) return { ts };
+            const date = typeof d === 'string' ? new Date(d) : undefined;
             if (date && !Number.isNaN(date.getTime())) return date;
         }
         throw invalid();
     });
 }
 
+interface ResolvedKey {
+    name: string;
+    timestamp: boolean;
+    /** The hidden column holding a timestamp key's text. */
+    alias: string;
+}
+
+function resolveKeys(keys: readonly CursorKey<string>[]): ResolvedKey[] {
+    return keys.map((k, i) =>
+        typeof k === 'string'
+            ? { name: k, timestamp: false, alias: `iskracursor${i}` }
+            : { name: k.key, timestamp: k.type === 'timestamp', alias: `iskracursor${i}` },
+    );
+}
+
+/** The value a key compares with: a timestamp key's text goes back through TO_TIMESTAMP. */
+function keyValue(key: ResolvedKey, value: CursorValue) {
+    if (!key.timestamp) {
+        if (typeof value === 'object' && !(value instanceof Date))
+            throw new QueryInputError('Invalid pagination cursor');
+        return sql`${value}`;
+    }
+    if (typeof value !== 'object' || value instanceof Date) throw new QueryInputError('Invalid pagination cursor');
+    return sql`to_timestamp(${value.ts}, ${sql.lit(TS_FORMAT)})`;
+}
+
 /** `(k1 > v1) or (k1 = v1 and k2 > v2) or …`: Oracle has no row-value comparison. */
-function afterKeys(keys: readonly string[], values: readonly CursorValue[], direction: 'asc' | 'desc') {
+function afterKeys(keys: readonly ResolvedKey[], values: readonly CursorValue[], direction: 'asc' | 'desc') {
     const op = sql.raw(direction === 'asc' ? '>' : '<');
     const branches = keys.map((key, i) => {
-        const equal = keys.slice(0, i).map((k, j) => sql`${sql.ref(k)} = ${values[j]}`);
-        return sql`(${sql.join([...equal, sql`${sql.ref(key)} ${op} ${values[i]}`], sql` and `)})`;
+        const equal = keys.slice(0, i).map((k, j) => sql`${sql.ref(k.name)} = ${keyValue(k, values[j]!)}`);
+        return sql`(${sql.join([...equal, sql`${sql.ref(key.name)} ${op} ${keyValue(key, values[i]!)}`], sql` and `)})`;
     });
     return sql<SqlBool>`(${sql.join(branches, sql` or `)})`;
 }
@@ -141,7 +180,8 @@ function afterKeys(keys: readonly string[], values: readonly CursorValue[], dire
 /**
  * One page of `query` after a cursor (keyset pagination): unlike OFFSET, a
  * deep page costs no more than the first, and rows inserted meanwhile do not
- * shift the pages. The query is ordered by `keys`; leave orderBy out.
+ * shift the pages. The query is ordered by `keys`; leave orderBy out. A DATE
+ * or TIMESTAMP key must be declared `{ key, type: 'timestamp' }`.
  */
 export async function paginateByCursor<DB, TB extends keyof DB, O, K extends keyof O & string>(
     query: SelectQueryBuilder<DB, TB, O>,
@@ -153,15 +193,36 @@ export async function paginateByCursor<DB, TB extends keyof DB, O, K extends key
     checkUnpaged(query, 'paginateByCursor');
     const { pageSize } = pageParams(options);
     const direction = options.direction ?? 'asc';
+    const keys = resolveKeys(options.keys);
     let q = query;
-    if (options.after)
-        q = q.where(afterKeys(options.keys, decodeCursor(options.after, options.keys.length), direction));
-    for (const key of options.keys) q = q.orderBy(sql.ref(key), direction);
-    const rows = await q.fetch(pageSize + 1).execute();
-    const items = rows.slice(0, pageSize);
-    const last = items.at(-1);
-    const nextCursor = rows.length > pageSize && last ? encodeCursor(options.keys.map((k) => last[k])) : null;
-    return { items, nextCursor, pageSize };
+    for (const key of keys.filter((k) => k.timestamp)) {
+        const text = sql<string>`to_char(cast(${sql.ref(key.name)} as timestamp(9)), ${sql.lit(TS_FORMAT)})`;
+        q = q.select(text.as(key.alias)) as unknown as typeof q;
+    }
+    if (options.after) q = q.where(afterKeys(keys, decodeCursor(options.after, keys.length), direction));
+    for (const key of keys) q = q.orderBy(sql.ref(key.name), direction);
+    const rows = (await q.fetch(pageSize + 1).execute()) as Record<string, unknown>[];
+    const hidden = keys.filter((k) => k.timestamp).map((k) => k.alias);
+    const items = rows.slice(0, pageSize).map((row) => {
+        if (hidden.length === 0) return row;
+        const copy = { ...row };
+        for (const alias of hidden) delete copy[alias];
+        return copy;
+    });
+    const undeclared = rows[0] && keys.find((k) => !k.timestamp && rows[0]![k.name] instanceof Date);
+    if (undeclared) {
+        throw new Error(
+            `paginateByCursor(): key "${undeclared.name}" holds dates: declare it { key: '${undeclared.name}', ` +
+                "type: 'timestamp' } (a JS Date keeps milliseconds, a TIMESTAMP microseconds: " +
+                'rows would repeat or be skipped)',
+        );
+    }
+    const last = rows[pageSize - 1];
+    const nextCursor =
+        rows.length > pageSize && last
+            ? encodeCursor(keys.map((key) => (key.timestamp ? { ts: last[key.alias] } : last[key.name])))
+            : null;
+    return { items: items as O[], nextCursor, pageSize };
 }
 
 /** `text` with LIKE's wildcards (`%`, `_`) and the escape character (`\`) escaped. */

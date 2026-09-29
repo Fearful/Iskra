@@ -26,6 +26,9 @@ interface MigrationFile {
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_$#]{0,120}$/;
 const PLSQL_START =
     /^(?:begin|declare|create\s+(?:or\s+replace\s+)?(?:(?:non)?editionable\s+)?(?:procedure|function|package|trigger|type|library))\b/i;
+/** CREATE [OR REPLACE] [EDITIONABLE] <type> [schema.]name of a PL/SQL object, for its USER_ERRORS. */
+const PLSQL_OBJECT =
+    /^create\s+(?:or\s+replace\s+)?(?:(?:non)?editionable\s+)?(package\s+body|type\s+body|procedure|function|package|trigger|type|library)\s+(?:("[^"]+"|[\w$#]+)\.)?("[^"]+"|[\w$#]+)/i;
 const ORA_NAME_IN_USE = 955;
 const ORA_WAIT_TIMEOUT = 30006;
 
@@ -138,6 +141,26 @@ async function readMigrations(dir: string): Promise<MigrationFile[]> {
     );
 }
 
+/**
+ * The compilation errors of the PL/SQL object a statement created with
+ * errors (node-oracledb's warning NJS-700), from USER_ERRORS.
+ */
+async function compilationErrors(deps: MigrationDeps, handle: ConnectionHandle, statement: string): Promise<string> {
+    const match = PLSQL_OBJECT.exec(statement);
+    if (!match) return '';
+    const unquote = (name: string) => (name.startsWith('"') ? name.slice(1, -1) : name.toUpperCase());
+    const type = match[1]!.toUpperCase().replace(/\s+/g, ' ');
+    const name = unquote(match[3]!);
+    const result = await deps.run(
+        handle,
+        'SELECT line, position, text FROM user_errors WHERE name = :name AND type = :type ORDER BY sequence',
+        { name, type },
+    );
+    const errors = (result.rows ?? []) as { LINE: number; POSITION: number; TEXT: string }[];
+    const details = errors.map((e) => `line ${e.LINE}, column ${e.POSITION}: ${e.TEXT.trim()}`).join('; ');
+    return `${type} ${name}${details ? ` (${details})` : ''}`;
+}
+
 async function createIfMissing(deps: MigrationDeps, handle: ConnectionHandle, ddl: string) {
     try {
         await deps.run(handle, ddl, []);
@@ -212,14 +235,28 @@ export async function runMigrations(deps: MigrationDeps, dir: string, options: M
             }
             const statements = splitStatements(file.sql);
             for (const [index, statement] of statements.entries()) {
+                const context = { migration: file.name, statement: index + 1 };
+                let warning: string | undefined;
                 try {
-                    await deps.run(work, statement, []);
+                    const result = await deps.run(work, statement, []);
+                    // PL/SQL that does not compile is still created (invalid):
+                    // node-oracledb reports it as a warning, not an error.
+                    if (result.warning) {
+                        const object = await compilationErrors(deps, work, statement);
+                        warning = `${result.warning.message ?? result.warning.code}${object ? `: ${object}` : ''}`;
+                    }
                 } catch (error) {
                     await work.connection.rollback().catch(() => {});
                     throw new MigrationError(
                         `Migration ${file.name} failed at statement ${index + 1}: ${asError(error).message}`,
-                        { cause: asError(error), context: { migration: file.name, statement: index + 1 } },
+                        { cause: asError(error), context },
                     );
+                }
+                if (warning) {
+                    await work.connection.rollback().catch(() => {});
+                    throw new MigrationError(`Migration ${file.name} failed at statement ${index + 1}: ${warning}`, {
+                        context: { ...context, compilationErrors: true },
+                    });
                 }
             }
             await deps.run(work, `INSERT INTO ${table} (name, checksum) VALUES (:name, :checksum)`, {

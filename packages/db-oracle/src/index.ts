@@ -1,6 +1,6 @@
 export * from './driver';
 export * from './errors';
-export type { OracleConfig, OraclePoolConfig, OracleFetchAsString } from './config';
+export type { OracleConfig, OraclePoolConfig, OracleFetchAsString, OracleCompatibility } from './config';
 export type {
     OracleType,
     OracleValue,
@@ -12,6 +12,7 @@ export type {
     OracleInOutBind,
     OracleReturningBind,
     OutBinds,
+    OracleBindDef,
 } from './binds';
 export {
     paginate,
@@ -26,6 +27,7 @@ export {
     type PageOptions,
     type CursorPage,
     type CursorPageOptions,
+    type CursorKey,
 } from './pagination';
 export { splitStatements, type MigrationOptions } from './migrations';
 export { sql } from 'kysely';

@@ -116,19 +116,31 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # db-oracle against a real Oracle Database Free: oracledb in Thin mode inside
-  # Bun, the OracleDriver (raw SQL, Kysely, transactions, pagination) and its
-  # migrations. A job of its own so the other suites do not wait for the image.
-  # The TEST_ORACLE_* values match the defaults in
-  # packages/db-oracle/test/oracle-env.ts; TEST_ORACLE_REQUIRED fails the job
-  # when the database is unreachable instead of skipping.
+  # db-oracle against real Oracle databases: 23ai, and 21c XE for the SQL of
+  # older releases (no BOOLEAN in SQL, no multi-row VALUES, FROM DUAL
+  # required; there is no public 19c image, and 19c shares these limits).
+  # Each runs oracledb in Thin mode inside Bun, the OracleDriver (raw SQL,
+  # Kysely, transactions, pagination) and its migrations. A job of its own
+  # so the other suites do not wait for the images. The TEST_ORACLE_* values
+  # match packages/db-oracle/test/oracle-env.ts; TEST_ORACLE_REQUIRED fails
+  # the job when the database is unreachable instead of skipping.
   oracle:
-    name: Oracle integration (db-oracle)
+    name: Oracle integration (db-oracle, ${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 23ai
+            image: gvenzl/oracle-free:23-slim-faststart
+            service: FREEPDB1
+          - name: 21c
+            image: gvenzl/oracle-xe:21-slim-faststart
+            service: XEPDB1
 
     services:
       oracle:
-        image: gvenzl/oracle-free:23-slim-faststart
+        image: ${{ matrix.image }}
         env:
           ORACLE_RANDOM_PASSWORD: 'yes'
           APP_USER: iskra
@@ -142,7 +154,7 @@ jobs:
           --health-retries 30
 
     env:
-      TEST_ORACLE_CONN: 127.0.0.1:1521/FREEPDB1
+      TEST_ORACLE_CONN: 127.0.0.1:1521/${{ matrix.service }}
       TEST_ORACLE_USER: iskra
       TEST_ORACLE_PASSWORD: iskra
       TEST_ORACLE_REQUIRED: '1'

@@ -58,7 +58,7 @@ describe('toOracleBinds', () => {
                 body: { type: 'clob', val: 'text' },
                 id: { dir: 'returning', type: 'number' },
                 msg: { dir: 'out', type: 'string' },
-                raw: { dir: 'out', type: 'raw', maxSize: 16 },
+                bytes: { dir: 'out', type: 'raw', maxSize: 16 },
                 counter: { dir: 'inout', type: 'number', val: 1 },
                 when: { dir: 'out', type: 'timestamp' },
             }),
@@ -66,7 +66,7 @@ describe('toOracleBinds', () => {
             body: { dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_CLOB, val: 'text' },
             id: { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_NUMBER },
             msg: { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
-            raw: { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_RAW, maxSize: 16 },
+            bytes: { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_RAW, maxSize: 16 },
             counter: { dir: oracledb.BIND_INOUT, type: oracledb.DB_TYPE_NUMBER, val: 1 },
             when: { dir: oracledb.BIND_OUT, type: oracledb.DB_TYPE_TIMESTAMP },
         });
