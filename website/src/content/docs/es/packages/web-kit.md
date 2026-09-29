@@ -48,6 +48,32 @@ import type { Context, MiddlewareHandler, ContentfulStatusCode } from '@iskra-bu
 
 `isHTTPException(err)` también reconoce un `HTTPException` de otra copia de `hono` (un `Error` con un `status` HTTP y `getResponse()`); lo usa el manejador de errores del Kernel, así que esa excepción conserva su status en vez de convertirse en un 500. `statusText(404)` devuelve `"Not Found"`.
 
+## Rutas en grupos
+
+`Router` organiza las rutas en grupos con los middlewares que comparten, y decide qué recibe un request que ninguna ruta toma:
+
+```typescript
+import { Router, WebPlugin } from '@iskra-bun/web-kit';
+
+const api = new Router();
+const v1 = api.group('/api/v1', requestLog); // middleware de todas las rutas del grupo
+v1.use(auth); // para las rutas que se agreguen después de esta línea
+const users = v1.group('/users', requireScopes('users:read')); // hereda requestLog y auth
+users.get('/me', getMe);
+users.get('/:id', getUser);
+v1.unmatched({ then: 'auto' });
+
+new WebPlugin({ router: api, features: [/* … */] });
+```
+
+- Una ruta corre los middlewares de sus grupos (primero el de afuera) y después los suyos: `users.get('/:id', audit, getUser)`.
+- `use()` agrega middleware a las rutas y subgrupos que se agregan **después**, como en Echo.
+- Las rutas se registran por prioridad, no en el orden en que se agregaron: un segmento estático antes que un parámetro y éste antes que un comodín (`/users/me` antes que `/users/:id`), y una ruta de un método antes que una de todos los métodos (`all()`). Dos rutas con el mismo método y la misma forma de path (`/users/:id`, `/users/:userId`) lanzan un error.
+- `group.unmatched()` se ocupa de lo que ninguna ruta bajo el prefijo del grupo toma (un path desconocido, un método sin ruta, un método inventado): corre los middlewares del grupo (o `use: [...]`), así un invitado recibe el 401 del chequeo de auth en vez de enterarse de qué paths existen, y después responde **404** según el [contrato de respuestas](#contrato-de-respuestas). Con `then: 'auto'`, un path que tiene rutas para otros métodos responde **405** con `Allow: GET, HEAD, POST`. Los paths fuera de un grupo con `unmatched()` reciben el 404 del Kernel; decide el prefijo más específico; llamarlo de nuevo para un prefijo reemplaza la regla anterior.
+- `\:` en un path es un dos puntos literal (`/items\:batch`).
+
+`WebPlugin` compila el router sobre la app del Kernel después de los middlewares de todas las features, así que los headers de seguridad, CORS, CSRF o el rate limit cubren sus rutas. `router.compile(app)` lo hace sobre una app de Hono propia. Una app de Hono común sigue sirviendo como `router`: se monta en `/`.
+
 ## WebDriver (servidor standalone)
 
 `WebDriver` es un driver liviano basado en OpenAPIHono para exponer rutas tipadas sin el Kernel de features. Acepta `{ port, routes }` (antes se llamaba `WebServer` — **cambio incompatible**, actualiza tus imports).

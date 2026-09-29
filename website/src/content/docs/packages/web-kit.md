@@ -48,6 +48,32 @@ import type { Context, MiddlewareHandler, ContentfulStatusCode } from '@iskra-bu
 
 `isHTTPException(err)` also recognizes a `HTTPException` from another copy of `hono` (an `Error` with an HTTP `status` and `getResponse()`); the Kernel's error handler uses it, so such an exception keeps its status instead of becoming a 500. `statusText(404)` gives `"Not Found"`.
 
+## Routes in groups
+
+`Router` organizes routes in groups with the middleware they share, and decides what a request no route takes gets:
+
+```typescript
+import { Router, WebPlugin } from '@iskra-bun/web-kit';
+
+const api = new Router();
+const v1 = api.group('/api/v1', requestLog); // middleware of every route in the group
+v1.use(auth); // for the routes added after this line
+const users = v1.group('/users', requireScopes('users:read')); // inherits requestLog and auth
+users.get('/me', getMe);
+users.get('/:id', getUser);
+v1.unmatched({ then: 'auto' });
+
+new WebPlugin({ router: api, features: [/* … */] });
+```
+
+- A route runs its groups' middleware (outer first), then its own: `users.get('/:id', audit, getUser)`.
+- `use()` adds middleware to the routes and subgroups added **after** it, as in Echo.
+- Routes are registered by priority, not in the order they were added: a static segment before a parameter before a wildcard (`/users/me` before `/users/:id`), and a route for a method before one for every method (`all()`). Two routes with the same method and path shape (`/users/:id`, `/users/:userId`) throw.
+- `group.unmatched()` handles what no route under the group's prefix takes (an unknown path, a method without a route, a made-up method): it runs the group's middleware (or `use: [...]`), so a guest gets the 401 of the auth check instead of learning which paths exist, then answers **404** by the [response contract](#response-contract). With `then: 'auto'` a path that has routes for other methods answers **405** with `Allow: GET, HEAD, POST`. Paths outside any group with `unmatched()` get the Kernel's 404; the most specific prefix decides; calling it again for a prefix replaces the previous rule.
+- `\:` in a path is a literal colon (`/items\:batch`).
+
+`WebPlugin` compiles the router onto the Kernel's app after every feature's middleware, so security headers, CORS, CSRF or rate limit cover its routes. `router.compile(app)` does it on a Hono app of your own. A plain Hono app still works as `router`: it is mounted at `/`.
+
 ## WebDriver (standalone server)
 
 `WebDriver` is a lightweight OpenAPIHono-based driver for exposing typed routes without the feature Kernel. It accepts `{ port, routes }` (it was previously named `WebServer` — **breaking change**, update your imports).

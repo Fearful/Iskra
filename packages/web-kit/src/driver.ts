@@ -3,9 +3,11 @@ import { Hono } from 'hono';
 import { Kernel } from './kernel';
 import type { Feature, KernelConfig } from './types';
 import { fromStructuredLogger } from './logging';
+import { Router } from './group-router';
 
 export interface WebPluginConfig extends KernelConfig {
-    router?: Hono;
+    /** The app's routes: a `Router` (groups, priorities, unmatched) or a Hono app mounted at "/". */
+    router?: Router | Hono;
     features?: Feature[];
 }
 
@@ -13,7 +15,7 @@ export class WebPlugin implements Driver {
     name = 'WebPlugin';
     private app: App | null = null;
     private kernel: Kernel;
-    private router?: Hono;
+    private router?: Router | Hono;
     /** Whether the config chose a logger (or `false`): otherwise the App's is used. */
     private ownLogger: boolean;
 
@@ -36,9 +38,7 @@ export class WebPlugin implements Driver {
         if (!this.ownLogger) this.kernel.setLogger(fromStructuredLogger(app.logger));
         await this.kernel.initialize();
 
-        if (this.router) {
-            this.kernel.getApp().route('/', this.router);
-        }
+        mountRoutes(this.kernel, this.router);
     }
 
     getHonoApp(): Hono {
@@ -56,4 +56,14 @@ export class WebPlugin implements Driver {
         await this.kernel.shutdown();
         this.app?.logger.info('WebPlugin stopped');
     }
+}
+
+/**
+ * Adds an app's routes to an initialized Kernel, after every feature's
+ * middleware: a Router is compiled onto the Kernel's app, a Hono app is
+ * mounted at "/".
+ */
+export function mountRoutes(kernel: Kernel, router: Router | Hono | undefined): void {
+    if (router instanceof Router) router.compile(kernel.getApp());
+    else if (router) kernel.getApp().route('/', router);
 }
