@@ -73,6 +73,31 @@ const schema = z.object({
 });
 ```
 
+## fromEnv: la sección de un kit desde tus nombres de variables
+
+Cada kit lee su sección de `app.config` (`oracle`, `kv`, `db`…) con sus propias claves. `fromEnv()` arma esa sección desde las variables de entorno que un servicio ya tiene, así migrarlo no obliga a renombrarlas:
+
+```typescript
+// app.config.ts
+import { env, envEnum, envNumber, envPort, fromEnv } from '@iskra-bun/config-kit';
+
+export default {
+    oracle: fromEnv({
+        host: 'DB_HOST_ORACLE', // sólo un nombre: texto, obligatorio
+        port: env('DB_PORT_ORACLE', envPort, { default: 1521 }),
+        serviceName: env(['DB_SERVICE_ORACLE', 'ORA_SERVICE']), // gana la primera definida
+        user: 'DB_USER_ORACLE',
+        password: 'DB_PASS_ORACLE',
+        pool: { max: env('DB_POOL_MAX', envNumber, { default: 4 }) },
+    }),
+    kv: fromEnv({ driver: env('KV_DRIVER', envEnum(['memory', 'redis']), { default: 'redis' }), connection: 'REDIS_URL' }),
+};
+```
+
+- `env(names, parser?, { default } | { optional: true })`: la variable (o la primera definida de varias: un nombre nuevo y después el heredado; un valor vacío cuenta como no definido), convertida por un coercer o cualquier schema de Zod de un string. Sin valor y sin `default` un campo es un error, salvo que sea `optional`, que deja afuera su clave.
+- La sección queda tipada según la especificación, y cada kit sigue validando su sección al arrancar.
+- Todos los problemas llegan juntos en un `ConfigError` que nombra las variables (`DB_HOST_ORACLE is not set`, `DB_PORT_ORACLE: Expected a port number`), nunca sus valores.
+
 ## Manejo de Errores
 
 `loadConfig` lanza `ConfigError` (de `@iskra-bun/core`) con todos los problemas en un único mensaje:

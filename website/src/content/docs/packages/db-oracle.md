@@ -50,6 +50,7 @@ Connect with a user of the app's own that has only the privileges it uses (`CREA
 | Option | Default | |
 |---|---|---|
 | `connectString` | — | Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. |
+| `host`, `port`, `serviceName` | —, 1521, — | Instead of `connectString`: they build `host:port/serviceName` (see config-kit's [`fromEnv`](/packages/config-kit/#fromenv-a-kits-section-from-your-variable-names) to read them from your variables). |
 | `user`, `password` | — | |
 | `pool.min` / `pool.max` / `pool.increment` | 0 / 4 / 1 | Connections kept idle, open at most, and opened at a time. |
 | `pool.queueTimeout` | 60000 | Milliseconds a request waits for a free connection before failing (NJS-040). |

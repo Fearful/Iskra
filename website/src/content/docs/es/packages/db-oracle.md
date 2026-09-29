@@ -50,6 +50,7 @@ Conectate con un usuario propio de la app que tenga solo los permisos que usa (`
 | Opción | Default | |
 |---|---|---|
 | `connectString` | — | Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), un alias TNS o un descriptor completo. |
+| `host`, `port`, `serviceName` | —, 1521, — | En vez de `connectString`: arman `host:port/serviceName` (ver [`fromEnv`](/es/packages/config-kit/#fromenv-la-sección-de-un-kit-desde-tus-nombres-de-variables) de config-kit para leerlos de tus variables). |
 | `user`, `password` | — | |
 | `pool.min` / `pool.max` / `pool.increment` | 0 / 4 / 1 | Conexiones que quedan abiertas sin uso, máximo abiertas, y cuántas abre por vez. |
 | `pool.queueTimeout` | 60000 | Milisegundos que un pedido espera una conexión libre antes de fallar (NJS-040). |

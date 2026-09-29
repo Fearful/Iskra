@@ -19,8 +19,14 @@ export interface OraclePoolConfig {
 
 /** `app.config.oracle`. Without it, the driver reads ORA_CONN, ORA_USER and ORA_PASSWORD. */
 export interface OracleConfig {
-    /** Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. */
-    connectString: string;
+    /** Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. Or `host` and `serviceName`. */
+    connectString?: string;
+    /** The database host, with `serviceName` (and `port`), instead of `connectString`. */
+    host?: string;
+    /** Default 1521. */
+    port?: number;
+    /** The service name, with `host`. */
+    serviceName?: string;
     user?: string;
     password?: string;
     pool?: OraclePoolConfig;
@@ -142,6 +148,19 @@ function oneOf<T extends string>(section: Record<string, unknown>, key: string, 
     return value as T;
 }
 
+/** `host:port/serviceName` from those fields, if `host` is set. */
+function easyConnect(section: Record<string, unknown>): string | undefined {
+    const host = optionalString(section, 'host');
+    if (!host) return undefined;
+    const serviceName = optionalString(section, 'serviceName');
+    if (!serviceName) invalid('serviceName is required with host');
+    const port = section.port ?? 1521;
+    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
+        invalid('port must be an integer from 1 to 65535');
+    }
+    return `${host}:${port}/${serviceName}`;
+}
+
 function milliseconds(section: Record<string, unknown>, key: string, fallback: number): number {
     const value = section[key];
     if (value === undefined) return fallback;
@@ -179,8 +198,8 @@ export function resolveConfig(
     }
     if (typeof section !== 'object' || section === null || Array.isArray(section)) invalid('expected an object');
     const s = section as Record<string, unknown>;
-    const connectString = optionalString(s, 'connectString');
-    if (!connectString) invalid('connectString is required');
+    const connectString = optionalString(s, 'connectString') ?? easyConnect(s);
+    if (!connectString) invalid('connectString (or host and serviceName) is required');
     for (const key of ['camelCase', 'dropUnusedBinds']) {
         if (s[key] !== undefined && typeof s[key] !== 'boolean') invalid(`${key} must be a boolean`);
     }
