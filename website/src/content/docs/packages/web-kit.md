@@ -177,6 +177,30 @@ app.post('/users', validate({ body: z.object({ name: z.string() }) }), (c) => {
 app.post('/orders', validateJson<CreateOrder>({ body: orderSchema }), (c) => c.json(c.get('validated').body));
 ```
 
+Inside a handler, `bindBody()` and `bindQuery()` do the same and return the data, typed, or throw a `ValidationError` that the [response contract](#response-contract) answers:
+
+```typescript
+import { bindBody, bindQuery, queryParams } from '@iskra-bun/web-kit';
+
+app.post('/personas', async (c) => {
+    // `{ "NOMBRE": "Ana" }` fills `nombre`, as Go's encoding/json does.
+    const persona = await bindBody(c, personaSchema, { caseInsensitiveKeys: true, allowForm: true });
+    return ok(c, await personas.create(persona), { status: 201 });
+});
+
+app.get('/personas', (c) => {
+    // ?ids=1&ids=2: a field declared as an array takes every value, the others the first.
+    const { ids, q } = bindQuery(c, z.object({ ids: z.array(z.coerce.number()).optional(), q: z.string().optional() }));
+    return list(c, await personas.find({ ids, q }));
+});
+
+queryParams(c); // ?id=1&id=2&q=ana → { id: ['1', '2'], q: 'ana' }
+```
+
+- A body is JSON (`application/json` or `+json`), or a form (urlencoded, multipart) with `allowForm` (repeated fields become arrays). Malformed JSON answers **400** (`BAD_REQUEST`), another content type **415** (`UNSUPPORTED_MEDIA_TYPE`), and an empty body is `{}`. `validate()` and `validateJson()` read it the same way (forms allowed); malformed JSON used to be validated as `{}`.
+- `caseInsensitiveKeys` renames the keys that match the schema's ignoring case, in nested objects and arrays too (it reads a Zod object's shape). In the query a parameter named exactly as the field wins over one that only matches ignoring case. `validate()` takes it as an option too.
+- A failed validation answers 400 `VALIDATION_ERROR` with the failed fields in `details`: Zod's `flatten()` by default, or `details: 'issues'` (`[{ path, message, code }]`), `'fields'` (`{ "address.city": ["Required"] }`) or a function of the issues, per call or for the whole app in the contract's `validationDetails`.
+
 ## DbFeature Schema Generic
 
 `DbFeature` accepts an optional schema generic for fully-typed `c.get("db")` queries. Omitting it reproduces the previous untyped behavior (backward compatible).

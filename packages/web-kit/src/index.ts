@@ -35,4 +35,14 @@ export * from './features/email';
 export * from './responses';
 export * from './errors';
 export * from './contract';
+export {
+    bindBody,
+    bindQuery,
+    queryParams,
+    readBody,
+    matchKeys,
+    type BindOptions,
+    type ValidationDetails,
+    type ValidationIssue,
+} from './bind';
 export { statusForCode, codeForStatus } from './status-codes';

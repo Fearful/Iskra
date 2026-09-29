@@ -5,6 +5,8 @@ import addFormats from 'ajv-formats';
 import type { ErrorObject } from 'ajv';
 import { ErrorCodes } from '../responses';
 import { problem, responderOf } from '../contract';
+import { readBody } from '../bind';
+import { HttpError } from '../errors';
 import { consoleLogger, type KernelLogger } from '../logging';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -174,16 +176,8 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
             }
 
             if (validators.body) {
-                let data: unknown = {};
-                const contentType = c.req.header('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    data = await c.req.json().catch(() => ({}));
-                } else if (
-                    contentType.includes('application/x-www-form-urlencoded') ||
-                    contentType.includes('multipart/form-data')
-                ) {
-                    data = await c.req.parseBody();
-                }
+                // Malformed JSON is a 400 and another content type a 415 (see the catch).
+                const data = await readBody(c, { allowForm: true });
 
                 const valid = validators.body(data);
                 if (!valid) {
@@ -204,6 +198,7 @@ export function validateJson<Body = unknown, Query = unknown, Params = unknown>(
             c.set('validated', validated as JsonValidated<Body, Query, Params>);
             await next();
         } catch (err) {
+            if (err instanceof HttpError) return responderOf(c).error(err, c);
             if (logErrors) logger.error('JSON Schema validation error', err);
             return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }

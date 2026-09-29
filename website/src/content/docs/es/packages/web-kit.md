@@ -177,6 +177,30 @@ app.post('/users', validate({ body: z.object({ name: z.string() }) }), (c) => {
 app.post('/orders', validateJson<CreateOrder>({ body: orderSchema }), (c) => c.json(c.get('validated').body));
 ```
 
+Dentro de un handler, `bindBody()` y `bindQuery()` hacen lo mismo y devuelven los datos, tipados, o lanzan un `ValidationError` que responde el [contrato de respuestas](#contrato-de-respuestas):
+
+```typescript
+import { bindBody, bindQuery, queryParams } from '@iskra-bun/web-kit';
+
+app.post('/personas', async (c) => {
+    // `{ "NOMBRE": "Ana" }` completa `nombre`, como hace encoding/json de Go.
+    const persona = await bindBody(c, personaSchema, { caseInsensitiveKeys: true, allowForm: true });
+    return ok(c, await personas.create(persona), { status: 201 });
+});
+
+app.get('/personas', (c) => {
+    // ?ids=1&ids=2: un campo declarado como array recibe todos los valores, los demás el primero.
+    const { ids, q } = bindQuery(c, z.object({ ids: z.array(z.coerce.number()).optional(), q: z.string().optional() }));
+    return list(c, await personas.find({ ids, q }));
+});
+
+queryParams(c); // ?id=1&id=2&q=ana → { id: ['1', '2'], q: 'ana' }
+```
+
+- Un cuerpo es JSON (`application/json` o `+json`), o un formulario (urlencoded, multipart) con `allowForm` (los campos repetidos quedan como arrays). Un JSON malformado responde **400** (`BAD_REQUEST`), otro content type **415** (`UNSUPPORTED_MEDIA_TYPE`), y un cuerpo vacío es `{}`. `validate()` y `validateJson()` lo leen igual (con formularios); antes un JSON malformado se validaba como `{}`.
+- `caseInsensitiveKeys` renombra las claves que coinciden con las del schema sin distinguir mayúsculas, también en objetos anidados y arrays (lee la forma de un objeto de Zod). En la query, un parámetro con el nombre exacto del campo gana sobre uno que sólo coincide sin distinguir mayúsculas. `validate()` también lo acepta como opción.
+- Una validación fallida responde 400 `VALIDATION_ERROR` con los campos fallidos en `details`: el `flatten()` de Zod por defecto, o `details: 'issues'` (`[{ path, message, code }]`), `'fields'` (`{ "address.city": ["Required"] }`) o una función de los issues, por llamada o para toda la app en `validationDetails` del contrato.
+
 ## Generic de Schema en DbFeature
 
 `DbFeature` acepta un generic de schema opcional para queries tipados via `c.get("db")`. Omitirlo reproduce el comportamiento anterior sin tipos (compatible hacia atras).

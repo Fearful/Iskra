@@ -7,6 +7,7 @@ import { silentLogger, type KernelLogger } from './logging';
 import { successResponse } from './responses';
 import { codeForStatus, statusForCode } from './status-codes';
 import type { ErrorHandlerConfig } from './types';
+import type { ValidationDetails } from './bind';
 
 /**
  * An error as the response contract sees it: what the client is told and with
@@ -81,6 +82,12 @@ export interface ResponseContract {
     success?(data: unknown, c: Context, options: OkOptions): unknown;
     /** The body of `list(c, page)`. Default `{ success: true, data: items, meta }`. */
     list?(page: NormalizedPage, c: Context): unknown;
+    /**
+     * The `details` of a failed validation (`validate()`, `bindBody()`,
+     * `bindQuery()`): `'flatten'` (the default), `'issues'`, `'fields'` or a
+     * function of the issues.
+     */
+    validationDetails?: ValidationDetails;
     /**
      * Logs every problem, instead of the Kernel logging the errors thrown (a
      * 5xx at `error`, a 4xx at `debug`); it also sees the ones a feature or a
