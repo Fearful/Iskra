@@ -11,9 +11,12 @@ import {
     type OracleBinds,
     type OutBinds,
 } from './binds';
-import { resolveConfig, type ResolvedOracleConfig } from './config';
+import { resolveConfig, type OracleBindStyle, type ResolvedOracleConfig } from './config';
 import { OracleDialect, type StatementRunner } from './dialect';
-import { ConnectionError, DeadlineError, MigrationError, QueryError, toQueryError } from './errors';
+import { ConnectionError, DeadlineError, MigrationError, NoRowsError, QueryError, toQueryError } from './errors';
+import { listRows, type ListOptions, type ListResult } from './list';
+import { compileNamed, type BindDialect, type CompiledSql } from './named';
+import { decodeRows, type RowsOption } from './rows';
 import { runMigrations, type MigrationOptions } from './migrations';
 import { paginate, type Page, type PageOptions } from './pagination';
 import type {
@@ -53,6 +56,16 @@ export interface StatementOptions {
     signal?: AbortSignal;
     /** Leave out the binds by name that the SQL does not use, instead of `dropUnusedBinds`. */
     dropUnusedBinds?: boolean;
+    /** `'positional'` compiles binds by name to binds by position, instead of the config's `bindStyle`. */
+    bindStyle?: OracleBindStyle;
+    /** How `'positional'` reads `:name`, instead of the config's `bindDialect`. */
+    bindDialect?: BindDialect;
+}
+
+/** A query's options: a statement's, and how its rows are decoded. */
+export interface QueryOptions<T> extends StatementOptions {
+    /** Decodes each row: a `rowSpec()` or a Standard Schema (Zod…). A row that does not fit is a RowDecodeError. */
+    rows?: RowsOption<T>;
 }
 
 export interface ExecuteManyOptions extends Omit<StatementOptions, 'dropUnusedBinds'> {
@@ -81,21 +94,37 @@ export interface ExecuteManyResult {
     outBinds: unknown[];
 }
 
-/** What `transaction()` hands its callback: everything runs on its one connection. */
-export interface OracleTransaction<DB> {
-    db: Kysely<DB>;
-    query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: StatementOptions): Promise<T[]>;
+/**
+ * What runs statements, the driver or a transaction: a repository typed
+ * against it works with both, and with a test fake.
+ */
+export interface OracleSession {
+    /** The rows of a query. */
+    query<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T[]>;
+    /** The first row of a query (fetching only that one), or undefined. */
     queryOne<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined>;
+    /** The first row of a query, or a `NoRowsError` (NOT_FOUND, a 404 in web-kit). */
+    one<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T>;
     execute<T = Record<string, unknown>, const B extends OracleBinds = OracleBinds>(
         sql: string,
         binds?: B,
         options?: StatementOptions,
     ): Promise<ExecuteResult<T, OutBinds<B>>>;
     executeMany(sql: string, rows: readonly OracleBinds[], options?: ExecuteManyOptions): Promise<ExecuteManyResult>;
+    /** A page of rows and its counts (see `ListOptions`). */
+    list<T = Record<string, unknown>, F = unknown, O = unknown>(
+        options: ListOptions<T, F, O>,
+        statement?: StatementOptions,
+    ): Promise<ListResult<T>>;
+}
+
+/** What `transaction()` hands its callback: everything runs on its one connection. */
+export interface OracleTransaction<DB> extends OracleSession {
+    db: Kysely<DB>;
 }
 
 /** Errors after which a connection is dropped instead of going back to the pool. */
@@ -129,6 +158,25 @@ function forceDisconnect(connection: OracleConnectionLike): boolean {
     }
 }
 
+const OUT_DIRECTIONS = new Set(['out', 'inout', 'returning']);
+
+/**
+ * The OUT binds of a statement compiled to positions, back by name:
+ * node-oracledb returns them as an array, in the order of the OUT positions.
+ */
+function namedOutBinds(outBinds: unknown, compiled: CompiledSql): unknown {
+    if (!Array.isArray(outBinds)) return outBinds;
+    const named: Record<string, unknown> = {};
+    let k = 0;
+    compiled.binds.forEach((bind, i) => {
+        const dir = (bind as { dir?: unknown } | null)?.dir;
+        if (typeof dir !== 'string' || !OUT_DIRECTIONS.has(dir)) return;
+        const value = outBinds[k++];
+        if (!Object.hasOwn(named, compiled.names[i]!)) named[compiled.names[i]!] = value;
+    });
+    return named;
+}
+
 async function loadOracledb(): Promise<OracledbModule> {
     const mod = (await import('oracledb')) as OracledbModule & { default?: OracledbModule };
     return mod.default ?? mod;
@@ -141,7 +189,7 @@ async function loadOracledb(): Promise<OracledbModule> {
  * migrations. Configured by `app.config.oracle`, or ORA_CONN, ORA_USER and
  * ORA_PASSWORD; without either it does not start.
  */
-export class OracleDriver<DB = Record<string, never>> implements Driver {
+export class OracleDriver<DB = Record<string, never>> implements Driver, OracleSession {
     name = 'OracleDriver';
     /** Kysely over the pool, typed by `DB`; set by start(). */
     public db: Kysely<DB> | undefined;
@@ -288,24 +336,49 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         }
     }
 
-    /** The rows of a query. */
+    /** The rows of a query, decoded by `options.rows` when given. */
     async query<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T[]> {
-        return this.withConnection(
-            async (handle) => (await this.executeOn<T, OracleBinds>(handle, sql, binds, options)).rows,
-        );
+        return this.withConnection((handle) => this.queryOn<T>(handle, sql, binds, options));
     }
 
     /** The first row of a query (fetching only that one), or undefined. */
     async queryOne<T = Record<string, unknown>>(
         sql: string,
         binds?: OracleBinds,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined> {
         return this.withConnection((handle) => this.queryOneOn<T>(handle, sql, binds, options));
+    }
+
+    /** The first row of a query, or a `NoRowsError` (NOT_FOUND: web-kit answers 404). */
+    async one<T = Record<string, unknown>>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>): Promise<T> {
+        const row = await this.queryOne<T>(sql, binds, options);
+        if (row === undefined) throw new NoRowsError();
+        return row;
+    }
+
+    /**
+     * A page of a query's rows and its counts: SQL with params by name, or a
+     * function of the filters and orders; `offset`/`limit` or `page`/`pageSize`.
+     *
+     * ```ts
+     * const page = await oracle.list({
+     *     query: (filters, orders) => usuariosQuery(filters, orders), // { sql, params }
+     *     filters, orders, totalFilters: {},
+     *     offset: c.req.query('start'), limit: c.req.query('length'),
+     *     rows: Usuario,
+     * }); // { rows, total, filtered, offset, limit, pages }
+     * ```
+     */
+    async list<T = Record<string, unknown>, F = unknown, O = unknown>(
+        options: ListOptions<T, F, O>,
+        statement?: StatementOptions,
+    ): Promise<ListResult<T>> {
+        return listRows((sql, params) => this.query(sql, params as OracleBinds, statement), options);
     }
 
     /**
@@ -374,10 +447,17 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         };
         const tx: OracleTransaction<DB> = {
             db: this.createKysely(async () => pinned),
-            query: async <T>(sql: string, binds?: OracleBinds, options?: StatementOptions) =>
-                (await this.executeOn<T, OracleBinds>(pinned, sql, binds, options)).rows,
-            queryOne: <T>(sql: string, binds?: OracleBinds, options?: StatementOptions) =>
+            query: <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) =>
+                this.queryOn<T>(pinned, sql, binds, options),
+            queryOne: <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) =>
                 this.queryOneOn<T>(pinned, sql, binds, options),
+            one: async <T>(sql: string, binds?: OracleBinds, options?: QueryOptions<T>) => {
+                const row = await this.queryOneOn<T>(pinned, sql, binds, options);
+                if (row === undefined) throw new NoRowsError();
+                return row;
+            },
+            list: (options, statement) =>
+                listRows((sql, params) => this.queryOn(pinned, sql, params as OracleBinds, statement), options),
             execute: <T, const B extends OracleBinds>(sql: string, binds?: B, options?: StatementOptions) =>
                 this.executeOn<T, B>(pinned, sql, binds, options),
             executeMany: (sql, rows, options) => this.executeManyOn(pinned, sql, rows, options),
@@ -693,6 +773,25 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         }
     }
 
+    /**
+     * The statement as it runs: with `bindStyle: 'positional'`, binds by
+     * name compiled to binds by position (the hook still sees them by name).
+     */
+    private prepare(sql: string, binds: unknown, options?: StatementOptions) {
+        const { oracledb, config } = this.ready();
+        const byName = typeof binds === 'object' && binds !== null && !Array.isArray(binds);
+        const compiled =
+            byName && (options?.bindStyle ?? config.bindStyle) === 'positional'
+                ? compileNamed(sql, binds as Record<string, unknown>, options?.bindDialect ?? config.bindDialect)
+                : undefined;
+        const text = compiled?.sql ?? sql;
+        const oracleBinds = toOracleBinds(oracledb, (compiled?.binds ?? binds) as OracleBinds, {
+            sql: text,
+            dropUnused: compiled ? false : (options?.dropUnusedBinds ?? config.dropUnusedBinds),
+        });
+        return { text, oracleBinds, compiled };
+    }
+
     private async run(
         handle: ConnectionHandle,
         sql: string,
@@ -700,19 +799,26 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         options?: StatementOptions,
         extra: Record<string, unknown> = {},
     ): Promise<OracleRawResult> {
-        const { oracledb, config } = this.ready();
-        const oracleBinds = toOracleBinds(oracledb, binds as OracleBinds, {
-            sql,
-            dropUnused: options?.dropUnusedBinds ?? config.dropUnusedBinds,
-        });
-        return this.observe(
+        const { text, oracleBinds, compiled } = this.prepare(sql, binds, options);
+        const result = await this.observe(
             handle,
             sql,
             binds,
             options,
-            () => handle.connection.execute(sql, oracleBinds, { ...this.options(handle), ...extra }),
-            (result) => ({ rows: result.rows?.length, rowsAffected: result.rowsAffected }),
+            () => handle.connection.execute(text, oracleBinds, { ...this.options(handle), ...extra }),
+            (r) => ({ rows: r.rows?.length, rowsAffected: r.rowsAffected }),
         );
+        return compiled ? { ...result, outBinds: namedOutBinds(result.outBinds, compiled) } : result;
+    }
+
+    private async queryOn<T>(
+        handle: ConnectionHandle,
+        sql: string,
+        binds: OracleBinds | undefined,
+        options?: QueryOptions<T>,
+    ): Promise<T[]> {
+        const rows = (await this.run(handle, sql, binds, options)).rows ?? [];
+        return options?.rows ? decodeRows(rows, options.rows) : (rows as T[]);
     }
 
     private async executeOn<T, B>(
@@ -740,10 +846,12 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         handle: ConnectionHandle,
         sql: string,
         binds: OracleBinds | undefined,
-        options?: StatementOptions,
+        options?: QueryOptions<T>,
     ): Promise<T | undefined> {
         const result = await this.run(handle, sql, binds, options, { maxRows: 1 });
-        return result.rows?.[0] as T | undefined;
+        const row = result.rows?.[0];
+        if (row === undefined || !options?.rows) return row as T | undefined;
+        return (await decodeRows([row], options.rows))[0];
     }
 
     private async executeManyOn(
@@ -782,11 +890,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         chunkSize: number,
         options?: StatementOptions,
     ): AsyncGenerator<unknown[]> {
-        const { oracledb, config } = this.ready();
-        const oracleBinds = toOracleBinds(oracledb, binds as OracleBinds, {
-            sql,
-            dropUnused: options?.dropUnusedBinds ?? config.dropUnusedBinds,
-        });
+        const { text, oracleBinds } = this.prepare(sql, binds, options);
         // One hook call for the whole stream: the execute and every fetch.
         const finish = this.startHook(sql, binds);
         let total = 0;
@@ -797,7 +901,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             // timeout and deadline: the time between them is the consumer's.
             try {
                 const result = await this.guarded(handle, options, () =>
-                    handle.connection.execute(sql, oracleBinds, { ...this.options(handle), resultSet: true }),
+                    handle.connection.execute(text, oracleBinds, { ...this.options(handle), resultSet: true }),
                 );
                 resultSet = result.resultSet;
             } catch (caught) {

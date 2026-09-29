@@ -1,4 +1,5 @@
 import { ConfigError } from '@iskra-bun/core';
+import type { BindDialect } from './named';
 
 /** Column types read as strings instead of a JS number or Date. */
 export type OracleFetchAsString = 'number' | 'date';
@@ -67,6 +68,16 @@ export interface OracleConfig {
      */
     dropUnusedBinds?: boolean;
     /**
+     * `'positional'` compiles binds by name to binds by position before a
+     * statement runs (see `compileNamed`), so params the SQL does not use,
+     * reserved words (`:date`) and names in another case cannot fail it, and
+     * an array param expands to an IN list. Default `'named'`. Also a
+     * per-call option.
+     */
+    bindStyle?: OracleBindStyle;
+    /** How `'positional'` reads `:name`: `'oracle'` (default) or `'sqlx'`, for SQL copied from Go. */
+    bindDialect?: BindDialect;
+    /**
      * The oldest database the Kysely SQL must run on. `'19c'` (the default)
      * refuses at compile time what only 23ai understands: booleans in SQL
      * and multi-row VALUES. `'23ai'` allows them.
@@ -75,6 +86,8 @@ export interface OracleConfig {
 }
 
 export type OracleCompatibility = '19c' | '23ai';
+
+export type OracleBindStyle = 'named' | 'positional';
 
 declare module '@iskra-bun/core' {
     interface AppConfig {
@@ -95,6 +108,8 @@ export interface ResolvedOracleConfig {
     deadlineGrace: number | undefined;
     pingTimeout: number;
     dropUnusedBinds: boolean;
+    bindStyle: OracleBindStyle;
+    bindDialect: BindDialect;
     compatibility: OracleCompatibility;
 }
 
@@ -118,6 +133,13 @@ function typeList<T extends string>(value: unknown, key: string, allowed: readon
         invalid(`${key} must be a list of ${allowed.map((a) => `'${a}'`).join(', ')}`);
     }
     return new Set(value as T[]);
+}
+
+function oneOf<T extends string>(section: Record<string, unknown>, key: string, allowed: readonly T[], fallback: T): T {
+    const value = section[key];
+    if (value === undefined) return fallback;
+    if (!allowed.includes(value as T)) invalid(`${key} must be ${allowed.map((a) => `'${a}'`).join(' or ')}`);
+    return value as T;
 }
 
 function milliseconds(section: Record<string, unknown>, key: string, fallback: number): number {
@@ -178,6 +200,8 @@ export function resolveConfig(
         deadlineGrace: s.deadlineGrace === undefined ? undefined : milliseconds(s, 'deadlineGrace', 0),
         pingTimeout: milliseconds(s, 'pingTimeout', 5000),
         dropUnusedBinds: s.dropUnusedBinds === true,
+        bindStyle: oneOf(s, 'bindStyle', ['named', 'positional'], 'named'),
+        bindDialect: oneOf(s, 'bindDialect', ['oracle', 'sqlx'], 'oracle'),
         compatibility,
     };
 }

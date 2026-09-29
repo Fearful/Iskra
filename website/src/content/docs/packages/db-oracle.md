@@ -61,6 +61,8 @@ Connect with a user of the app's own that has only the privileges it uses (`CREA
 | `deadlineGrace` | the timeout, at most 5000 | Milliseconds the driver waits past a call's timeout for node-oracledb to cancel it before it gives up on the connection itself (see [Timeouts](#timeouts-and-cancellation)). |
 | `pingTimeout` | 5000 | Milliseconds `ping()` waits before answering `false`. |
 | `dropUnusedBinds` | `false` | Leave out the binds by name that the SQL does not use, instead of failing. |
+| `bindStyle` | `'named'` | `'positional'` compiles binds by name to binds by position (see [Binds by position](#binds-by-position-bindstyle)). |
+| `bindDialect` | `'oracle'` | How `'positional'` reads `:name`: `'oracle'`, or `'sqlx'` for SQL copied from Go. |
 | `compatibility` | `'19c'` | The oldest database the Kysely SQL must run on: `'19c'` refuses what only 23ai understands (see [Kysely](#kysely)); `'23ai'` allows it. |
 
 `start()` opens the pool and runs `SELECT 1 FROM DUAL`, so a wrong password or host fails the app's start; `oracle.serverVersion` then holds the database's major version (19, 21, 23…). `stop()` closes the pool. `ping()` resolves `true` or `false` within `pingTimeout` (it never throws), for readiness checks: with every connection busy it answers `false` in time instead of waiting for one, and a connection still running the ping after `pingTimeout` is dropped.
@@ -85,11 +87,59 @@ const person = await oracle.queryOne<{ NAME: string }>('SELECT name FROM people 
 await oracle.executeMany('INSERT INTO people (name) VALUES (:name)', [{ name: 'Ana' }, { name: 'Bea' }]);
 ```
 
-Every statement takes options as its last argument: `{ timeout, signal, dropUnusedBinds }` (see [Timeouts](#timeouts-and-cancellation)). Outside a transaction every statement commits on its own.
+Every statement takes options as its last argument: `{ timeout, signal, dropUnusedBinds, bindStyle, bindDialect }` (see [Timeouts](#timeouts-and-cancellation)). Outside a transaction every statement commits on its own.
 
 Binds go by name (`:id` and `{ id }`) or by position (`:1`, `:2` and an array). **Binds by position follow the order in which their placeholders appear in the SQL, not their numbers**: in `WHERE b = :2 AND a = :1`, the first value goes to `:2`. Prefer binds by name.
 
 A bind name that is an Oracle reserved word (`uid`, `date`, `user`, `level`, `size`…) fails with ORA-01745, and Oracle ignores the case of bind names, so `{ id, ID }` is ambiguous: the driver refuses both before sending the statement. A bind the SQL does not use fails (NJS-097/NJS-098); with `dropUnusedBinds` (the option, or the config) it is left out instead, which helps when one object of binds serves several statements.
+
+### Binds by position (`bindStyle`)
+
+With `bindStyle: 'positional'` (in the config, or per statement) the driver compiles binds by name to binds by position before the statement runs, so Oracle never sees a bind name: a param the SQL does not use is left out, a reserved word (`:date`, `:user`) and a name in another case (`:ID` for `{ id }`) just work, and an array expands to an IN list. The OnQuery hook still gets the SQL as written, and OUT binds come back by name.
+
+```typescript
+const oracle = new OracleDriver(); // app.config.oracle = { …, bindStyle: 'positional' }
+
+await oracle.query('SELECT * FROM pedidos WHERE id IN (:ids) AND fecha >= :date', { ids: [1, 2, 3], date, unused: 1 });
+// runs: SELECT * FROM pedidos WHERE id IN (:1, :2, :3) AND fecha >= :4
+```
+
+`bindDialect: 'sqlx'` reads the placeholders as Go's sqlx does, for SQL copied from a Go service: `::` is a literal colon (`TO_CHAR(f, 'HH24::MI')`), names match exactly, and its quirks are kept (a `?` is rebound even inside a string literal). `compileNamed(sql, params, dialect)` does the same on its own.
+
+### One row, pages and typed rows
+
+```typescript
+import { col, rowSpec } from '@iskra-bun/db-oracle';
+
+// A row spec: each field and its column type; `idArea` reads ID_AREA.
+const Usuario = rowSpec({
+    id: col.int(),
+    nombre: col.string(),
+    activo: col.boolean(), // 'S'/'N', 1/0, 'Y'/'N' (a CHAR(1))
+    idArea: col.int(),
+    baja: col.date().nullable(),
+});
+
+const usuario = await oracle.one('SELECT * FROM usuarios WHERE id = :id', { id }, { rows: Usuario });
+// NoRowsError (NOT_FOUND: a 404 in web-kit) when there is none
+
+const page = await oracle.list({
+    // A function of the filters and orders; the counts get orders = null.
+    query: (filters, orders) => usuariosQuery(filters, orders), // { sql, params }
+    filters: { area: 3 },
+    orders: 'nombre',
+    totalFilters: {}, // total counts without the request's filters
+    offset: c.req.query('start'), // DataTables' start and length; or page/pageSize
+    limit: c.req.query('length'),
+    rows: Usuario,
+});
+// { rows, total, filtered, offset, limit, pages }
+```
+
+- `oracle.list()` takes a `query` function (called with the orders for the rows and with `null` for the counts) or plain `sql` and `params`. It adds `OFFSET … FETCH NEXT` to the page's query and counts with `SELECT COUNT(*) FROM (…)`; `count: 'none'` skips the counts. `limit` -1 or null returns every row (up to `maxLimit`, when set); a bad `offset` or `limit` from the request is a `QueryInputError` (400). Its result goes to web-kit's `list(c, page)` as it is.
+- A row spec converts each column: `col.int()` (an integer within 2^53, `col.bigint()` past it), `col.number()`, `col.string()` (a NUMBER as plain decimal text, a DATE as ISO 8601), `col.boolean()`, `col.date()`; `.nullable()` accepts NULL, `.from('COLUMN')` names another column. NULL in a field that is not nullable, or a value that does not convert, is a `RowDecodeError` that names the column but not the value. `rowSpec(spec, { extra: 'ignore' | 'keep' | 'error', missing: 'undefined' | 'zero' | 'error' })` decides about columns the spec does not name and fields whose column is missing (`'error'` and `'zero'` as Go's sqlx). `rows` also takes a Standard Schema (Zod 3.24+).
+- With `fetchAsString: ['number']` NUMBERs arrive as text, exact past 2^53, and `col.bigint()` keeps them so.
+- `query()`, `queryOne()`, `one()` and `list()` take `rows`. The driver and a transaction share one interface, `OracleSession`, for repositories that take either (and a test fake).
 
 ### Binds with a type by name
 
@@ -341,10 +391,12 @@ Binds may hold personal data: log them only where that is acceptable.
 | Error | When |
 |---|---|
 | `ConnectionError` | `start()` could not open the pool or reach the database. Its message has Oracle's (`ORA-01017: …`); its context has the connect string and user, never the password. |
-| `QueryError` | A statement failed. `error.errorCode` is the database's or the driver's code, and `error.errorNum` the ORA number; the original error is `cause`. Its `code` tells web-kit how to answer: `CONFLICT` (409) for `ORA-00001` (a unique constraint), `SERVICE_UNAVAILABLE` (503) for `NJS-040` (no free connection within `pool.queueTimeout`), `TIMEOUT` (504) for `NJS-123` (`callTimeout` exceeded), `QUERY_ERROR` (500) otherwise; the message stays in the log. `error.timedOut` is `true` for NJS-123 and a `DeadlineError`. |
+| `QueryError` | A statement failed. `error.errorCode` is the database's or the driver's code, and `error.errorNum` the ORA number; the original error is `cause`. Its `code` tells web-kit how to answer: `CONFLICT` (409) for `ORA-00001` (a unique constraint), `SERVICE_UNAVAILABLE` (503) for `NJS-040` (no free connection within `pool.queueTimeout`), `TIMEOUT` (504) for `NJS-123` (`callTimeout` exceeded), `QUERY_ERROR` (500) otherwise; the message stays in the log. `error.timedOut` is `true` for NJS-123 and a `DeadlineError`. A PL/SQL `RAISE_APPLICATION_ERROR` (ORA-20000 to ORA-20999) is a `CONFLICT` (409) whose message is the procedure's, without `ORA-20xxx:` and the stack, and is shown to the client; `error.applicationError` has its number and message. |
 | `DeadlineError` | A `QueryError`: a call ran past its [deadline](#the-deadline) and the driver gave up on its connection. `error.deadlineMs` is the deadline; its code is `TIMEOUT` (504). |
 | `MigrationError` | A migration failed (its context names the file and statement), changed after it was applied, or the lock timed out. |
-| `QueryInputError` | A pagination cursor or sort field from the request is not valid: web-kit answers 400 with its message. |
+| `QueryInputError` | A pagination cursor, sort field, `offset` or `limit` from the request is not valid: web-kit answers 400 with its message. |
+| `NoRowsError` | `one()` found no row: a `QueryError` with code `NOT_FOUND` (404). |
+| `RowDecodeError` | A row does not fit its row spec or schema: a `QueryError` (500) that names the column, not the value. |
 | `ConfigError` (core) | `app.config.oracle` is not valid. |
 
 ## Upgrading from 0.1

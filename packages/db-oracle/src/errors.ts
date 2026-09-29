@@ -49,6 +49,22 @@ export class QueryError extends IskraError {
     get timedOut(): boolean {
         return this.errorCode === 'NJS-123' || this.errorCode === 'DPI-1067';
     }
+
+    /**
+     * A PL/SQL `RAISE_APPLICATION_ERROR` (ORA-20000 to ORA-20999): its number
+     * and message, without the `ORA-20xxx:` prefix and the `ORA-06512` stack
+     * lines. Its code is `CONFLICT` (409), and the message is for the client.
+     */
+    get applicationError(): { number: number; message: string } | undefined {
+        const num = this.errorNum;
+        if (num === undefined || num < 20000 || num > 20999) return undefined;
+        return { number: num, message: this.message };
+    }
+
+    /** Whether web-kit shows the message to the client: a PL/SQL application error's. */
+    get expose(): boolean {
+        return this.applicationError !== undefined;
+    }
 }
 
 /** The error code of a database or driver code (`'NJS-123'`…). */
@@ -62,7 +78,10 @@ function codeOf(errorCode: unknown): ErrorCode {
         case 'ORA-00001':
             return ErrorCodes.CONFLICT;
         default:
-            return ErrorCodes.QUERY_ERROR;
+            // RAISE_APPLICATION_ERROR: a business rule of a stored procedure.
+            return typeof errorCode === 'string' && /^ORA-20\d{3}$/.test(errorCode)
+                ? ErrorCodes.CONFLICT
+                : ErrorCodes.QUERY_ERROR;
     }
 }
 
@@ -84,6 +103,16 @@ export class DeadlineError extends QueryError {
 
     override get timedOut(): boolean {
         return true;
+    }
+}
+
+// ─── No Rows Error ───────────────────────────────────────────────────────────
+
+/** `one()` found no row: `NOT_FOUND`, which web-kit answers with a 404. */
+export class NoRowsError extends QueryError {
+    constructor(message = 'No rows') {
+        super(message, { code: ErrorCodes.NOT_FOUND });
+        this.name = 'NoRowsError';
     }
 }
 
@@ -118,7 +147,10 @@ export function toQueryError(error: unknown, message?: string): QueryError {
     const cause = error instanceof Error ? error : new Error(String(error));
     const { errorNum, code } = cause as { errorNum?: unknown; code?: unknown };
     const errorCode = typeof code === 'string' && /^(ORA|NJS|DPI|DPY)-\d+$/.test(code) ? code : undefined;
-    return new QueryError(message ?? (cause.message.split('\n')[0] || 'Oracle query failed'), {
+    const firstLine = cause.message.split('\n')[0] ?? '';
+    // A stored procedure's own message, for the client: without `ORA-20xxx: `.
+    const application = /^ORA-20\d{3}$/.test(errorCode ?? '') ? firstLine.replace(/^ORA-\d{5}:\s*/, '') : undefined;
+    return new QueryError(message ?? (application || firstLine || 'Oracle query failed'), {
         cause,
         context: {
             ...(errorCode ? { errorCode } : {}),

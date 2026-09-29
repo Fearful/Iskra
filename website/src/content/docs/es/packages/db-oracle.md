@@ -61,6 +61,8 @@ Conectate con un usuario propio de la app que tenga solo los permisos que usa (`
 | `deadlineGrace` | el timeout, hasta 5000 | Milisegundos que el driver espera, pasado el timeout de una llamada, a que node-oracledb la cancele antes de abandonar la conexión por su cuenta (ver [Timeouts](#timeouts-y-cancelación)). |
 | `pingTimeout` | 5000 | Milisegundos que `ping()` espera antes de responder `false`. |
 | `dropUnusedBinds` | `false` | Descartar los binds por nombre que el SQL no usa, en vez de fallar. |
+| `bindStyle` | `'named'` | `'positional'` compila los binds por nombre a binds por posición (ver [Binds por posición](#binds-por-posición-bindstyle)). |
+| `bindDialect` | `'oracle'` | Cómo lee `:nombre` el modo `'positional'`: `'oracle'`, o `'sqlx'` para SQL copiado de Go. |
 | `compatibility` | `'19c'` | La base más vieja en la que tiene que correr el SQL de Kysely: `'19c'` rechaza lo que solo entiende 23ai (ver [Kysely](#kysely)); `'23ai'` lo permite. |
 
 `start()` abre el pool y corre `SELECT 1 FROM DUAL`, así que una contraseña o un host incorrectos hacen fallar el arranque de la app; después `oracle.serverVersion` tiene la versión mayor de la base (19, 21, 23…). `stop()` cierra el pool. `ping()` resuelve `true` o `false` dentro de `pingTimeout` (nunca lanza), para readiness checks: con todas las conexiones ocupadas responde `false` a tiempo en vez de esperar una, y una conexión que sigue corriendo el ping después de `pingTimeout` se descarta.
@@ -85,11 +87,59 @@ const person = await oracle.queryOne<{ NAME: string }>('SELECT name FROM people 
 await oracle.executeMany('INSERT INTO people (name) VALUES (:name)', [{ name: 'Ana' }, { name: 'Bea' }]);
 ```
 
-Cada sentencia recibe opciones como último argumento: `{ timeout, signal, dropUnusedBinds }` (ver [Timeouts](#timeouts-y-cancelación)). Fuera de una transacción, cada sentencia hace commit sola.
+Cada sentencia recibe opciones como último argumento: `{ timeout, signal, dropUnusedBinds, bindStyle, bindDialect }` (ver [Timeouts](#timeouts-y-cancelación)). Fuera de una transacción, cada sentencia hace commit sola.
 
 Los binds van por nombre (`:id` y `{ id }`) o por posición (`:1`, `:2` y un array). **Los binds por posición siguen el orden en que aparecen sus placeholders en el SQL, no sus números**: en `WHERE b = :2 AND a = :1`, el primer valor va a `:2`. Preferí binds por nombre.
 
 Un nombre de bind que es palabra reservada de Oracle (`uid`, `date`, `user`, `level`, `size`…) falla con ORA-01745, y Oracle no distingue mayúsculas en los nombres de bind, así que `{ id, ID }` es ambiguo: el driver rechaza ambos casos antes de mandar la sentencia. Un bind que el SQL no usa falla (NJS-097/NJS-098); con `dropUnusedBinds` (la opción, o la config) se descarta, útil cuando un mismo objeto de binds sirve a varias sentencias.
+
+### Binds por posición (`bindStyle`)
+
+Con `bindStyle: 'positional'` (en la config, o por sentencia) el driver compila los binds por nombre a binds por posición antes de correr la sentencia, así Oracle nunca ve un nombre de bind: un parámetro que el SQL no usa se descarta, una palabra reservada (`:date`, `:user`) y un nombre en otra capitalización (`:ID` para `{ id }`) funcionan, y un array se expande a una lista IN. El hook OnQuery sigue recibiendo el SQL como está escrito, y los OUT binds vuelven por nombre.
+
+```typescript
+const oracle = new OracleDriver(); // app.config.oracle = { …, bindStyle: 'positional' }
+
+await oracle.query('SELECT * FROM pedidos WHERE id IN (:ids) AND fecha >= :date', { ids: [1, 2, 3], date, unused: 1 });
+// corre: SELECT * FROM pedidos WHERE id IN (:1, :2, :3) AND fecha >= :4
+```
+
+`bindDialect: 'sqlx'` lee los placeholders como sqlx de Go, para SQL copiado de un servicio en Go: `::` es un dos puntos literal (`TO_CHAR(f, 'HH24::MI')`), los nombres coinciden exactamente, y se mantienen sus rarezas (un `?` se reescribe aun dentro de un literal). `compileNamed(sql, params, dialect)` hace lo mismo por separado.
+
+### Una fila, páginas y filas tipadas
+
+```typescript
+import { col, rowSpec } from '@iskra-bun/db-oracle';
+
+// Una especificación de fila: cada campo y el tipo de su columna; `idArea` lee ID_AREA.
+const Usuario = rowSpec({
+    id: col.int(),
+    nombre: col.string(),
+    activo: col.boolean(), // 'S'/'N', 1/0, 'Y'/'N' (un CHAR(1))
+    idArea: col.int(),
+    baja: col.date().nullable(),
+});
+
+const usuario = await oracle.one('SELECT * FROM usuarios WHERE id = :id', { id }, { rows: Usuario });
+// NoRowsError (NOT_FOUND: un 404 en web-kit) cuando no hay ninguna
+
+const page = await oracle.list({
+    // Una función de los filtros y los órdenes; los conteos reciben orders = null.
+    query: (filters, orders) => usuariosQuery(filters, orders), // { sql, params }
+    filters: { area: 3 },
+    orders: 'nombre',
+    totalFilters: {}, // total cuenta sin los filtros del request
+    offset: c.req.query('start'), // start y length de DataTables; o page/pageSize
+    limit: c.req.query('length'),
+    rows: Usuario,
+});
+// { rows, total, filtered, offset, limit, pages }
+```
+
+- `oracle.list()` recibe una función `query` (que se llama con los órdenes para las filas y con `null` para los conteos) o `sql` y `params` directos. Le agrega `OFFSET … FETCH NEXT` a la consulta de la página y cuenta con `SELECT COUNT(*) FROM (…)`; `count: 'none'` omite los conteos. Un `limit` -1 o null devuelve todas las filas (hasta `maxLimit`, si está); un `offset` o `limit` inválido del request es un `QueryInputError` (400). Su resultado va tal cual a `list(c, page)` de web-kit.
+- Una especificación de fila convierte cada columna: `col.int()` (un entero dentro de 2^53, `col.bigint()` más allá), `col.number()`, `col.string()` (un NUMBER como decimal plano, un DATE como ISO 8601), `col.boolean()`, `col.date()`; `.nullable()` acepta NULL, `.from('COLUMNA')` nombra otra columna. Un NULL en un campo que no es nullable, o un valor que no se convierte, es un `RowDecodeError` que nombra la columna pero no el valor. `rowSpec(spec, { extra: 'ignore' | 'keep' | 'error', missing: 'undefined' | 'zero' | 'error' })` decide qué pasa con las columnas que la especificación no nombra y con los campos cuya columna falta (`'error'` y `'zero'` como sqlx de Go). `rows` también acepta un Standard Schema (Zod 3.24+).
+- Con `fetchAsString: ['number']` los NUMBER llegan como texto, exactos más allá de 2^53, y `col.bigint()` los mantiene así.
+- `query()`, `queryOne()`, `one()` y `list()` aceptan `rows`. El driver y una transacción comparten una interfaz, `OracleSession`, para repositorios que reciben cualquiera de los dos (y un fake en los tests).
 
 ### Binds con tipo por nombre
 
@@ -341,10 +391,12 @@ Los binds pueden tener datos personales: registralos solo donde eso sea aceptabl
 | Error | Cuándo |
 |---|---|
 | `ConnectionError` | `start()` no pudo abrir el pool ni llegar a la base. Su mensaje trae el de Oracle (`ORA-01017: …`); su contexto, el connect string y el usuario, nunca la contraseña. |
-| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Su `code` le dice a web-kit cómo responder: `CONFLICT` (409) para `ORA-00001` (restricción única), `SERVICE_UNAVAILABLE` (503) para `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`), `TIMEOUT` (504) para `NJS-123` (se pasó el `callTimeout`), `QUERY_ERROR` (500) si no; el mensaje queda en el log. `error.timedOut` es `true` para NJS-123 y para un `DeadlineError`. |
+| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Su `code` le dice a web-kit cómo responder: `CONFLICT` (409) para `ORA-00001` (restricción única), `SERVICE_UNAVAILABLE` (503) para `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`), `TIMEOUT` (504) para `NJS-123` (se pasó el `callTimeout`), `QUERY_ERROR` (500) si no; el mensaje queda en el log. `error.timedOut` es `true` para NJS-123 y para un `DeadlineError`. Un `RAISE_APPLICATION_ERROR` de PL/SQL (ORA-20000 a ORA-20999) es un `CONFLICT` (409) cuyo mensaje es el del procedimiento, sin `ORA-20xxx:` ni el stack, y se muestra al cliente; `error.applicationError` tiene su número y su mensaje. |
 | `DeadlineError` | Un `QueryError`: una llamada pasó su [plazo](#el-plazo) y el driver abandonó su conexión. `error.deadlineMs` es el plazo; su código es `TIMEOUT` (504). |
 | `MigrationError` | Falló una migración (su contexto nombra el archivo y la sentencia), cambió después de aplicarse, o venció la espera del lock. |
-| `QueryInputError` | Un cursor de paginación o un campo de orden del request no es válido: web-kit responde 400 con su mensaje. |
+| `QueryInputError` | Un cursor de paginación, un campo de orden, un `offset` o un `limit` del request no es válido: web-kit responde 400 con su mensaje. |
+| `NoRowsError` | `one()` no encontró ninguna fila: un `QueryError` con código `NOT_FOUND` (404). |
+| `RowDecodeError` | Una fila no encaja en su especificación o schema: un `QueryError` (500) que nombra la columna, no el valor. |
 | `ConfigError` (core) | `app.config.oracle` no es válida. |
 
 ## Actualizar desde 0.1
