@@ -105,6 +105,35 @@ INSERT INTO iskra_it_m_items (id, name) VALUES (2, 'it''s; two');
         writeFileSync(join(dir, '003_other.sql'), 'CREATE TABLE iskra_it_m_other (x NUMBER)');
     });
 
+    test('PL/SQL that does not compile fails its file with the compiler errors, unrecorded', async () => {
+        const plsql = mkdtempSync(join(tmpdir(), 'iskra-oracle-it-plsql-'));
+        try {
+            writeFileSync(
+                join(plsql, '001_broken.sql'),
+                `CREATE OR REPLACE PROCEDURE iskra_it_m_broken IS
+BEGIN
+    iskra_it_no_such_procedure;
+END;
+/
+`,
+            );
+            const error = (await oracle
+                .runMigrations(plsql, { table: `${TABLE}_P` })
+                .catch((e: unknown) => e)) as MigrationError;
+            expect(error).toBeInstanceOf(MigrationError);
+            expect(error.message).toContain('Migration 001_broken.sql failed at statement 1');
+            expect(error.message).toContain('PROCEDURE ISKRA_IT_M_BROKEN');
+            expect(error.message).toContain('PLS-00201');
+            expect(await oracle.query(`SELECT name FROM ${TABLE}_P`)).toEqual([]);
+        } finally {
+            rmSync(plsql, { recursive: true, force: true });
+            await oracle.execute('DROP PROCEDURE iskra_it_m_broken').catch(() => {});
+            for (const table of [`${TABLE}_P`, `${TABLE}_P_LOCK`]) {
+                await oracle.execute(`DROP TABLE ${table} PURGE`).catch(() => {});
+            }
+        }
+    });
+
     test('a failing file is not recorded, and names its statement', async () => {
         writeFileSync(
             join(dir, '004_broken.sql'),

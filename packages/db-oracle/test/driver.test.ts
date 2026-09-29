@@ -157,7 +157,10 @@ describe('OracleDriver statements', () => {
         const { driver, pool } = await startedDriver();
         pool.respond = () => ({ rowsAffected: 2 });
         const rows = [{ name: 'a' }, { name: 'b' }];
-        expect(await driver.executeMany('INSERT INTO users (name) VALUES (:name)', rows)).toEqual({ rowsAffected: 2 });
+        expect(await driver.executeMany('INSERT INTO users (name) VALUES (:name)', rows)).toEqual({
+            rowsAffected: 2,
+            outBinds: [],
+        });
         expect(pool.calls.at(-1)!.binds).toEqual(rows);
     });
 
@@ -168,7 +171,8 @@ describe('OracleDriver statements', () => {
         expect(error).toBeInstanceOf(QueryError);
         expect(error.message).toStartWith('ORA-00001');
         expect(error.errorNum).toBe(1);
-        expect(error.context).toEqual({ errorNum: 1, oracleCode: 'ORA-00001' });
+        expect(error.context).toEqual({ errorCode: 'ORA-00001', errorNum: 1, oracleCode: 'ORA-00001' });
+        expect(error.errorCode).toBe('ORA-00001');
         expect(pool.connections.at(-1)!.closed).toBe(1);
     });
 
@@ -248,12 +252,42 @@ describe('OracleDriver transactions', () => {
         expect([connection.commits, connection.rollbacks, connection.closed]).toEqual([0, 1, 1]);
     });
 
-    test('a statement outside the transaction still commits on its own', async () => {
-        const { driver, pool } = await startedDriver();
+    test('inside transaction(), oracle.* statements join it instead of taking another connection', async () => {
+        const { driver, pool } = await startedDriver<DB>();
         await driver.transaction(async () => {
-            await driver.execute('INSERT INTO log (msg) VALUES (:m)', { m: 'outside' });
+            await driver.execute('UPDATE users SET name = :n WHERE id = 1', { n: 'a' });
+            await driver.query('SELECT 1 FROM DUAL');
+            await driver.db!.selectFrom('USERS').select('ID').execute();
+            await Promise.all([driver.queryOne('SELECT 2 FROM DUAL'), driver.executeMany('INSERT …', [{ a: 1 }])]);
         });
+        const calls = pool.calls.slice(1);
+        expect(new Set(calls.map((c) => c.connection)).size).toBe(1);
+        expect(calls.every((c) => c.options.autoCommit === false)).toBe(true);
+        expect(calls[0]!.connection.commits).toBe(1);
+        // Outside it, statements commit on their own again.
+        await driver.execute('INSERT INTO log (msg) VALUES (:m)', { m: 'after' });
         expect(pool.calls.at(-1)!.options.autoCommit).toBe(true);
+    });
+
+    test('work left running after the transaction ends takes a pool connection', async () => {
+        const { driver, pool } = await startedDriver();
+        let later!: Promise<unknown>;
+        await driver.transaction(async () => {
+            later = Bun.sleep(5).then(() => driver.execute('INSERT INTO log (msg) VALUES (:m)', { m: 'late' }));
+        });
+        await later;
+        const last = pool.calls.at(-1)!;
+        expect(last.options.autoCommit).toBe(true);
+        expect(last.connection).not.toBe(pool.calls.at(-2)?.connection);
+        // A transaction can open again there.
+        await driver.transaction(async () => {});
+    });
+
+    test('transaction() inside another throws instead of waiting on its own locks', async () => {
+        const { driver } = await startedDriver();
+        await expect(driver.transaction(() => driver.transaction(async () => 1))).rejects.toThrow(
+            'Oracle has no nested transactions',
+        );
     });
 
     test('Kysely: autoCommit on by default, off inside db.transaction()', async () => {

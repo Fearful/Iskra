@@ -37,7 +37,29 @@ export interface OracleConfig {
     camelCase?: boolean;
     /** Other node-oracledb pool attributes (walletLocation, configDir…), passed as they are. */
     poolAttributes?: Record<string, unknown>;
+    /**
+     * Milliseconds a statement may run (each round trip to the database)
+     * before it is cancelled with a QueryError NJS-123, and its connection
+     * dropped from the pool. Default 30000; 0 for no limit. A statement
+     * waiting on a lock otherwise holds its connection forever.
+     */
+    callTimeout?: number;
+    /** Milliseconds ping() waits, for a free connection and SELECT 1, before answering false. Default 5000. */
+    pingTimeout?: number;
+    /**
+     * Leave out the binds by name that the SQL does not use, instead of
+     * failing (NJS-097/NJS-098). Default false. Also a per-call option.
+     */
+    dropUnusedBinds?: boolean;
+    /**
+     * The oldest database the Kysely SQL must run on. `'19c'` (the default)
+     * refuses at compile time what only 23ai understands: booleans in SQL
+     * and multi-row VALUES. `'23ai'` allows them.
+     */
+    compatibility?: OracleCompatibility;
 }
+
+export type OracleCompatibility = '19c' | '23ai';
 
 declare module '@iskra-bun/core' {
     interface AppConfig {
@@ -53,6 +75,10 @@ export interface ResolvedOracleConfig {
     fetchAsString: ReadonlySet<OracleFetchAsString>;
     camelCase: boolean;
     poolAttributes: Record<string, unknown>;
+    callTimeout: number;
+    pingTimeout: number;
+    dropUnusedBinds: boolean;
+    compatibility: OracleCompatibility;
 }
 
 const POOL_DEFAULTS: Required<OraclePoolConfig> = { min: 0, max: 4, increment: 1, queueTimeout: 60_000, drainTime: 5 };
@@ -75,6 +101,13 @@ function typeList<T extends string>(value: unknown, key: string, allowed: readon
         invalid(`${key} must be a list of ${allowed.map((a) => `'${a}'`).join(', ')}`);
     }
     return new Set(value as T[]);
+}
+
+function milliseconds(section: Record<string, unknown>, key: string, fallback: number): number {
+    const value = section[key];
+    if (value === undefined) return fallback;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) invalid(`${key} must be an integer >= 0`);
+    return value;
 }
 
 function poolConfig(value: unknown): Required<OraclePoolConfig> {
@@ -109,7 +142,11 @@ export function resolveConfig(
     const s = section as Record<string, unknown>;
     const connectString = optionalString(s, 'connectString');
     if (!connectString) invalid('connectString is required');
-    if (s.camelCase !== undefined && typeof s.camelCase !== 'boolean') invalid('camelCase must be a boolean');
+    for (const key of ['camelCase', 'dropUnusedBinds']) {
+        if (s[key] !== undefined && typeof s[key] !== 'boolean') invalid(`${key} must be a boolean`);
+    }
+    const compatibility = s.compatibility ?? '19c';
+    if (compatibility !== '19c' && compatibility !== '23ai') invalid("compatibility must be '19c' or '23ai'");
     const poolAttributes = s.poolAttributes ?? {};
     if (typeof poolAttributes !== 'object' || poolAttributes === null) invalid('poolAttributes must be an object');
     return {
@@ -120,5 +157,9 @@ export function resolveConfig(
         fetchAsString: typeList(s.fetchAsString, 'fetchAsString', FETCH_AS_STRING, []),
         camelCase: s.camelCase === true,
         poolAttributes: poolAttributes as Record<string, unknown>,
+        callTimeout: milliseconds(s, 'callTimeout', 30_000),
+        pingTimeout: milliseconds(s, 'pingTimeout', 5000),
+        dropUnusedBinds: s.dropUnusedBinds === true,
+        compatibility,
     };
 }

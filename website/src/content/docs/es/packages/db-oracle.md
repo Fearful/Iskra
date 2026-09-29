@@ -57,8 +57,12 @@ Conectate con un usuario propio de la app que tenga solo los permisos que usa (`
 | `fetchAsString` | `[]` | `'number'` para leer los NUMBER como string (pasado 2^53 un number de JS pierde dígitos); `'date'` para DATE y TIMESTAMP como texto. |
 | `camelCase` | `false` | Solo Kysely: escribís `firstName` para la columna `FIRST_NAME`, y las filas vuelven en camelCase. |
 | `poolAttributes` | `{}` | Otros atributos del pool de node-oracledb (`walletLocation`, `configDir`…), tal cual. |
+| `callTimeout` | 30000 | Milisegundos que puede correr una sentencia antes de cancelarse (ver [Timeouts](#timeouts-y-cancelación)); 0 para sin límite. |
+| `pingTimeout` | 5000 | Milisegundos que `ping()` espera antes de responder `false`. |
+| `dropUnusedBinds` | `false` | Descartar los binds por nombre que el SQL no usa, en vez de fallar. |
+| `compatibility` | `'19c'` | La base más vieja en la que tiene que correr el SQL de Kysely: `'19c'` rechaza lo que solo entiende 23ai (ver [Kysely](#kysely)); `'23ai'` lo permite. |
 
-`start()` abre el pool y corre `SELECT 1 FROM DUAL`, así que una contraseña o un host incorrectos hacen fallar el arranque de la app. `stop()` cierra el pool. `ping()` resuelve `true` o `false` (nunca lanza), para readiness checks.
+`start()` abre el pool y corre `SELECT 1 FROM DUAL`, así que una contraseña o un host incorrectos hacen fallar el arranque de la app; después `oracle.serverVersion` tiene la versión mayor de la base (19, 21, 23…). `stop()` cierra el pool. `ping()` resuelve `true` o `false` dentro de `pingTimeout` (nunca lanza), para readiness checks: con todas las conexiones ocupadas responde `false` a tiempo en vez de esperar una.
 
 ## SQL crudo
 
@@ -73,11 +77,18 @@ const { rowsAffected, outBinds } = await oracle.execute(
 );
 outBinds.id; // number[]: un valor por fila insertada
 
+// Solo la primera fila (trae solo esa), o undefined
+const person = await oracle.queryOne<{ NAME: string }>('SELECT name FROM people WHERE id = :id', { id: 1 });
+
 // Una carga masiva en un solo viaje
 await oracle.executeMany('INSERT INTO people (name) VALUES (:name)', [{ name: 'Ana' }, { name: 'Bea' }]);
 ```
 
-Los binds van por nombre (`:id` y `{ id }`) o por posición (`:1`, `:2` y un array). Fuera de una transacción, cada sentencia hace commit sola.
+Cada sentencia recibe opciones como último argumento: `{ timeout, signal, dropUnusedBinds }` (ver [Timeouts](#timeouts-y-cancelación)). Fuera de una transacción, cada sentencia hace commit sola.
+
+Los binds van por nombre (`:id` y `{ id }`) o por posición (`:1`, `:2` y un array). **Los binds por posición siguen el orden en que aparecen sus placeholders en el SQL, no sus números**: en `WHERE b = :2 AND a = :1`, el primer valor va a `:2`. Preferí binds por nombre.
+
+Un nombre de bind que es palabra reservada de Oracle (`uid`, `date`, `user`, `level`, `size`…) falla con ORA-01745, y Oracle no distingue mayúsculas en los nombres de bind, así que `{ id, ID }` es ambiguo: el driver rechaza ambos casos antes de mandar la sentencia. Un bind que el SQL no usa falla (NJS-097/NJS-098); con `dropUnusedBinds` (la opción, o la config) se descarta, útil cuando un mismo objeto de binds sirve a varias sentencias.
 
 ### Binds con tipo por nombre
 
@@ -113,6 +124,21 @@ const { outBinds } = await oracle.execute(
 outBinds.userId; // number | null
 ```
 
+### Cargas masivas con tipos
+
+`executeMany()` también acepta valores tipados, por ejemplo para cargar CLOBs de más de 32 KB, y binds `RETURNING INTO` en `bindDefs`:
+
+```typescript
+const { rowsAffected, outBinds } = await oracle.executeMany(
+    'INSERT INTO docs (name, body) VALUES (:name, :body) RETURNING id INTO :id',
+    docs.map((d) => ({ name: d.name, body: { type: 'clob', val: d.text } })),
+    { bindDefs: { id: { dir: 'returning', type: 'number' } } },
+);
+outBinds; // [{ id: [41] }, { id: [42] }, …]: uno por fila
+```
+
+Cuando se nombra un tipo, node-oracledb necesita la definición de todos los binds: los demás se infieren de las filas, y los strings y RAW toman el tamaño del valor más largo.
+
 ### LOBs, fechas y números
 
 Las columnas CLOB se leen como string y las BLOB como Buffer, enteras: un Lob de node-oracledb solo se puede leer mientras su conexión está abierta, y el pool la recupera cuando termina la sentencia. Un bind de salida CLOB o BLOB se lee igual. Para un LOB muy grande, leelo por partes con `DBMS_LOB.SUBSTR`.
@@ -142,7 +168,14 @@ Oracle guarda en mayúsculas los nombres sin comillas, así que las tablas y col
 
 Para generar los tipos `DB` desde una base, usá el `generate` de [kysely-oracledb](https://www.npmjs.com/package/kysely-oracledb) en un script aparte (dependencia de desarrollo); su opción `camelCase` corresponde a `camelCase: true`. Tipa las columnas BLOB como `string`: cambialas a `Buffer`, que es lo que devuelve el driver.
 
-No se soporta con Kysely: `returning()` (usá `execute()` con binds `dir: 'returning'`), el `Migrator` de Kysely (usá [`runMigrations()`](#migraciones)) ni la introspección.
+El dialecto genera SQL que corre en todas las versiones, y rechaza al compilar, diciendo qué usar en su lugar, lo que Oracle no tiene:
+
+- Un select sin FROM (`selectNoFrom`) lee `FROM DUAL`, obligatorio antes de 23ai.
+- Un `mergeInto()` pone la condición del `ON` entre paréntesis, como exige Oracle. El MERGE de Oracle acepta solo `whenMatched().thenUpdateSet()` y `whenNotMatched().thenInsertValues()`: `whenMatchedAnd()`, `thenDelete()` y `thenDoNothing()` se rechazan.
+- Con `compatibility: '19c'` (el default), un valor boolean en SQL y un INSERT de varias filas con VALUES se rechazan: los dos existen recién desde 23ai. Usá 1/0 o 'Y'/'N', y `executeMany()` o un insert por fila. Con `'23ai'` se permiten (el driver avisa si la base es más vieja).
+- `returning()` (usá `execute()` con binds `dir: 'returning'`), `onConflict()` y `onDuplicateKeyUpdate()` (usá `mergeInto()`), y `limit()` en un UPDATE o DELETE.
+
+Tampoco se soporta con Kysely: el `Migrator` de Kysely (usá [`runMigrations()`](#migraciones)) ni la introspección.
 
 ## Transacciones
 
@@ -165,7 +198,7 @@ await oracle.db!.transaction().setIsolationLevel('serializable').execute(async (
 });
 ```
 
-Oracle no tiene transacciones anidadas: abrir una dentro de otra lanza un error.
+Dentro de `transaction(fn)`, `oracle.query()`, `oracle.execute()`, `oracle.db` y el resto también corren en la transacción, sobre su conexión: otra conexión que tocara las filas bloqueadas por la transacción las esperaría para siempre, un bloqueo que Oracle no detecta como deadlock. Oracle no tiene transacciones anidadas: `transaction()` dentro de otra lanza un error. Dentro de `oracle.db.transaction()` de Kysely, usá su `trx`: `oracle.*` no se une a ella.
 
 ## Paginación, búsqueda y orden
 
@@ -193,7 +226,7 @@ defineRoute({
 ```
 
 - **`oracle.paginate(query, { page, pageSize })`** (o `paginate(db, query, options)` con el `db` de una transacción) trae la página con `OFFSET … FETCH NEXT` y un conteo de toda la consulta. La página y su tamaño pueden ser strings de un query string; un valor inválido vuelve al default, y el tamaño tiene un tope `maxPageSize` (default 100). La consulta necesita un `orderBy` que termine en una columna única: sin él Oracle devuelve las filas en cualquier orden, y las páginas repetirían o saltearían filas.
-- **`paginateByCursor(query, { keys, after, pageSize, direction })`** pagina por claves (keyset): una página profunda no cuesta más que la primera, y las filas insertadas mientras tanto no corren las páginas. Ordena por `keys`, que tienen que estar seleccionadas, no ser NULL y ser únicas en conjunto (terminá con la clave primaria), y devuelve `{ items, nextCursor }`. Pasá `nextCursor` como `after` para la página siguiente; en la última es null.
+- **`paginateByCursor(query, { keys, after, pageSize, direction })`** pagina por claves (keyset): una página profunda no cuesta más que la primera, y las filas insertadas mientras tanto no corren las páginas. Ordena por `keys`, que tienen que estar seleccionadas, no ser NULL y ser únicas en conjunto (terminá con la clave primaria), y devuelve `{ items, nextCursor }`. Pasá `nextCursor` como `after` para la página siguiente; en la última es null. Declará una clave DATE o TIMESTAMP como `{ key: 'CREATED', type: 'timestamp' }`: el cursor lleva entonces su texto con los nueve dígitos fraccionarios, porque un Date de JS guarda milisegundos y un TIMESTAMP(6) microsegundos, y se repetirían o saltearían filas. Una clave de fecha sin declarar así lanza un error.
 - **`search(query, columns, term)`** deja las filas donde alguna de `columns` contiene `term`, sin distinguir mayúsculas (`upper(col) like :term escape '\'`). El término es un bind, y sus `%` y `_` se buscan literalmente. Un término vacío deja la consulta como está.
 - **`sortBy(query, sort, allowed)`** ordena por un parámetro como `name,-created` (`-` para descendente), aceptando solo los campos de `allowed`. Agregá una columna única después para desempatar.
 
@@ -242,7 +275,24 @@ END;
 
 - Los archivos aplicados quedan registrados en `ISKRA_MIGRATIONS` (`{ table }` para otro nombre) con un checksum: un archivo que cambió después de aplicarse se rechaza.
 - Las corridas se serializan con un lock sobre `ISKRA_MIGRATIONS_LOCK`: varias instancias que arrancan a la vez aplican cada archivo una sola vez. Otra corrida espera hasta `lockTimeout` segundos (default 60).
+- Un PL/SQL que no compila igual se crea, inválido: node-oracledb lo avisa como warning (NJS-700), no como error. `runMigrations()` hace fallar el archivo con los errores de `USER_ERRORS` (`PROCEDURE P (line 3, column 5: PLS-00201: …)`) y no lo registra.
 - Las sentencias de un archivo y su registro hacen commit juntos, pero **Oracle hace commit de cada sentencia DDL por su cuenta**: un archivo que falla a mitad de camino conserva el DDL anterior a la falla, y su DML desde el último DDL se revierte. Separá el DDL y los cambios de datos en archivos distintos, y escribí DDL que se pueda volver a correr (o arreglalo a mano) cuando un archivo falla.
+
+## Timeouts y cancelación
+
+Cada sentencia corre con `callTimeout` (30 s por defecto): pasado ese tiempo, node-oracledb cancela la sentencia en la base, falla con un `QueryError` NJS-123 y su conexión se descarta del pool. Si no, una sentencia que espera un lock de fila no terminaría nunca y retendría su conexión; con el pool por defecto de 4, unas pocas así frenan el servicio entero. Fijá el límite por sentencia, o cancelá con un `AbortSignal` (la sentencia falla con ORA-01013):
+
+```typescript
+await oracle.execute('UPDATE accounts SET balance = :b WHERE id = :id', binds, { timeout: 2000 });
+
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 1000);
+await oracle.query(reportSql, [], { signal: controller.signal, timeout: 0 });
+
+await oracle.db!.selectFrom('PEOPLE').selectAll().execute({ signal: controller.signal });
+```
+
+`timeout: 0` quita el límite (un reporte, una exportación). Las migraciones corren sin él: crear un índice puede tardar. La espera de una conexión libre la acota `pool.queueTimeout` (NJS-040).
 
 ## Readiness y observabilidad
 
@@ -256,6 +306,22 @@ health.addReadinessCheck('oracle', () => oracle.ping());
 oracle.setOnQuery((sql, binds) => app.logger.debug({ sql }, 'oracle query'));
 ```
 
+El callback puede devolver una función, que se llama al terminar la sentencia con `{ durationMs, rows, rowsAffected, error }`: el fin de un span de trazas. Un stream la llama una vez, con todas las filas que entregó.
+
+```typescript
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('oracle');
+oracle.setOnQuery((sql) => {
+    const span = tracer.startSpan('oracle.query', { attributes: { 'db.system': 'oracle', 'db.statement': sql } });
+    return ({ rows, rowsAffected, error }) => {
+        span.setAttributes({ 'db.rows': rows ?? rowsAffected ?? 0 });
+        if (error) span.setStatus({ code: SpanStatusCode.ERROR, message: error.errorCode });
+        span.end();
+    };
+});
+```
+
 Los binds pueden tener datos personales: registralos solo donde eso sea aceptable.
 
 ## Errores
@@ -263,7 +329,7 @@ Los binds pueden tener datos personales: registralos solo donde eso sea aceptabl
 | Error | Cuándo |
 |---|---|
 | `ConnectionError` | `start()` no pudo abrir el pool ni llegar a la base. Su mensaje trae el de Oracle (`ORA-01017: …`); su contexto, el connect string y el usuario, nunca la contraseña. |
-| `QueryError` | Falló una sentencia. `error.errorNum` es el número ORA (`1` para ORA-00001, una restricción única: respondé 409) y `context.oracleCode` el código; el error original es `cause`. |
+| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Para HTTP: `ORA-00001` (restricción única) → 409; `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`) → 503; `NJS-123` (se pasó el `callTimeout`) → 503 o 504; `ORA-01013` (cancelada). |
 | `MigrationError` | Falló una migración (su contexto nombra el archivo y la sentencia), cambió después de aplicarse, o venció la espera del lock. |
 | `QueryInputError` | Un cursor de paginación o un campo de orden del request no es válido: un 400. |
 | `ConfigError` (core) | `app.config.oracle` no es válida. |

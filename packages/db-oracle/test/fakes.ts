@@ -26,19 +26,27 @@ export class FakeConnection implements OracleConnectionLike {
     commits = 0;
     rollbacks = 0;
     closed = 0;
+    dropped = false;
+    breaks = 0;
+    callTimeout = 0;
+    /** callTimeout while each statement ran. */
+    timeouts: number[] = [];
+    readonly oracleServerVersion = 1_903_000_000;
 
     constructor(private readonly pool: FakePool) {}
 
     async execute(sql: string, binds: unknown, options: Record<string, unknown>): Promise<OracleRawResult> {
         const call = { sql, binds, options, connection: this };
         this.pool.calls.push(call);
+        this.timeouts.push(this.callTimeout);
         const result = await this.pool.respond(call);
         if (result instanceof Error) throw result;
         return result;
     }
 
     async executeMany(sql: string, binds: unknown[], options: Record<string, unknown>) {
-        return this.execute(sql, binds, options);
+        const result = await this.execute(sql, binds, options);
+        return { rowsAffected: result.rowsAffected, outBinds: result.outBinds as unknown[] | undefined };
     }
 
     async commit() {
@@ -49,8 +57,13 @@ export class FakeConnection implements OracleConnectionLike {
         this.rollbacks++;
     }
 
-    async close() {
+    async close(options?: { drop?: boolean }) {
         this.closed++;
+        this.dropped = options?.drop === true;
+    }
+
+    async breakExecution() {
+        this.breaks++;
     }
 }
 
@@ -60,7 +73,11 @@ export class FakePool implements OraclePoolLike {
     closedWith: number | undefined;
     respond: Responder = () => ({ rows: [] });
 
+    /** Replaces getConnection() (e.g. never resolving, for a pool with no free connection). */
+    waitForConnection: (() => Promise<void>) | undefined;
+
     async getConnection() {
+        await this.waitForConnection?.();
         const connection = new FakeConnection(this);
         this.connections.push(connection);
         return connection;

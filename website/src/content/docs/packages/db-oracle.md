@@ -57,8 +57,12 @@ Connect with a user of the app's own that has only the privileges it uses (`CREA
 | `fetchAsString` | `[]` | `'number'` to read NUMBERs as strings (past 2^53 a JS number loses digits); `'date'` for DATE and TIMESTAMP as text. |
 | `camelCase` | `false` | Kysely only: write `firstName` for the `FIRST_NAME` column, and read rows back in camelCase. |
 | `poolAttributes` | `{}` | Other node-oracledb pool attributes (`walletLocation`, `configDir`…), passed as they are. |
+| `callTimeout` | 30000 | Milliseconds a statement may run before it is cancelled (see [Timeouts](#timeouts-and-cancellation)); 0 for no limit. |
+| `pingTimeout` | 5000 | Milliseconds `ping()` waits before answering `false`. |
+| `dropUnusedBinds` | `false` | Leave out the binds by name that the SQL does not use, instead of failing. |
+| `compatibility` | `'19c'` | The oldest database the Kysely SQL must run on: `'19c'` refuses what only 23ai understands (see [Kysely](#kysely)); `'23ai'` allows it. |
 
-`start()` opens the pool and runs `SELECT 1 FROM DUAL`, so a wrong password or host fails the app's start. `stop()` closes the pool. `ping()` resolves `true` or `false` (it never throws), for readiness checks.
+`start()` opens the pool and runs `SELECT 1 FROM DUAL`, so a wrong password or host fails the app's start; `oracle.serverVersion` then holds the database's major version (19, 21, 23…). `stop()` closes the pool. `ping()` resolves `true` or `false` within `pingTimeout` (it never throws), for readiness checks: with every connection busy it answers `false` in time instead of waiting for one.
 
 ## Raw SQL
 
@@ -73,11 +77,18 @@ const { rowsAffected, outBinds } = await oracle.execute(
 );
 outBinds.id; // number[]: one value per inserted row
 
+// The first row only (it fetches just that one), or undefined
+const person = await oracle.queryOne<{ NAME: string }>('SELECT name FROM people WHERE id = :id', { id: 1 });
+
 // A bulk insert in one round trip
 await oracle.executeMany('INSERT INTO people (name) VALUES (:name)', [{ name: 'Ana' }, { name: 'Bea' }]);
 ```
 
-Binds go by name (`:id` and `{ id }`) or by position (`:1`, `:2` and an array). Outside a transaction every statement commits on its own.
+Every statement takes options as its last argument: `{ timeout, signal, dropUnusedBinds }` (see [Timeouts](#timeouts-and-cancellation)). Outside a transaction every statement commits on its own.
+
+Binds go by name (`:id` and `{ id }`) or by position (`:1`, `:2` and an array). **Binds by position follow the order in which their placeholders appear in the SQL, not their numbers**: in `WHERE b = :2 AND a = :1`, the first value goes to `:2`. Prefer binds by name.
+
+A bind name that is an Oracle reserved word (`uid`, `date`, `user`, `level`, `size`…) fails with ORA-01745, and Oracle ignores the case of bind names, so `{ id, ID }` is ambiguous: the driver refuses both before sending the statement. A bind the SQL does not use fails (NJS-097/NJS-098); with `dropUnusedBinds` (the option, or the config) it is left out instead, which helps when one object of binds serves several statements.
 
 ### Binds with a type by name
 
@@ -113,6 +124,21 @@ const { outBinds } = await oracle.execute(
 outBinds.userId; // number | null
 ```
 
+### Bulk inserts with types
+
+`executeMany()` takes typed values too, for instance to load CLOBs past 32 KB, and `RETURNING INTO` binds in `bindDefs`:
+
+```typescript
+const { rowsAffected, outBinds } = await oracle.executeMany(
+    'INSERT INTO docs (name, body) VALUES (:name, :body) RETURNING id INTO :id',
+    docs.map((d) => ({ name: d.name, body: { type: 'clob', val: d.text } })),
+    { bindDefs: { id: { dir: 'returning', type: 'number' } } },
+);
+outBinds; // [{ id: [41] }, { id: [42] }, …]: one per row
+```
+
+Once a type is named, node-oracledb needs a definition for every bind: the others are inferred from the rows, and strings and RAW get the size of the longest value.
+
 ### LOBs, dates and numbers
 
 CLOB columns are read as strings and BLOB columns as Buffers, whole: a node-oracledb Lob can only be read while its connection is open, and the pool takes the connection back when the statement ends. A CLOB or BLOB out bind is read the same way. For a very large LOB, read it in pieces with `DBMS_LOB.SUBSTR`.
@@ -142,7 +168,14 @@ Oracle stores unquoted names in upper case, so tables and columns are `PEOPLE` a
 
 To generate the `DB` types from a database, use [kysely-oracledb](https://www.npmjs.com/package/kysely-oracledb)'s `generate` in a script of its own (a dev dependency); its `camelCase` option matches `camelCase: true`. It types BLOB columns as `string`: change them to `Buffer`, which is what the driver returns.
 
-Not supported with Kysely: `returning()` (use `execute()` with `dir: 'returning'` binds), Kysely's `Migrator` (use [`runMigrations()`](#migrations)) and introspection.
+The dialect writes SQL that runs on every release, and refuses at compile time, with what to use instead, what Oracle does not have:
+
+- A select without FROM (`selectNoFrom`) reads `FROM DUAL`, required before 23ai.
+- A `mergeInto()` puts its `ON` condition in parentheses, as Oracle requires. Oracle's MERGE takes `whenMatched().thenUpdateSet()` and `whenNotMatched().thenInsertValues()` only: `whenMatchedAnd()`, `thenDelete()` and `thenDoNothing()` are refused.
+- With `compatibility: '19c'` (the default), a boolean value in SQL and an INSERT of several rows with VALUES are refused: both exist from 23ai only. Use 1/0 or 'Y'/'N', and `executeMany()` or one insert per row. With `'23ai'` they are allowed (the driver warns if the database is older).
+- `returning()` (use `execute()` with `dir: 'returning'` binds), `onConflict()` and `onDuplicateKeyUpdate()` (use `mergeInto()`), and `limit()` on an UPDATE or DELETE.
+
+Not supported with Kysely either: Kysely's `Migrator` (use [`runMigrations()`](#migrations)) and introspection.
 
 ## Transactions
 
@@ -165,7 +198,7 @@ await oracle.db!.transaction().setIsolationLevel('serializable').execute(async (
 });
 ```
 
-Oracle has no nested transactions: open one inside another and it throws.
+Inside `transaction(fn)`, `oracle.query()`, `oracle.execute()`, `oracle.db` and the rest run in the transaction too, on its connection: another connection touching the rows the transaction locked would wait for them forever, a lock Oracle does not detect as a deadlock. Oracle has no nested transactions: `transaction()` inside another throws. Inside Kysely's `oracle.db.transaction()`, use its `trx`: `oracle.*` does not join it.
 
 ## Pagination, search and sorting
 
@@ -193,7 +226,7 @@ defineRoute({
 ```
 
 - **`oracle.paginate(query, { page, pageSize })`** (or `paginate(db, query, options)` with a transaction's `db`) runs the page with `OFFSET … FETCH NEXT` and a count of the whole query. Page and page size may be strings from a query string; bad values fall back to the defaults, and the page size is capped at `maxPageSize` (default 100). The query needs an `orderBy` ending in a unique column: without one Oracle returns rows in no set order, and pages would repeat or skip rows.
-- **`paginateByCursor(query, { keys, after, pageSize, direction })`** pages by keys (keyset pagination): a deep page costs no more than the first, and rows inserted meanwhile do not shift the pages. It orders by `keys`, which must be selected, not NULL, and together unique (end with the primary key), and returns `{ items, nextCursor }`. Pass `nextCursor` as `after` for the next page; it is null on the last one.
+- **`paginateByCursor(query, { keys, after, pageSize, direction })`** pages by keys (keyset pagination): a deep page costs no more than the first, and rows inserted meanwhile do not shift the pages. It orders by `keys`, which must be selected, not NULL, and together unique (end with the primary key), and returns `{ items, nextCursor }`. Pass `nextCursor` as `after` for the next page; it is null on the last one. Declare a DATE or TIMESTAMP key as `{ key: 'CREATED', type: 'timestamp' }`: the cursor then carries its text with all nine fractional digits, since a JS Date keeps milliseconds and a TIMESTAMP(6) microseconds, and rows would repeat or be skipped. A date key not declared that way throws.
 - **`search(query, columns, term)`** keeps the rows where any of `columns` contains `term`, ignoring case (`upper(col) like :term escape '\'`). The term is a bind, and its `%` and `_` match themselves. An empty term leaves the query as it is.
 - **`sortBy(query, sort, allowed)`** orders by a parameter such as `name,-created` (`-` for descending), accepting only the fields in `allowed`. Add a unique column after it to break ties.
 
@@ -242,7 +275,24 @@ END;
 
 - The applied files are recorded in `ISKRA_MIGRATIONS` (`{ table }` to choose another name) with a checksum: a file changed after it was applied is refused.
 - Runners are serialized with a lock on `ISKRA_MIGRATIONS_LOCK`: several instances starting at once apply each file once. Another runner waits up to `lockTimeout` seconds (default 60).
+- PL/SQL that does not compile is still created, invalid: node-oracledb reports it as a warning (NJS-700), not an error. `runMigrations()` fails the file on it, with the errors of `USER_ERRORS` (`PROCEDURE P (line 3, column 5: PLS-00201: …)`), and does not record it.
 - A file's statements and its record commit together, but **Oracle commits every DDL statement on its own**: a file that fails halfway keeps the DDL before the failure, and its DML since the last DDL is rolled back. Keep DDL and data changes in separate files, and write DDL that can run again (or fix it by hand) when a file fails.
+
+## Timeouts and cancellation
+
+Every statement runs with `callTimeout` (30 s by default): past it, node-oracledb cancels the statement on the database and it fails with a `QueryError` NJS-123, and its connection is dropped from the pool. A statement waiting on a row lock would otherwise never end and hold its connection; with the default pool of 4, a few of them stop the whole service. Set the limit per statement, or cancel with an `AbortSignal` (the statement fails with ORA-01013):
+
+```typescript
+await oracle.execute('UPDATE accounts SET balance = :b WHERE id = :id', binds, { timeout: 2000 });
+
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 1000);
+await oracle.query(reportSql, [], { signal: controller.signal, timeout: 0 });
+
+await oracle.db!.selectFrom('PEOPLE').selectAll().execute({ signal: controller.signal });
+```
+
+`timeout: 0` lifts the limit (a report, an export). Migrations run without it: building an index may take long. A request waiting for a free connection is bounded by `pool.queueTimeout` instead (NJS-040).
 
 ## Readiness and observability
 
@@ -256,6 +306,22 @@ health.addReadinessCheck('oracle', () => oracle.ping());
 oracle.setOnQuery((sql, binds) => app.logger.debug({ sql }, 'oracle query'));
 ```
 
+The callback may return a function, called when the statement ends with `{ durationMs, rows, rowsAffected, error }`: the end of a trace span. A stream calls it once, with all the rows it yielded.
+
+```typescript
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('oracle');
+oracle.setOnQuery((sql) => {
+    const span = tracer.startSpan('oracle.query', { attributes: { 'db.system': 'oracle', 'db.statement': sql } });
+    return ({ rows, rowsAffected, error }) => {
+        span.setAttributes({ 'db.rows': rows ?? rowsAffected ?? 0 });
+        if (error) span.setStatus({ code: SpanStatusCode.ERROR, message: error.errorCode });
+        span.end();
+    };
+});
+```
+
 Binds may hold personal data: log them only where that is acceptable.
 
 ## Errors
@@ -263,7 +329,7 @@ Binds may hold personal data: log them only where that is acceptable.
 | Error | When |
 |---|---|
 | `ConnectionError` | `start()` could not open the pool or reach the database. Its message has Oracle's (`ORA-01017: …`); its context has the connect string and user, never the password. |
-| `QueryError` | A statement failed. `error.errorNum` is the ORA number (`1` for ORA-00001, a unique constraint: answer 409) and `context.oracleCode` the code; the original error is `cause`. |
+| `QueryError` | A statement failed. `error.errorCode` is the database's or the driver's code, and `error.errorNum` the ORA number; the original error is `cause`. For HTTP: `ORA-00001` (a unique constraint) → 409; `NJS-040` (no free connection within `pool.queueTimeout`) → 503; `NJS-123` (`callTimeout` exceeded) → 503 or 504; `ORA-01013` (cancelled). |
 | `MigrationError` | A migration failed (its context names the file and statement), changed after it was applied, or the lock timed out. |
 | `QueryInputError` | A pagination cursor or sort field from the request is not valid: a 400. |
 | `ConfigError` (core) | `app.config.oracle` is not valid. |
