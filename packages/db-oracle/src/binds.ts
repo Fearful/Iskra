@@ -42,16 +42,14 @@ export interface OracleReturningBind<T extends OracleType = OracleType> {
 
 export type OracleBindSpec = OracleTypedBind | OracleOutBind | OracleInOutBind | OracleReturningBind;
 
+/** A scalar bind value. */
+export type OracleScalar = string | number | bigint | boolean | Date | Uint8Array | null | undefined;
+
 export type OracleBindValue =
-    | string
-    | number
-    | bigint
-    | boolean
-    | Date
-    | Uint8Array
-    | null
-    | undefined
-    | OracleBindSpec;
+    | OracleScalar
+    | OracleBindSpec
+    /** An IN list, with `bindStyle: 'positional'`: `IN (:ids)` expands to `IN (:1, :2, :3)`. */
+    | readonly OracleScalar[];
 
 /** Binds by name (`:id` ↔ `{ id }`) or by position (`:1`, `:2` ↔ `[a, b]`). */
 export type OracleBinds = Readonly<Record<string, OracleBindValue>> | readonly OracleBindValue[];

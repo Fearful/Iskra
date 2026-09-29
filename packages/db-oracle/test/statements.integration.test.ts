@@ -365,7 +365,9 @@ async function startDriver(config: Record<string, unknown> = {}) {
                 pages: 3,
             });
 
-            expect(await exact.one(`SELECT name FROM ${T} WHERE id = :id`, { id: 4 })).toEqual({ NAME: 'P4' });
+            expect(await exact.one<{ NAME: string }>(`SELECT name FROM ${T} WHERE id = :id`, { id: 4 })).toEqual({
+                NAME: 'P4',
+            });
             await expect(exact.one(`SELECT name FROM ${T} WHERE id = :id`, { id: 99 })).rejects.toBeInstanceOf(
                 NoRowsError,
             );
