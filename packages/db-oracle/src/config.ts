@@ -40,10 +40,25 @@ export interface OracleConfig {
     /**
      * Milliseconds a statement may run (each round trip to the database)
      * before it is cancelled with a QueryError NJS-123, and its connection
-     * dropped from the pool. Default 30000; 0 for no limit. A statement
-     * waiting on a lock otherwise holds its connection forever.
+     * dropped from the pool; if the database does not take the cancel, the
+     * driver gives up at the deadline (see `deadlineGrace`). Default 30000; 0
+     * for no limit. A statement waiting on a lock otherwise holds its
+     * connection forever.
      */
     callTimeout?: number;
+    /**
+     * Milliseconds the driver waits past a call's timeout (`callTimeout`, or
+     * a statement's `timeout`) for node-oracledb to cancel it with NJS-123.
+     * Then it gives up itself: the call fails with a `DeadlineError`, and the
+     * connection's socket is closed so it leaves the pool (in Thin mode the
+     * cancel travels on the connection, and a session waiting on a lock does
+     * not read it). Also how long an abort may take before the same happens
+     * (default 1000 then). Default: the timeout itself, at most 5000 (a 30 s
+     * timeout gives up at 35 s, a 1 s one at 2 s). A call without a timeout
+     * has no deadline. A statement given up outside a transaction may still
+     * run on the database once its lock frees.
+     */
+    deadlineGrace?: number;
     /** Milliseconds ping() waits, for a free connection and SELECT 1, before answering false. Default 5000. */
     pingTimeout?: number;
     /**
@@ -76,6 +91,8 @@ export interface ResolvedOracleConfig {
     camelCase: boolean;
     poolAttributes: Record<string, unknown>;
     callTimeout: number;
+    /** undefined: the timeout itself, at most 5000. */
+    deadlineGrace: number | undefined;
     pingTimeout: number;
     dropUnusedBinds: boolean;
     compatibility: OracleCompatibility;
@@ -158,6 +175,7 @@ export function resolveConfig(
         camelCase: s.camelCase === true,
         poolAttributes: poolAttributes as Record<string, unknown>,
         callTimeout: milliseconds(s, 'callTimeout', 30_000),
+        deadlineGrace: s.deadlineGrace === undefined ? undefined : milliseconds(s, 'deadlineGrace', 0),
         pingTimeout: milliseconds(s, 'pingTimeout', 5000),
         dropUnusedBinds: s.dropUnusedBinds === true,
         compatibility,

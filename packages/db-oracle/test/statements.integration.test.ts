@@ -3,7 +3,7 @@ import { App } from '@iskra-bun/core';
 import { sql, type Generated } from 'kysely';
 import oracledb from 'oracledb';
 import { OracleDriver } from '../src/driver';
-import { QueryError } from '../src/errors';
+import { DeadlineError, QueryError } from '../src/errors';
 import { paginateByCursor, type CursorPage } from '../src/pagination';
 import { ORACLE, oracleUp } from './oracle-env';
 
@@ -77,20 +77,62 @@ async function startDriver(config: Record<string, unknown> = {}) {
         }
     }
 
-    test('a timeout cancels a statement waiting on a lock, and the pool keeps serving', async () => {
+    test('a timeout ends a statement waiting on a lock, and the pool keeps serving', async () => {
+        // node-oracledb's cancel travels in band and a session waiting on a
+        // lock may not read it: then no NJS-123 comes, and the deadline
+        // (timeout + deadlineGrace, 2 s here) gives up on the connection.
         await whileLocked(async () => {
             const started = performance.now();
             const error = (await oracle
                 .execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 1000 })
                 .catch((e: unknown) => e)) as QueryError;
             expect(error).toBeInstanceOf(QueryError);
-            expect(error.errorCode).toBe('NJS-123');
-            expect(performance.now() - started).toBeLessThan(15_000);
+            expect(error.timedOut).toBe(true);
+            if (error instanceof DeadlineError) expect(error.deadlineMs).toBe(2000);
+            expect(performance.now() - started).toBeLessThan(5000);
             expect(await oracle.queryOne<{ ONE: number }>('SELECT 1 AS one FROM DUAL')).toEqual({ ONE: 1 });
         });
-        expect(await oracle.queryOne<{ NAME: string }>(`SELECT name FROM ${T} WHERE id = 1`)).toEqual({
-            NAME: 'locked',
-        });
+        // Its outcome is not asserted: an UPDATE outside a transaction that
+        // the database never cancelled runs, and commits, once the lock frees.
+    });
+
+    test('a given up connection goes back to the pool at once', async () => {
+        const small = await startDriver({ pool: { max: 1, queueTimeout: 3000 }, deadlineGrace: 0 });
+        try {
+            await whileLocked(async () => {
+                await expect(
+                    small.execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 500 }),
+                ).rejects.toThrow();
+                // With one connection, the next statement waits for the lost one to leave.
+                expect(await small.queryOne<{ ONE: number }>('SELECT 1 AS one FROM DUAL')).toEqual({ ONE: 1 });
+            });
+        } finally {
+            await small.stop();
+        }
+    });
+
+    test('a transaction with a statement past its deadline is lost, and the database rolls it back', async () => {
+        const strict = await startDriver({ deadlineGrace: 0, pool: { max: 2 } });
+        try {
+            await oracle.execute(`INSERT INTO ${T} (id, name, city) VALUES (2, 'other', 'before')`);
+            await whileLocked(async () => {
+                const error = await strict
+                    .transaction(async (tx) => {
+                        await tx.execute(`UPDATE ${T} SET city = 'tx' WHERE id = 2`);
+                        await tx.execute(`UPDATE ${T} SET name = 'waited' WHERE id = 1`, {}, { timeout: 1000 });
+                    })
+                    .catch((e: unknown) => e);
+                expect((error as QueryError).timedOut).toBe(true);
+            });
+            // Neither UPDATE commits: the session dies once it answers, and the database rolls it back.
+            await Bun.sleep(500);
+            expect(await strict.query(`SELECT id, name, city FROM ${T} ORDER BY id`)).toEqual([
+                { ID: 1, NAME: 'locked', CITY: null },
+                { ID: 2, NAME: 'other', CITY: 'before' },
+            ]);
+        } finally {
+            await strict.stop();
+        }
     });
 
     test('an AbortSignal cancels a statement waiting on a lock', async () => {

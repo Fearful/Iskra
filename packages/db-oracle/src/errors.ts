@@ -39,6 +39,31 @@ export class QueryError extends IskraError {
         const value = this.context.errorCode;
         return typeof value === 'string' ? value : undefined;
     }
+
+    /** The statement ran out of time: node-oracledb's `callTimeout` (NJS-123) or the driver's deadline. */
+    get timedOut(): boolean {
+        return this.errorCode === 'NJS-123' || this.errorCode === 'DPI-1067';
+    }
+}
+
+// ─── Deadline Error ──────────────────────────────────────────────────────────
+
+/**
+ * node-oracledb did not answer a call within its deadline (its timeout plus
+ * `deadlineGrace`): the driver stopped waiting and dropped the connection
+ * without waiting for the call. A transaction on that connection is lost.
+ */
+export class DeadlineError extends QueryError {
+    constructor(readonly deadlineMs: number) {
+        super(`Oracle did not answer within ${deadlineMs} ms: the call was given up and its connection dropped`, {
+            context: { deadlineMs },
+        });
+        this.name = 'DeadlineError';
+    }
+
+    override get timedOut(): boolean {
+        return true;
+    }
 }
 
 // ─── Migration Error ─────────────────────────────────────────────────────────

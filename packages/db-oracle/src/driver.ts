@@ -13,7 +13,7 @@ import {
 } from './binds';
 import { resolveConfig, type ResolvedOracleConfig } from './config';
 import { OracleDialect, type StatementRunner } from './dialect';
-import { ConnectionError, MigrationError, QueryError, toQueryError } from './errors';
+import { ConnectionError, DeadlineError, MigrationError, QueryError, toQueryError } from './errors';
 import { runMigrations, type MigrationOptions } from './migrations';
 import { paginate, type Page, type PageOptions } from './pagination';
 import type {
@@ -44,7 +44,10 @@ export interface QueryEnd {
 export type OnQueryHook = (sql: string, binds: unknown) => unknown;
 
 export interface StatementOptions {
-    /** Milliseconds this statement may run, instead of `callTimeout` (0 for no limit). */
+    /**
+     * Milliseconds this statement may run, instead of `callTimeout` (0 for no
+     * limit). Its deadline follows: this plus `deadlineGrace`.
+     */
     timeout?: number;
     /** Cancels the statement when aborted (a QueryError ORA-01013). */
     signal?: AbortSignal;
@@ -107,6 +110,25 @@ const DROP_ON = new Set([
     'ORA-03135',
 ]);
 
+/**
+ * Closes the socket under a Thin connection, so the call waiting on it fails
+ * (NJS-500) and node-oracledb lets the connection go. node-oracledb has no
+ * public API for this: its cancel (a break) travels in band, and a database
+ * waiting on a lock does not read it, so neither callTimeout nor
+ * breakExecution() ends that wait. False without such a socket (Thick mode,
+ * another node-oracledb version): then only breakExecution() is tried.
+ */
+function forceDisconnect(connection: OracleConnectionLike): boolean {
+    const session = (connection as { _impl?: { nscon?: { forceDisconnect?: unknown } } })._impl?.nscon;
+    if (typeof session?.forceDisconnect !== 'function') return false;
+    try {
+        (session.forceDisconnect as (error: Error) => void).call(session, new Error('Oracle call given up'));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function loadOracledb(): Promise<OracledbModule> {
     const mod = (await import('oracledb')) as OracledbModule & { default?: OracledbModule };
     return mod.default ?? mod;
@@ -139,6 +161,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     private readonly runner: StatementRunner = {
         run: (handle, sql, binds, options) => this.run(handle, sql, binds, options),
         streamRows: (handle, sql, binds, chunkSize, options) => this.streamRows(handle, sql, binds, chunkSize, options),
+        end: (handle, action) => this.end(handle, action),
     };
 
     async init(app: App) {
@@ -228,19 +251,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     async ping(): Promise<boolean> {
         const { pool, config } = this;
         if (!pool || !config) return false;
-        this.pingInFlight ??= (async () => {
-            let connection: OracleConnectionLike | undefined;
-            try {
-                connection = await pool.getConnection();
-                connection.callTimeout = config.pingTimeout;
-                await connection.execute('SELECT 1 FROM DUAL', [], {});
-                return true;
-            } catch {
-                return false;
-            } finally {
-                await connection?.close({ drop: false }).catch(() => {});
-            }
-        })().finally(() => {
+        this.pingInFlight ??= this.pingOnce(pool, config.pingTimeout).finally(() => {
             this.pingInFlight = undefined;
         });
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -251,6 +262,29 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             return await Promise.race([this.pingInFlight, expired]);
         } finally {
             clearTimeout(timer);
+        }
+    }
+
+    /** SELECT 1 on a pool connection; a connection still running it after `timeout` is dropped. */
+    private async pingOnce(pool: OraclePoolLike, timeout: number): Promise<boolean> {
+        let connection: OracleConnectionLike | undefined;
+        let late = false;
+        const timer = setTimeout(() => {
+            if (!connection) return;
+            late = true;
+            if (!forceDisconnect(connection)) void connection.breakExecution?.().catch(() => {});
+        }, timeout);
+        try {
+            connection = await pool.getConnection();
+            connection.callTimeout = timeout;
+            await connection.execute('SELECT 1 FROM DUAL', [], {});
+            return true;
+        } catch {
+            return false;
+        } finally {
+            clearTimeout(timer);
+            // One that answered late is in an unknown state.
+            await connection?.close({ drop: late }).catch(() => {});
         }
     }
 
@@ -351,14 +385,14 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         try {
             const result = await this.activeTx.run(pinned, () => fn(tx));
             try {
-                await handle.connection.commit();
+                await this.end(pinned, 'commit');
             } catch (error) {
                 throw toQueryError(error, 'Failed to commit the transaction');
             }
             return result;
         } catch (error) {
             try {
-                await handle.connection.rollback();
+                await this.end(pinned, 'rollback');
             } catch (rollbackError) {
                 this.app?.logger.error({ error: rollbackError }, 'Failed to roll back an Oracle transaction');
             }
@@ -366,6 +400,7 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         } finally {
             pinned.ended = true;
             handle.broken ||= pinned.broken;
+            handle.lost ||= pinned.lost;
             await handle.release();
         }
     }
@@ -452,11 +487,12 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             connection,
             inTransaction: false,
             release: async () => {
-                try {
-                    await connection.close({ drop: handle.broken === true });
-                } catch (error) {
+                const closing = connection.close({ drop: handle.broken === true }).catch((error: unknown) => {
                     this.app?.logger.warn({ error }, 'Failed to release an Oracle connection');
-                }
+                });
+                // node-oracledb closes a connection only after the call on it
+                // ends: a lost one's call may never end.
+                if (!handle.lost) await closing;
             },
         };
         return handle;
@@ -507,6 +543,116 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
     }
 
     /**
+     * How long the driver waits for a call with this timeout before it gives
+     * up on it: the timeout plus `deadlineGrace`; 0 (never) without a timeout.
+     */
+    private deadline(timeout: number): number {
+        if (timeout <= 0) return 0;
+        const grace = this.ready().config.deadlineGrace;
+        return timeout + (grace ?? Math.min(timeout, 5000));
+    }
+
+    /**
+     * Runs one call on the handle's connection: after the calls already on it
+     * (node-oracledb queues them anyway, and the callTimeout set for one must
+     * not be the next one's), armed with the statement's options, and no
+     * longer than its deadline. Nothing runs on a lost connection.
+     */
+    private async guarded<R>(
+        handle: ConnectionHandle,
+        options: StatementOptions | undefined,
+        call: () => Promise<R>,
+    ): Promise<R> {
+        const previous = handle.idle;
+        let done!: () => void;
+        handle.idle = new Promise<void>((resolve) => (done = resolve));
+        try {
+            await previous;
+            if (handle.lost) {
+                throw new QueryError(
+                    'The connection was given up after a call on it did not end in time: nothing more runs on it, ' +
+                        'and the database rolls back its transaction when it closes',
+                );
+            }
+            const disarm = this.arm(handle, options);
+            try {
+                return await this.withDeadline(handle, options, call);
+            } finally {
+                disarm();
+            }
+        } finally {
+            done();
+        }
+    }
+
+    /**
+     * `call`, unless its deadline passes first, or an abort is not honored
+     * within `deadlineGrace` (1 s by default): then the connection is given up.
+     */
+    private async withDeadline<R>(
+        handle: ConnectionHandle,
+        options: StatementOptions | undefined,
+        call: () => Promise<R>,
+    ): Promise<R> {
+        const { config } = this.ready();
+        const deadline = this.deadline(options?.timeout ?? config.callTimeout);
+        const signal = options?.signal;
+        const pending = call();
+        if (deadline === 0 && !signal) return pending;
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        let onAbort: (() => void) | undefined;
+        const givenUp = new Promise<never>((_, reject) => {
+            if (deadline > 0) {
+                timers.push(setTimeout(() => reject(this.giveUp(handle, new DeadlineError(deadline))), deadline));
+            }
+            if (signal) {
+                const grace = config.deadlineGrace ?? 1000;
+                onAbort = () => {
+                    const error = new QueryError(
+                        `The statement was aborted and did not stop within ${grace} ms: its connection was given up`,
+                        { context: { errorCode: 'ORA-01013' } },
+                    );
+                    timers.push(setTimeout(() => reject(this.giveUp(handle, error)), grace));
+                };
+                signal.addEventListener('abort', onAbort, { once: true });
+            }
+        });
+        try {
+            return await Promise.race([pending, givenUp]);
+        } finally {
+            for (const timer of timers) clearTimeout(timer);
+            if (onAbort) signal?.removeEventListener('abort', onAbort);
+        }
+    }
+
+    /**
+     * Gives up on the call running on the handle's connection: marks it lost
+     * and closes its socket (or, failing that, asks node-oracledb to cancel),
+     * so the call fails and the connection can be dropped. Returns `error`.
+     */
+    private giveUp(handle: ConnectionHandle, error: QueryError): QueryError {
+        handle.lost = true;
+        handle.broken = true;
+        if (!forceDisconnect(handle.connection)) void handle.connection.breakExecution?.().catch(() => {});
+        this.app?.logger.error({ error }, 'An Oracle call was given up: its connection is dropped');
+        return error;
+    }
+
+    /**
+     * Commits or rolls back on the handle's connection, bounded like a
+     * statement. A lost connection has nothing to roll back (the database
+     * does it when the connection closes), so a rollback there is a no-op.
+     */
+    private async end(handle: ConnectionHandle, action: 'commit' | 'rollback'): Promise<void> {
+        if (action === 'rollback' && handle.lost) return;
+        try {
+            await this.guarded(handle, undefined, () => handle.connection[action]());
+        } catch (caught) {
+            throw this.failed(handle, caught);
+        }
+    }
+
+    /**
      * Sets the statement's timeout and abort signal on its connection;
      * returns what undoes them. An already aborted signal throws.
      */
@@ -536,18 +682,14 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         counts: (result: R) => Omit<QueryEnd, 'durationMs' | 'error'>,
     ): Promise<R> {
         const finish = this.startHook(sql, binds);
-        let disarm: (() => void) | undefined;
         try {
-            disarm = this.arm(handle, options);
-            const result = await call();
+            const result = await this.guarded(handle, options, call);
             finish(counts(result));
             return result;
         } catch (caught) {
             const error = this.failed(handle, caught);
             finish({ error });
             throw error;
-        } finally {
-            disarm?.();
         }
     }
 
@@ -649,24 +791,24 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
         const finish = this.startHook(sql, binds);
         let total = 0;
         let failure: QueryError | undefined;
-        let disarm: (() => void) | undefined;
         let resultSet: OracleResultSetLike | undefined;
         try {
-            disarm = this.arm(handle, options);
+            // Each call (the execute, every fetch) has the statement's
+            // timeout and deadline: the time between them is the consumer's.
             try {
-                const result = await handle.connection.execute(sql, oracleBinds, {
-                    ...this.options(handle),
-                    resultSet: true,
-                });
+                const result = await this.guarded(handle, options, () =>
+                    handle.connection.execute(sql, oracleBinds, { ...this.options(handle), resultSet: true }),
+                );
                 resultSet = result.resultSet;
             } catch (caught) {
                 throw this.failed(handle, caught);
             }
             if (!resultSet) throw new QueryError('stream() needs a query that returns rows');
+            const open = resultSet;
             for (;;) {
                 let rows: unknown[];
                 try {
-                    rows = await resultSet.getRows(chunkSize);
+                    rows = await this.guarded(handle, options, () => open.getRows(chunkSize));
                 } catch (caught) {
                     throw this.failed(handle, caught);
                 }
@@ -678,8 +820,9 @@ export class OracleDriver<DB = Record<string, never>> implements Driver {
             failure = error as QueryError;
             throw error;
         } finally {
-            disarm?.();
-            await resultSet?.close().catch(() => {});
+            const open = resultSet;
+            // Not on a lost connection: close() would wait for the call it lost.
+            if (open) await this.guarded(handle, undefined, () => open.close()).catch(() => {});
             finish(failure ? { error: failure } : { rows: total });
         }
     }

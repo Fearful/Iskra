@@ -58,11 +58,12 @@ Conectate con un usuario propio de la app que tenga solo los permisos que usa (`
 | `camelCase` | `false` | Solo Kysely: escribís `firstName` para la columna `FIRST_NAME`, y las filas vuelven en camelCase. |
 | `poolAttributes` | `{}` | Otros atributos del pool de node-oracledb (`walletLocation`, `configDir`…), tal cual. |
 | `callTimeout` | 30000 | Milisegundos que puede correr una sentencia antes de cancelarse (ver [Timeouts](#timeouts-y-cancelación)); 0 para sin límite. |
+| `deadlineGrace` | el timeout, hasta 5000 | Milisegundos que el driver espera, pasado el timeout de una llamada, a que node-oracledb la cancele antes de abandonar la conexión por su cuenta (ver [Timeouts](#timeouts-y-cancelación)). |
 | `pingTimeout` | 5000 | Milisegundos que `ping()` espera antes de responder `false`. |
 | `dropUnusedBinds` | `false` | Descartar los binds por nombre que el SQL no usa, en vez de fallar. |
 | `compatibility` | `'19c'` | La base más vieja en la que tiene que correr el SQL de Kysely: `'19c'` rechaza lo que solo entiende 23ai (ver [Kysely](#kysely)); `'23ai'` lo permite. |
 
-`start()` abre el pool y corre `SELECT 1 FROM DUAL`, así que una contraseña o un host incorrectos hacen fallar el arranque de la app; después `oracle.serverVersion` tiene la versión mayor de la base (19, 21, 23…). `stop()` cierra el pool. `ping()` resuelve `true` o `false` dentro de `pingTimeout` (nunca lanza), para readiness checks: con todas las conexiones ocupadas responde `false` a tiempo en vez de esperar una.
+`start()` abre el pool y corre `SELECT 1 FROM DUAL`, así que una contraseña o un host incorrectos hacen fallar el arranque de la app; después `oracle.serverVersion` tiene la versión mayor de la base (19, 21, 23…). `stop()` cierra el pool. `ping()` resuelve `true` o `false` dentro de `pingTimeout` (nunca lanza), para readiness checks: con todas las conexiones ocupadas responde `false` a tiempo en vez de esperar una, y una conexión que sigue corriendo el ping después de `pingTimeout` se descarta.
 
 ## SQL crudo
 
@@ -280,7 +281,7 @@ END;
 
 ## Timeouts y cancelación
 
-Cada sentencia corre con `callTimeout` (30 s por defecto): pasado ese tiempo, node-oracledb cancela la sentencia en la base, falla con un `QueryError` NJS-123 y su conexión se descarta del pool. Si no, una sentencia que espera un lock de fila no terminaría nunca y retendría su conexión; con el pool por defecto de 4, unas pocas así frenan el servicio entero. Fijá el límite por sentencia, o cancelá con un `AbortSignal` (la sentencia falla con ORA-01013):
+Cada sentencia corre con `callTimeout` (30 s por defecto): pasado ese tiempo, node-oracledb cancela la sentencia en la base y falla con un `QueryError` NJS-123, o, cuando la base no toma esa cancelación, el driver la abandona al llegar a su [plazo](#el-plazo); en los dos casos su conexión se descarta del pool. Si no, una sentencia que espera un lock de fila no terminaría nunca y retendría su conexión; con el pool por defecto de 4, unas pocas así frenan el servicio entero. Fijá el límite por sentencia, o cancelá con un `AbortSignal` (la sentencia falla con ORA-01013):
 
 ```typescript
 await oracle.execute('UPDATE accounts SET balance = :b WHERE id = :id', binds, { timeout: 2000 });
@@ -293,6 +294,22 @@ await oracle.db!.selectFrom('PEOPLE').selectAll().execute({ signal: controller.s
 ```
 
 `timeout: 0` quita el límite (un reporte, una exportación). Las migraciones corren sin él: crear un índice puede tardar. La espera de una conexión libre la acota `pool.queueTimeout` (NJS-040).
+
+### El plazo
+
+En modo Thin, node-oracledb cancela una llamada mandándole a la base un break por la misma conexión, y una sesión que espera un lock de fila no lo lee: entonces `callTimeout` nunca termina esa espera, un `AbortSignal` tampoco, y la llamada y su conexión quedan tomadas para siempre. Por eso el driver no depende sólo de eso. Cada llamada (una sentencia, cada fetch de un stream, un commit o un rollback) tiene un **plazo**: su timeout más `deadlineGrace` (por defecto el mismo timeout, hasta 5 s: un timeout de 30 s abandona a los 35 s, uno de 1 s a los 2 s). Pasado el plazo:
+
+- la llamada falla con un `DeadlineError` (un `QueryError` con `deadlineMs`);
+- el driver cierra el socket de la conexión, así node-oracledb la suelta y sale del pool en el momento (con versiones o modos de node-oracledb donde no puede, le pide a node-oracledb que la cancele y descarta la conexión cuando la llamada termina);
+- en una transacción, la transacción se pierde: las sentencias siguientes y el commit fallan sin correr, y `transaction()` relanza el error.
+
+Un abort funciona igual: si la sentencia no se detuvo `deadlineGrace` (1 s por defecto) después de la señal, el driver abandona su conexión y la sentencia falla con ORA-01013.
+
+:::caution
+Abandonar no frena a la base. Una sesión que espera un lock sigue esperando después de que se cierra su socket, y corre la sentencia cuando el lock se libera: fuera de una transacción, donde cada sentencia se confirma sola, **la sentencia puede aplicarse igual**. En una transacción no puede: la sesión muere cuando intenta responder y la base hace rollback de la transacción. Corré dentro de `transaction()` lo que no debe aplicarse tarde.
+:::
+
+Una llamada sin timeout (`timeout: 0`, las migraciones) no tiene plazo. `error.timedOut` es `true` tanto para NJS-123 como para un `DeadlineError`. El plazo cuenta la llamada entera, así que una consulta que trae muchas filas en muchas idas y vueltas necesita un `timeout` que la cubra completa. Las sentencias de una misma transacción corren de a una (node-oracledb las encolaría igual), cada una con su propio timeout.
 
 ## Readiness y observabilidad
 
@@ -329,7 +346,8 @@ Los binds pueden tener datos personales: registralos solo donde eso sea aceptabl
 | Error | Cuándo |
 |---|---|
 | `ConnectionError` | `start()` no pudo abrir el pool ni llegar a la base. Su mensaje trae el de Oracle (`ORA-01017: …`); su contexto, el connect string y el usuario, nunca la contraseña. |
-| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Para HTTP: `ORA-00001` (restricción única) → 409; `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`) → 503; `NJS-123` (se pasó el `callTimeout`) → 503 o 504; `ORA-01013` (cancelada). |
+| `QueryError` | Falló una sentencia. `error.errorCode` es el código de la base o del driver, y `error.errorNum` el número ORA; el error original es `cause`. Para HTTP: `ORA-00001` (restricción única) → 409; `NJS-040` (sin conexión libre dentro de `pool.queueTimeout`) → 503; `NJS-123` (se pasó el `callTimeout`) → 503 o 504; `ORA-01013` (cancelada). `error.timedOut` es `true` para NJS-123 y para un `DeadlineError`. |
+| `DeadlineError` | Un `QueryError`: una llamada pasó su [plazo](#el-plazo) y el driver abandonó su conexión. `error.deadlineMs` es el plazo. Para HTTP, 503 o 504. |
 | `MigrationError` | Falló una migración (su contexto nombra el archivo y la sentencia), cambió después de aplicarse, o venció la espera del lock. |
 | `QueryInputError` | Un cursor de paginación o un campo de orden del request no es válido: un 400. |
 | `ConfigError` (core) | `app.config.oracle` no es válida. |

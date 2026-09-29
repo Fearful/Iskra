@@ -46,6 +46,8 @@ export interface StatementRunner {
         chunkSize: number,
         options?: { signal?: AbortSignal },
     ): AsyncGenerator<unknown[]>;
+    /** Commits or rolls back, bounded like a statement. */
+    end(handle: ConnectionHandle, action: 'commit' | 'rollback'): Promise<void>;
 }
 
 export interface OracleDialectOptions {
@@ -279,7 +281,7 @@ class OracleKyselyDriver implements Driver {
     async commitTransaction(connection: DatabaseConnection): Promise<void> {
         const { handle } = connection as OracleKyselyConnection;
         try {
-            await handle.connection.commit();
+            await this.options.runner.end(handle, 'commit');
         } finally {
             handle.inTransaction = false;
         }
@@ -288,7 +290,7 @@ class OracleKyselyDriver implements Driver {
     async rollbackTransaction(connection: DatabaseConnection): Promise<void> {
         const { handle } = connection as OracleKyselyConnection;
         try {
-            await handle.connection.rollback();
+            await this.options.runner.end(handle, 'rollback');
         } finally {
             handle.inTransaction = false;
         }
