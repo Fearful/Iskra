@@ -34,6 +34,7 @@ body:
         - '@iskra-bun/web-kit'
         - '@iskra-bun/db-kit'
         - '@iskra-bun/db-oracle'
+        - '@iskra-bun/ldap-kit'
         - '@iskra-bun/kv-kit'
         - '@iskra-bun/socket-kit'
         - '@iskra-bun/worker-kit'

@@ -1,4 +1,5 @@
 import { ConfigError } from '@iskra-bun/core';
+import type { BindDialect } from './named';
 
 /** Column types read as strings instead of a JS number or Date. */
 export type OracleFetchAsString = 'number' | 'date';
@@ -18,8 +19,14 @@ export interface OraclePoolConfig {
 
 /** `app.config.oracle`. Without it, the driver reads ORA_CONN, ORA_USER and ORA_PASSWORD. */
 export interface OracleConfig {
-    /** Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. */
-    connectString: string;
+    /** Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. Or `host` and `serviceName`. */
+    connectString?: string;
+    /** The database host, with `serviceName` (and `port`), instead of `connectString`. */
+    host?: string;
+    /** Default 1521. */
+    port?: number;
+    /** The service name, with `host`. */
+    serviceName?: string;
     user?: string;
     password?: string;
     pool?: OraclePoolConfig;
@@ -40,10 +47,25 @@ export interface OracleConfig {
     /**
      * Milliseconds a statement may run (each round trip to the database)
      * before it is cancelled with a QueryError NJS-123, and its connection
-     * dropped from the pool. Default 30000; 0 for no limit. A statement
-     * waiting on a lock otherwise holds its connection forever.
+     * dropped from the pool; if the database does not take the cancel, the
+     * driver gives up at the deadline (see `deadlineGrace`). Default 30000; 0
+     * for no limit. A statement waiting on a lock otherwise holds its
+     * connection forever.
      */
     callTimeout?: number;
+    /**
+     * Milliseconds the driver waits past a call's timeout (`callTimeout`, or
+     * a statement's `timeout`) for node-oracledb to cancel it with NJS-123.
+     * Then it gives up itself: the call fails with a `DeadlineError`, and the
+     * connection's socket is closed so it leaves the pool (in Thin mode the
+     * cancel travels on the connection, and a session waiting on a lock does
+     * not read it). Also how long an abort may take before the same happens
+     * (default 1000 then). Default: the timeout itself, at most 5000 (a 30 s
+     * timeout gives up at 35 s, a 1 s one at 2 s). A call without a timeout
+     * has no deadline. A statement given up outside a transaction may still
+     * run on the database once its lock frees.
+     */
+    deadlineGrace?: number;
     /** Milliseconds ping() waits, for a free connection and SELECT 1, before answering false. Default 5000. */
     pingTimeout?: number;
     /**
@@ -51,6 +73,16 @@ export interface OracleConfig {
      * failing (NJS-097/NJS-098). Default false. Also a per-call option.
      */
     dropUnusedBinds?: boolean;
+    /**
+     * `'positional'` compiles binds by name to binds by position before a
+     * statement runs (see `compileNamed`), so params the SQL does not use,
+     * reserved words (`:date`) and names in another case cannot fail it, and
+     * an array param expands to an IN list. Default `'named'`. Also a
+     * per-call option.
+     */
+    bindStyle?: OracleBindStyle;
+    /** How `'positional'` reads `:name`: `'oracle'` (default) or `'sqlx'`, for SQL copied from Go. */
+    bindDialect?: BindDialect;
     /**
      * The oldest database the Kysely SQL must run on. `'19c'` (the default)
      * refuses at compile time what only 23ai understands: booleans in SQL
@@ -60,6 +92,8 @@ export interface OracleConfig {
 }
 
 export type OracleCompatibility = '19c' | '23ai';
+
+export type OracleBindStyle = 'named' | 'positional';
 
 declare module '@iskra-bun/core' {
     interface AppConfig {
@@ -76,8 +110,12 @@ export interface ResolvedOracleConfig {
     camelCase: boolean;
     poolAttributes: Record<string, unknown>;
     callTimeout: number;
+    /** undefined: the timeout itself, at most 5000. */
+    deadlineGrace: number | undefined;
     pingTimeout: number;
     dropUnusedBinds: boolean;
+    bindStyle: OracleBindStyle;
+    bindDialect: BindDialect;
     compatibility: OracleCompatibility;
 }
 
@@ -101,6 +139,26 @@ function typeList<T extends string>(value: unknown, key: string, allowed: readon
         invalid(`${key} must be a list of ${allowed.map((a) => `'${a}'`).join(', ')}`);
     }
     return new Set(value as T[]);
+}
+
+function oneOf<T extends string>(section: Record<string, unknown>, key: string, allowed: readonly T[], fallback: T): T {
+    const value = section[key];
+    if (value === undefined) return fallback;
+    if (!allowed.includes(value as T)) invalid(`${key} must be ${allowed.map((a) => `'${a}'`).join(' or ')}`);
+    return value as T;
+}
+
+/** `host:port/serviceName` from those fields, if `host` is set. */
+function easyConnect(section: Record<string, unknown>): string | undefined {
+    const host = optionalString(section, 'host');
+    if (!host) return undefined;
+    const serviceName = optionalString(section, 'serviceName');
+    if (!serviceName) invalid('serviceName is required with host');
+    const port = section.port ?? 1521;
+    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
+        invalid('port must be an integer from 1 to 65535');
+    }
+    return `${host}:${port}/${serviceName}`;
 }
 
 function milliseconds(section: Record<string, unknown>, key: string, fallback: number): number {
@@ -140,8 +198,8 @@ export function resolveConfig(
     }
     if (typeof section !== 'object' || section === null || Array.isArray(section)) invalid('expected an object');
     const s = section as Record<string, unknown>;
-    const connectString = optionalString(s, 'connectString');
-    if (!connectString) invalid('connectString is required');
+    const connectString = optionalString(s, 'connectString') ?? easyConnect(s);
+    if (!connectString) invalid('connectString (or host and serviceName) is required');
     for (const key of ['camelCase', 'dropUnusedBinds']) {
         if (s[key] !== undefined && typeof s[key] !== 'boolean') invalid(`${key} must be a boolean`);
     }
@@ -158,8 +216,11 @@ export function resolveConfig(
         camelCase: s.camelCase === true,
         poolAttributes: poolAttributes as Record<string, unknown>,
         callTimeout: milliseconds(s, 'callTimeout', 30_000),
+        deadlineGrace: s.deadlineGrace === undefined ? undefined : milliseconds(s, 'deadlineGrace', 0),
         pingTimeout: milliseconds(s, 'pingTimeout', 5000),
         dropUnusedBinds: s.dropUnusedBinds === true,
+        bindStyle: oneOf(s, 'bindStyle', ['named', 'positional'], 'named'),
+        bindDialect: oneOf(s, 'bindDialect', ['oracle', 'sqlx'], 'oracle'),
         compatibility,
     };
 }

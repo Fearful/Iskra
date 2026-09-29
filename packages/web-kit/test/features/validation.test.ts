@@ -44,21 +44,32 @@ describe('validate - body', () => {
         });
         expect(res.status).toBe(400);
         const body = (await res.json()) as any;
-        expect(body.success).toBe(false);
+        expect(body.status).toBe(400);
         expect(body.code).toBe('VALIDATION_ERROR');
         expect(body.error).toBe('Invalid body');
         expect(body.details).toBeDefined();
     });
 
-    it('treats a malformed/empty JSON body as {} and validates against it', async () => {
+    it('answers malformed JSON with a 400 instead of validating {}', async () => {
         const app = makeApp();
         const res = await app.request('/users', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: 'not json at all',
         });
-        // {} fails the required-fields schema -> 400.
         expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'Malformed JSON body', status: 400, code: 'BAD_REQUEST' });
+    });
+
+    it('answers a body that is neither JSON nor a form with a 415', async () => {
+        const app = makeApp();
+        const res = await app.request('/users', {
+            method: 'POST',
+            headers: { 'content-type': 'text/plain' },
+            body: 'name=Ada',
+        });
+        expect(res.status).toBe(415);
+        expect(((await res.json()) as { code: string }).code).toBe('UNSUPPORTED_MEDIA_TYPE');
     });
 });
 

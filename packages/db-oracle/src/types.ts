@@ -52,7 +52,14 @@ export interface ConnectionHandle {
     readonly connection: OracleConnectionLike;
     inTransaction: boolean;
     broken?: boolean;
+    /**
+     * A call on it ran past its deadline and still holds it: nothing else
+     * runs on it, and it is dropped without waiting for that call.
+     */
+    lost?: boolean;
     /** A transaction's connection after it committed or rolled back. */
     ended?: boolean;
+    /** Settles when the call running on the connection ends: the driver runs one at a time. */
+    idle?: Promise<void>;
     release(): Promise<void>;
 }

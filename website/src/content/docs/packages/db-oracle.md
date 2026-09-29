@@ -50,6 +50,7 @@ Connect with a user of the app's own that has only the privileges it uses (`CREA
 | Option | Default | |
 |---|---|---|
 | `connectString` | — | Easy Connect (`host:1521/FREEPDB1`, `tcps://…`), a TNS alias or a full descriptor. |
+| `host`, `port`, `serviceName` | —, 1521, — | Instead of `connectString`: they build `host:port/serviceName` (see config-kit's [`fromEnv`](/packages/config-kit/#fromenv-a-kits-section-from-your-variable-names) to read them from your variables). |
 | `user`, `password` | — | |
 | `pool.min` / `pool.max` / `pool.increment` | 0 / 4 / 1 | Connections kept idle, open at most, and opened at a time. |
 | `pool.queueTimeout` | 60000 | Milliseconds a request waits for a free connection before failing (NJS-040). |
@@ -58,11 +59,14 @@ Connect with a user of the app's own that has only the privileges it uses (`CREA
 | `camelCase` | `false` | Kysely only: write `firstName` for the `FIRST_NAME` column, and read rows back in camelCase. |
 | `poolAttributes` | `{}` | Other node-oracledb pool attributes (`walletLocation`, `configDir`…), passed as they are. |
 | `callTimeout` | 30000 | Milliseconds a statement may run before it is cancelled (see [Timeouts](#timeouts-and-cancellation)); 0 for no limit. |
+| `deadlineGrace` | the timeout, at most 5000 | Milliseconds the driver waits past a call's timeout for node-oracledb to cancel it before it gives up on the connection itself (see [Timeouts](#timeouts-and-cancellation)). |
 | `pingTimeout` | 5000 | Milliseconds `ping()` waits before answering `false`. |
 | `dropUnusedBinds` | `false` | Leave out the binds by name that the SQL does not use, instead of failing. |
+| `bindStyle` | `'named'` | `'positional'` compiles binds by name to binds by position (see [Binds by position](#binds-by-position-bindstyle)). |
+| `bindDialect` | `'oracle'` | How `'positional'` reads `:name`: `'oracle'`, or `'sqlx'` for SQL copied from Go. |
 | `compatibility` | `'19c'` | The oldest database the Kysely SQL must run on: `'19c'` refuses what only 23ai understands (see [Kysely](#kysely)); `'23ai'` allows it. |
 
-`start()` opens the pool and runs `SELECT 1 FROM DUAL`, so a wrong password or host fails the app's start; `oracle.serverVersion` then holds the database's major version (19, 21, 23…). `stop()` closes the pool. `ping()` resolves `true` or `false` within `pingTimeout` (it never throws), for readiness checks: with every connection busy it answers `false` in time instead of waiting for one.
+`start()` opens the pool and runs `SELECT 1 FROM DUAL`, so a wrong password or host fails the app's start; `oracle.serverVersion` then holds the database's major version (19, 21, 23…). `stop()` closes the pool. `ping()` resolves `true` or `false` within `pingTimeout` (it never throws), for readiness checks: with every connection busy it answers `false` in time instead of waiting for one, and a connection still running the ping after `pingTimeout` is dropped.
 
 ## Raw SQL
 
@@ -84,11 +88,59 @@ const person = await oracle.queryOne<{ NAME: string }>('SELECT name FROM people 
 await oracle.executeMany('INSERT INTO people (name) VALUES (:name)', [{ name: 'Ana' }, { name: 'Bea' }]);
 ```
 
-Every statement takes options as its last argument: `{ timeout, signal, dropUnusedBinds }` (see [Timeouts](#timeouts-and-cancellation)). Outside a transaction every statement commits on its own.
+Every statement takes options as its last argument: `{ timeout, signal, dropUnusedBinds, bindStyle, bindDialect }` (see [Timeouts](#timeouts-and-cancellation)). Outside a transaction every statement commits on its own.
 
 Binds go by name (`:id` and `{ id }`) or by position (`:1`, `:2` and an array). **Binds by position follow the order in which their placeholders appear in the SQL, not their numbers**: in `WHERE b = :2 AND a = :1`, the first value goes to `:2`. Prefer binds by name.
 
 A bind name that is an Oracle reserved word (`uid`, `date`, `user`, `level`, `size`…) fails with ORA-01745, and Oracle ignores the case of bind names, so `{ id, ID }` is ambiguous: the driver refuses both before sending the statement. A bind the SQL does not use fails (NJS-097/NJS-098); with `dropUnusedBinds` (the option, or the config) it is left out instead, which helps when one object of binds serves several statements.
+
+### Binds by position (`bindStyle`)
+
+With `bindStyle: 'positional'` (in the config, or per statement) the driver compiles binds by name to binds by position before the statement runs, so Oracle never sees a bind name: a param the SQL does not use is left out, a reserved word (`:date`, `:user`) and a name in another case (`:ID` for `{ id }`) just work, and an array expands to an IN list. The OnQuery hook still gets the SQL as written, and OUT binds come back by name.
+
+```typescript
+const oracle = new OracleDriver(); // app.config.oracle = { …, bindStyle: 'positional' }
+
+await oracle.query('SELECT * FROM pedidos WHERE id IN (:ids) AND fecha >= :date', { ids: [1, 2, 3], date, unused: 1 });
+// runs: SELECT * FROM pedidos WHERE id IN (:1, :2, :3) AND fecha >= :4
+```
+
+`bindDialect: 'sqlx'` reads the placeholders as Go's sqlx does, for SQL copied from a Go service: `::` is a literal colon (`TO_CHAR(f, 'HH24::MI')`), names match exactly, and its quirks are kept (a `?` is rebound even inside a string literal). `compileNamed(sql, params, dialect)` does the same on its own.
+
+### One row, pages and typed rows
+
+```typescript
+import { col, rowSpec } from '@iskra-bun/db-oracle';
+
+// A row spec: each field and its column type; `idArea` reads ID_AREA.
+const Usuario = rowSpec({
+    id: col.int(),
+    nombre: col.string(),
+    activo: col.boolean(), // 'S'/'N', 1/0, 'Y'/'N' (a CHAR(1))
+    idArea: col.int(),
+    baja: col.date().nullable(),
+});
+
+const usuario = await oracle.one('SELECT * FROM usuarios WHERE id = :id', { id }, { rows: Usuario });
+// NoRowsError (NOT_FOUND: a 404 in web-kit) when there is none
+
+const page = await oracle.list({
+    // A function of the filters and orders; the counts get orders = null.
+    query: (filters, orders) => usuariosQuery(filters, orders), // { sql, params }
+    filters: { area: 3 },
+    orders: 'nombre',
+    totalFilters: {}, // total counts without the request's filters
+    offset: c.req.query('start'), // DataTables' start and length; or page/pageSize
+    limit: c.req.query('length'),
+    rows: Usuario,
+});
+// { rows, total, filtered, offset, limit, pages }
+```
+
+- `oracle.list()` takes a `query` function (called with the orders for the rows and with `null` for the counts) or plain `sql` and `params`. It adds `OFFSET … FETCH NEXT` to the page's query and counts with `SELECT COUNT(*) FROM (…)`; `count: 'none'` skips the counts. `limit` -1 or null returns every row (up to `maxLimit`, when set); a bad `offset` or `limit` from the request is a `QueryInputError` (400). Its result goes to web-kit's `list(c, page)` as it is.
+- A row spec converts each column: `col.int()` (an integer within 2^53, `col.bigint()` past it), `col.number()`, `col.string()` (a NUMBER as plain decimal text, a DATE as ISO 8601), `col.boolean()`, `col.date()`; `.nullable()` accepts NULL, `.from('COLUMN')` names another column. NULL in a field that is not nullable, or a value that does not convert, is a `RowDecodeError` that names the column but not the value. `rowSpec(spec, { extra: 'ignore' | 'keep' | 'error', missing: 'undefined' | 'zero' | 'error' })` decides about columns the spec does not name and fields whose column is missing (`'error'` and `'zero'` as Go's sqlx). `rows` also takes a Standard Schema (Zod 3.24+).
+- With `fetchAsString: ['number']` NUMBERs arrive as text, exact past 2^53, and `col.bigint()` keeps them so.
+- `query()`, `queryOne()`, `one()` and `list()` take `rows`. The driver and a transaction share one interface, `OracleSession`, for repositories that take either (and a test fake).
 
 ### Binds with a type by name
 
@@ -203,23 +255,18 @@ Inside `transaction(fn)`, `oracle.query()`, `oracle.execute()`, `oracle.db` and 
 ## Pagination, search and sorting
 
 ```typescript
-import { search, sortBy, QueryInputError } from '@iskra-bun/db-oracle';
-import { defineRoute, ValidationError } from '@iskra-bun/web-kit';
+import { search, sortBy } from '@iskra-bun/db-oracle';
+import { defineRoute } from '@iskra-bun/web-kit';
 
 defineRoute({
     method: 'GET',
     path: '/people',
     handler: async (ctx) => {
         const param = (name: string) => ctx.raw.req.query(name);
-        try {
-            let q = oracle.db!.selectFrom('PEOPLE').select(['ID', 'NAME', 'CITY']);
-            q = search(q, ['NAME', 'CITY'], param('q'));
-            q = sortBy(q, param('sort'), ['NAME', 'CITY']).orderBy('ID');
-            return await oracle.paginate(q, { page: param('page'), pageSize: param('pageSize') });
-        } catch (error) {
-            if (error instanceof QueryInputError) throw new ValidationError(error.message);
-            throw error;
-        }
+        let q = oracle.db!.selectFrom('PEOPLE').select(['ID', 'NAME', 'CITY']);
+        q = search(q, ['NAME', 'CITY'], param('q'));
+        q = sortBy(q, param('sort'), ['NAME', 'CITY']).orderBy('ID');
+        return oracle.paginate(q, { page: param('page'), pageSize: param('pageSize') });
     },
 });
 // → { items, total, page, pageSize, pages }
@@ -230,7 +277,7 @@ defineRoute({
 - **`search(query, columns, term)`** keeps the rows where any of `columns` contains `term`, ignoring case (`upper(col) like :term escape '\'`). The term is a bind, and its `%` and `_` match themselves. An empty term leaves the query as it is.
 - **`sortBy(query, sort, allowed)`** orders by a parameter such as `name,-created` (`-` for descending), accepting only the fields in `allowed`. Add a unique column after it to break ties.
 
-A malformed cursor or a field outside `allowed` throws a `QueryInputError` (code `VALIDATION_ERROR`). It comes from the client, so answer 400, as above.
+A malformed cursor or a field outside `allowed` throws a `QueryInputError` (code `VALIDATION_ERROR`). It comes from the client: web-kit answers it 400 with its message (it is marked `expose`); elsewhere, answer 400 yourself.
 
 ## Streaming
 
@@ -280,7 +327,7 @@ END;
 
 ## Timeouts and cancellation
 
-Every statement runs with `callTimeout` (30 s by default): past it, node-oracledb cancels the statement on the database and it fails with a `QueryError` NJS-123, and its connection is dropped from the pool. A statement waiting on a row lock would otherwise never end and hold its connection; with the default pool of 4, a few of them stop the whole service. Set the limit per statement, or cancel with an `AbortSignal` (the statement fails with ORA-01013):
+Every statement runs with `callTimeout` (30 s by default): past it, node-oracledb cancels the statement on the database and it fails with a `QueryError` NJS-123, or, when the database does not take that cancel, the driver gives up on it at its [deadline](#the-deadline); either way its connection is dropped from the pool. A statement waiting on a row lock would otherwise never end and hold its connection; with the default pool of 4, a few of them stop the whole service. Set the limit per statement, or cancel with an `AbortSignal` (the statement fails with ORA-01013):
 
 ```typescript
 await oracle.execute('UPDATE accounts SET balance = :b WHERE id = :id', binds, { timeout: 2000 });
@@ -294,6 +341,22 @@ await oracle.db!.selectFrom('PEOPLE').selectAll().execute({ signal: controller.s
 
 `timeout: 0` lifts the limit (a report, an export). Migrations run without it: building an index may take long. A request waiting for a free connection is bounded by `pool.queueTimeout` instead (NJS-040).
 
+### The deadline
+
+In Thin mode node-oracledb cancels a call by sending the database a break on the same connection, and a session waiting on a row lock does not read it: `callTimeout` then never ends that wait, nor does an `AbortSignal`, and the call and its connection stay taken for good. So the driver does not rely on it alone. Each call (a statement, each fetch of a stream, a commit or a rollback) has a **deadline**: its timeout plus `deadlineGrace` (by default the timeout itself, at most 5 s: a 30 s timeout gives up at 35 s, a 1 s one at 2 s). Past it:
+
+- the call fails with a `DeadlineError` (a `QueryError` with `deadlineMs`);
+- the driver closes the connection's socket, so node-oracledb lets go of it and it leaves the pool at once (with node-oracledb versions or modes where it cannot, it asks node-oracledb to cancel and drops the connection when the call ends);
+- in a transaction, the transaction is lost: the next statements and the commit fail without running, and `transaction()` rethrows.
+
+An abort works the same way: if the statement has not stopped `deadlineGrace` (1 s by default) after the signal, the driver gives up on its connection and the statement fails with ORA-01013.
+
+:::caution
+Giving up does not stop the database. A session waiting on a lock keeps waiting after its socket closes, and runs the statement once the lock frees: outside a transaction, where each statement commits on its own, **the statement may still take effect**. In a transaction it cannot: the session dies when it tries to answer, and the database rolls the transaction back. Run inside `transaction()` what must not apply late.
+:::
+
+A call without a timeout (`timeout: 0`, migrations) has no deadline. `error.timedOut` is `true` for both NJS-123 and a `DeadlineError`. The deadline counts the whole call, so a query that fetches many rows in many round trips needs a `timeout` that covers all of it. Statements of one transaction run one at a time (node-oracledb would queue them anyway), each with its own timeout.
+
 ## Readiness and observability
 
 ```typescript
@@ -306,20 +369,14 @@ health.addReadinessCheck('oracle', () => oracle.ping());
 oracle.setOnQuery((sql, binds) => app.logger.debug({ sql }, 'oracle query'));
 ```
 
-The callback may return a function, called when the statement ends with `{ durationMs, rows, rowsAffected, error }`: the end of a trace span. A stream calls it once, with all the rows it yielded.
+The callback may return a function, called when the statement ends with `{ durationMs, rows, rowsAffected, error }`: the end of a trace span. A stream calls it once, with all the rows it yielded; commits and rollbacks call it too (`COMMIT`, `ROLLBACK`). `setOnQuery()` holds one callback; `oracle.onQuery(callback)` adds one more (a tracer and a logger each keep their own) and returns what removes it.
+
+`instrumentOracle(oracle)` does the tracing: a CLIENT span per statement, commit and rollback (`oracle SELECT`), the child of the span active when it ran (such as core's `traced()`), with `db.system.name`, `db.operation.name`, `db.query.text` (the SQL as written, never the bind values; `queryText: false` leaves it out) and `db.response.returned_rows`; a failure records its error code.
 
 ```typescript
-import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { instrumentOracle } from '@iskra-bun/db-oracle';
 
-const tracer = trace.getTracer('oracle');
-oracle.setOnQuery((sql) => {
-    const span = tracer.startSpan('oracle.query', { attributes: { 'db.system': 'oracle', 'db.statement': sql } });
-    return ({ rows, rowsAffected, error }) => {
-        span.setAttributes({ 'db.rows': rows ?? rowsAffected ?? 0 });
-        if (error) span.setStatus({ code: SpanStatusCode.ERROR, message: error.errorCode });
-        span.end();
-    };
-});
+instrumentOracle(oracle); // the global tracer provider's, or { tracer }
 ```
 
 Binds may hold personal data: log them only where that is acceptable.
@@ -329,9 +386,12 @@ Binds may hold personal data: log them only where that is acceptable.
 | Error | When |
 |---|---|
 | `ConnectionError` | `start()` could not open the pool or reach the database. Its message has Oracle's (`ORA-01017: …`); its context has the connect string and user, never the password. |
-| `QueryError` | A statement failed. `error.errorCode` is the database's or the driver's code, and `error.errorNum` the ORA number; the original error is `cause`. For HTTP: `ORA-00001` (a unique constraint) → 409; `NJS-040` (no free connection within `pool.queueTimeout`) → 503; `NJS-123` (`callTimeout` exceeded) → 503 or 504; `ORA-01013` (cancelled). |
+| `QueryError` | A statement failed. `error.errorCode` is the database's or the driver's code, and `error.errorNum` the ORA number; the original error is `cause`. Its `code` tells web-kit how to answer: `CONFLICT` (409) for `ORA-00001` (a unique constraint), `SERVICE_UNAVAILABLE` (503) for `NJS-040` (no free connection within `pool.queueTimeout`), `TIMEOUT` (504) for `NJS-123` (`callTimeout` exceeded), `QUERY_ERROR` (500) otherwise; the message stays in the log. `error.timedOut` is `true` for NJS-123 and a `DeadlineError`. A PL/SQL `RAISE_APPLICATION_ERROR` (ORA-20000 to ORA-20999) is a `CONFLICT` (409) whose message is the procedure's, without `ORA-20xxx:` and the stack, and is shown to the client; `error.applicationError` has its number and message. |
+| `DeadlineError` | A `QueryError`: a call ran past its [deadline](#the-deadline) and the driver gave up on its connection. `error.deadlineMs` is the deadline; its code is `TIMEOUT` (504). |
 | `MigrationError` | A migration failed (its context names the file and statement), changed after it was applied, or the lock timed out. |
-| `QueryInputError` | A pagination cursor or sort field from the request is not valid: a 400. |
+| `QueryInputError` | A pagination cursor, sort field, `offset` or `limit` from the request is not valid: web-kit answers 400 with its message. |
+| `NoRowsError` | `one()` found no row: a `QueryError` with code `NOT_FOUND` (404). |
+| `RowDecodeError` | A row does not fit its row spec or schema: a `QueryError` (500) that names the column, not the value. |
 | `ConfigError` (core) | `app.config.oracle` is not valid. |
 
 ## Upgrading from 0.1

@@ -23,7 +23,7 @@ describe('resolveConfig', () => {
     });
 
     test.each([
-        [{}, 'connectString is required'],
+        [{}, 'connectString (or host and serviceName) is required'],
         [{ connectString: 1 }, 'connectString must be a string'],
         [{ connectString: 'x', pool: { max: 0 } }, 'pool.max must be at least 1'],
         [{ connectString: 'x', pool: { min: 5, max: 2 } }, 'pool.min cannot be larger than pool.max'],
@@ -108,5 +108,23 @@ describe('fetchTypeHandler', () => {
         expect(extras({ dbType: oracledb.DB_TYPE_NUMBER })).toEqual({ type: oracledb.STRING });
         expect(extras({ dbType: oracledb.DB_TYPE_TIMESTAMP_TZ })).toEqual({ type: oracledb.STRING });
         expect(extras({ dbType: oracledb.DB_TYPE_VARCHAR })).toBeUndefined();
+    });
+});
+
+describe('host, port and serviceName', () => {
+    test('build the Easy Connect string, port 1521 by default', () => {
+        expect(resolveConfig({ host: 'db.intranet', serviceName: 'CORE', user: 'core' })?.connectString).toBe(
+            'db.intranet:1521/CORE',
+        );
+        expect(resolveConfig({ host: 'db', port: 1522, serviceName: 'X' })?.connectString).toBe('db:1522/X');
+        expect(resolveConfig({ connectString: 'tns_alias', host: 'ignored', serviceName: 'Y' })?.connectString).toBe(
+            'tns_alias',
+        );
+    });
+
+    test('need a service name and a valid port', () => {
+        expect(() => resolveConfig({ host: 'db' })).toThrow('serviceName is required with host');
+        expect(() => resolveConfig({ host: 'db', serviceName: 'X', port: 70000 })).toThrow('port must be');
+        expect(() => resolveConfig({ user: 'x' })).toThrow('connectString (or host and serviceName) is required');
     });
 });

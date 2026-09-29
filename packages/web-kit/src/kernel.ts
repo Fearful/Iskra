@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import type { Context, Next } from 'hono';
+import { nodeEnv } from '@iskra-bun/core';
 import type { Feature, KernelConfig, SecurityHeadersConfig } from './types';
 import { consoleLogger, silentLogger, type KernelLogger } from './logging';
 import type { FeatureRegistry } from './feature-registry';
+import { iskraContract, problem, Responder, type ErrorOptions } from './contract';
 
 /**
  * The app's handlers, as `METHOD path`. Middleware (`app.use()`) is
@@ -22,6 +23,7 @@ export class Kernel {
     private features: Map<string, Feature> = new Map();
     private initialized = false;
     private logger: KernelLogger;
+    private readonly responder: Responder;
 
     constructor(config: KernelConfig = {}) {
         this.config = {
@@ -34,19 +36,14 @@ export class Kernel {
         };
         this.logger = config.logger === false ? silentLogger : (config.logger ?? consoleLogger);
         this.app = new Hono();
-
-        // Add default error handler for HTTPException
-        this.app.onError((err: Error, c: Context): Response | Promise<Response> => {
-            // A custom response (e.g. basicAuth's 401 with WWW-Authenticate)
-            // is sent as is.
-            if (err instanceof HTTPException && err.res) return err.getResponse();
-            if (err instanceof HTTPException) {
-                return c.json({ message: err.message }, err.status);
-            }
-
-            this.logger.error('Unhandled error', err);
-            return c.json({ message: 'Internal Server Error' }, 500);
+        this.responder = new Responder(config.contract ?? iskraContract, () => this.logger, {
+            includeStack: config.includeStack ?? nodeEnv() === 'development',
         });
+
+        // Every error and every unmatched route answer by the response
+        // contract (config.contract, Iskra's by default).
+        this.app.onError((err: Error, c: Context) => this.responder.error(err, c));
+        this.app.notFound((c: Context) => this.responder.problem(c, problem(404)));
     }
 
     async initialize(): Promise<void> {
@@ -71,6 +68,11 @@ export class Kernel {
 
         this.validateFeatureDependencies();
         await this.validatePeerDependencies();
+        // The responder first: every middleware after it may answer by the contract.
+        this.app.use('*', async (c: Context, next: Next) => {
+            c.set('responder', this.responder);
+            await next();
+        });
         this.applySecurityHeaders();
 
         // Every feature's middleware first, then every feature's routes: Hono
@@ -103,6 +105,7 @@ export class Kernel {
     }
 
     private applySecurityHeaders(): void {
+        if (this.config.securityHeaders === false) return;
         // User settings are merged over the defaults: passing one option used to
         // replace the whole object and silently drop the other headers.
         // X-XSS-Protection is off by default: the legacy auditor it enables is
@@ -267,6 +270,17 @@ export class Kernel {
     /** The logger features should use (see `KernelConfig.logger`). */
     getLogger(): KernelLogger {
         return this.logger;
+    }
+
+    /** Answers requests by the response contract (see `KernelConfig.contract`). */
+    getResponder(): Responder {
+        return this.responder;
+    }
+
+    /** How errors are reported (ErrorHandlerFeature's options); only before initialize() ends. */
+    configureErrors(options: Partial<ErrorOptions>): void {
+        if (this.initialized) throw new Error('Cannot configure errors after initialization');
+        Object.assign(this.responder.options, options);
     }
 
     /** Replaces the logger; only before initialize() (WebPlugin passes the App's). */

@@ -8,14 +8,18 @@ kits are usable today; the items below are planned but not yet shipped. Contribu
 
 ## Stabilizing the experimental kits 🟡
 
-`@iskra-bun/desktop-kit`, `@iskra-bun/mobile-kit`, and `@iskra-bun/db-oracle`
-ship as **experimental** (`0.x`, breaking changes allowed in minor releases).
+`@iskra-bun/desktop-kit`, `@iskra-bun/mobile-kit`, `@iskra-bun/db-oracle` and
+`@iskra-bun/ldap-kit` ship as **experimental** (`0.x`, breaking changes allowed in minor releases).
 The goal is to harden their APIs and graduate them to stable. See
 [VERSIONING.md](VERSIONING.md).
 
 `db-oracle` now covers what db-kit does (a pool in the app's process, Kysely,
 transactions, pagination, migrations) and runs its suites against Oracle
 Database Free in CI; it graduates once its API has held for a release or two.
+
+`ldap-kit` runs its conformance suite against OpenLDAP in CI; its Active
+Directory behavior is tested against recorded answers. It graduates once it has
+run against a domain controller and its transport interface has held.
 
 ## Test coverage 🟢
 

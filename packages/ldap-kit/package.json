@@ -1,0 +1,82 @@
+{
+    "name": "@iskra-bun/ldap-kit",
+    "version": "0.0.0",
+    "description": "LDAP and Active Directory for Iskra: authentication, users, nested groups and changes (experimental).",
+    "keywords": [
+        "iskra",
+        "bun",
+        "typescript",
+        "ldap",
+        "active-directory",
+        "authentication",
+        "experimental"
+    ],
+    "author": "Joan Lascano",
+    "license": "AGPL-3.0-or-later",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fearful/iskra.git",
+        "directory": "packages/ldap-kit"
+    },
+    "homepage": "https://github.com/fearful/iskra/tree/main/packages/ldap-kit#readme",
+    "bugs": "https://github.com/fearful/iskra/issues",
+    "engines": {
+        "bun": ">=1.3.0"
+    },
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "source": "./src/index.ts",
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        },
+        "./web": {
+            "source": "./src/web.ts",
+            "bun": "./src/web.ts",
+            "types": "./dist/web.d.ts",
+            "import": "./dist/web.js",
+            "default": "./dist/web.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    },
+    "scripts": {
+        "test": "bun test",
+        "build": "tsup --config ../../tsup.config.ts"
+    },
+    "dependencies": {
+        "@iskra-bun/core": "workspace:^",
+        "ldapts": "^9.2.0"
+    },
+    "peerDependencies": {
+        "@iskra-bun/web-kit": "workspace:^",
+        "hono": "^4.12.34"
+    },
+    "peerDependenciesMeta": {
+        "@iskra-bun/web-kit": {
+            "optional": true
+        },
+        "hono": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@iskra-bun/web-kit": "workspace:^",
+        "hono": "^4.12.34",
+        "@types/bun": "^1.3.5",
+        "@types/node": "^22.10.2"
+    }
+}

@@ -10,7 +10,7 @@ The web-kit provides a Hono-based HTTP server with a modular feature system.
 ```typescript
 import { App } from '@iskra-bun/core';
 import { WebPlugin, CorsFeature, HealthCheckFeature } from '@iskra-bun/web-kit';
-import { Hono } from 'hono';
+import { Hono } from '@iskra-bun/web-kit/hono';
 
 const app = new App({ name: 'MiAPI' });
 
@@ -34,6 +34,45 @@ const web = new WebPlugin({
 app.register(web);
 await app.start();
 ```
+
+## Hono
+
+web-kit is written in Hono types (`Kernel.getApp()`, `Feature.routes(app)`, the `c.get(...)` variables), so the app and web-kit must share one copy of `hono`. With two copies, a `HTTPException` thrown by the app is not an `instanceof` the one web-kit checks, and the context variables are typed against the other copy.
+
+`hono` is a **peer dependency** of web-kit (`^4.12.34`): Bun, npm 7+ and pnpm install it, and an app that already lists `hono` must keep it in that range. To not depend on it directly, import it from web-kit:
+
+```typescript
+import { Hono, HTTPException, createMiddleware, isHTTPException, statusText } from '@iskra-bun/web-kit/hono';
+import type { Context, MiddlewareHandler, ContentfulStatusCode } from '@iskra-bun/web-kit/hono';
+```
+
+`isHTTPException(err)` also recognizes a `HTTPException` from another copy of `hono` (an `Error` with an HTTP `status` and `getResponse()`); the Kernel's error handler uses it, so such an exception keeps its status instead of becoming a 500. `statusText(404)` gives `"Not Found"`.
+
+## Routes in groups
+
+`Router` organizes routes in groups with the middleware they share, and decides what a request no route takes gets:
+
+```typescript
+import { Router, WebPlugin } from '@iskra-bun/web-kit';
+
+const api = new Router();
+const v1 = api.group('/api/v1', requestLog); // middleware of every route in the group
+v1.use(auth); // for the routes added after this line
+const users = v1.group('/users', requireScopes('users:read')); // inherits requestLog and auth
+users.get('/me', getMe);
+users.get('/:id', getUser);
+v1.unmatched({ then: 'auto' });
+
+new WebPlugin({ router: api, features: [/* … */] });
+```
+
+- A route runs its groups' middleware (outer first), then its own: `users.get('/:id', audit, getUser)`.
+- `use()` adds middleware to the routes and subgroups added **after** it, as in Echo.
+- Routes are registered by priority, not in the order they were added: a static segment before a parameter before a wildcard (`/users/me` before `/users/:id`), and a route for a method before one for every method (`all()`). Two routes with the same method and path shape (`/users/:id`, `/users/:userId`) throw.
+- `group.unmatched()` handles what no route under the group's prefix takes (an unknown path, a method without a route, a made-up method): it runs the group's middleware (or `use: [...]`), so a guest gets the 401 of the auth check instead of learning which paths exist, then answers **404** by the [response contract](#response-contract). With `then: 'auto'` a path that has routes for other methods answers **405** with `Allow: GET, HEAD, POST`. Paths outside any group with `unmatched()` get the Kernel's 404; the most specific prefix decides; calling it again for a prefix replaces the previous rule.
+- `\:` in a path is a literal colon (`/items\:batch`).
+
+`WebPlugin` compiles the router onto the Kernel's app after every feature's middleware, so security headers, CORS, CSRF or rate limit cover its routes. `router.compile(app)` does it on a Hono app of your own. A plain Hono app still works as `router`: it is mounted at `/`.
 
 ## WebDriver (standalone server)
 
@@ -115,7 +154,7 @@ The Kernel and its features report startup, fallbacks and errors they handle thr
 | `HealthCheckFeature` | Health checks (readiness/liveness) |
 | `OpenAPIFeature` | Swagger/OpenAPI documentation |
 | `LoggerFeature` | Request/response logging |
-| `ErrorHandlerFeature` | Centralized error handling |
+| `ErrorHandlerFeature` | Options for the Kernel's error handler: `includeStack`, a handler per status, a logger |
 | `RequestIdFeature` | Request tracking with a unique ID |
 | `OtelTracingFeature` | OpenTelemetry tracing (`@hono/otel`) |
 | `UploadFeature` | File uploads |
@@ -137,6 +176,30 @@ app.post('/users', validate({ body: z.object({ name: z.string() }) }), (c) => {
 // A JSON Schema has no TypeScript type: name the validated shape.
 app.post('/orders', validateJson<CreateOrder>({ body: orderSchema }), (c) => c.json(c.get('validated').body));
 ```
+
+Inside a handler, `bindBody()` and `bindQuery()` do the same and return the data, typed, or throw a `ValidationError` that the [response contract](#response-contract) answers:
+
+```typescript
+import { bindBody, bindQuery, queryParams } from '@iskra-bun/web-kit';
+
+app.post('/personas', async (c) => {
+    // `{ "NOMBRE": "Ana" }` fills `nombre`, as Go's encoding/json does.
+    const persona = await bindBody(c, personaSchema, { caseInsensitiveKeys: true, allowForm: true });
+    return ok(c, await personas.create(persona), { status: 201 });
+});
+
+app.get('/personas', (c) => {
+    // ?ids=1&ids=2: a field declared as an array takes every value, the others the first.
+    const { ids, q } = bindQuery(c, z.object({ ids: z.array(z.coerce.number()).optional(), q: z.string().optional() }));
+    return list(c, await personas.find({ ids, q }));
+});
+
+queryParams(c); // ?id=1&id=2&q=ana → { id: ['1', '2'], q: 'ana' }
+```
+
+- A body is JSON (`application/json` or `+json`), or a form (urlencoded, multipart) with `allowForm` (repeated fields become arrays). Malformed JSON answers **400** (`BAD_REQUEST`), another content type **415** (`UNSUPPORTED_MEDIA_TYPE`), and an empty body is `{}`. `validate()` and `validateJson()` read it the same way (forms allowed); malformed JSON used to be validated as `{}`.
+- `caseInsensitiveKeys` renames the keys that match the schema's ignoring case, in nested objects and arrays too (it reads a Zod object's shape). In the query a parameter named exactly as the field wins over one that only matches ignoring case. `validate()` takes it as an option too.
+- A failed validation answers 400 `VALIDATION_ERROR` with the failed fields in `details`: Zod's `flatten()` by default, or `details: 'issues'` (`[{ path, message, code }]`), `'fields'` (`{ "address.city": ["Required"] }`) or a function of the issues, per call or for the whole app in the contract's `validationDetails`.
 
 ## DbFeature Schema Generic
 
@@ -187,9 +250,28 @@ const health = new HealthCheckFeature({ includeDetails: true });
 // Expose only on a protected route — not on the public /health
 ```
 
+### Paths and bodies
+
+Each endpoint can move (`path`, `readinessPath`, `livenessPath`) or be left out with `false`; the rate limiter only skips the ones served. `body` replaces an endpoint's JSON with your own, built from a report of what it found:
+
+```typescript
+const health = new HealthCheckFeature({
+    path: false,
+    readinessPath: '/healthcheck/ready',
+    livenessPath: '/healthcheck/live',
+    readinessChecks: { oracle: () => oracle.ping() },
+    body: {
+        live: () => ({ message: 'ok' }),
+        ready: (report) => ({ message: report.ok ? 'ok' : 'unavailable' }),
+    },
+});
+```
+
+The report (`HealthReport`) has `endpoint` (`health`, `ready` or `live`), `ok`, each check by name in `checks` (a custom check's result as it returned it), the names in `failed`, `timestamp` and `uptime`. The status code is still 200 or 503 from `ok`; return a `Response` to choose everything yourself. The report carries the check names whatever `includeDetails` says, so leave out what must not be public.
+
 ## OpenAPI documentation
 
-`OpenAPIFeature` serves the spec of the routes added with `addRoute()` at `/openapi.json`, and an API reference page ([Scalar](https://github.com/scalar/scalar)) at `/docs`:
+`OpenAPIFeature` serves the spec at `/openapi.json`, and an API reference page ([Scalar](https://github.com/scalar/scalar)) at `/docs`. The spec has the routes added with `addRoute()` and the app's own Hono routes that a `describeRoute()` describes (see [below](#routes-without-addroute)):
 
 ```typescript
 new OpenAPIFeature({
@@ -198,17 +280,75 @@ new OpenAPIFeature({
     servers: [{ url: 'https://api.example.com' }],
     // Both routes: false answers 403, a Response is sent as it is.
     authorize: (c) => c.get('user')?.role === 'admin',
+    // routes: 'all', // every Hono route, described or not; false for addRoute()'s only
+    // scalar: 'local', // Scalar from node_modules, nothing from a CDN
     // docs: false,   // serve neither (in production, say)
     // scalar: false, // serve /openapi.json without the page
 });
 ```
 
 - The page loads one pinned `@scalar/api-reference` release from jsDelivr, with its Subresource Integrity hash and `crossorigin="anonymous"`: the browser refuses the script if the CDN serves anything else (it loaded `@latest`, so whatever Scalar published last ran on the app's origin). Update it, or serve it from your own origin, with `scalar: { src, integrity }`, where `integrity` is the `sha384-…` hash of that exact file.
+- Without a CDN (an intranet, a strict CSP): `scalar: 'local'` serves the bundle of the installed `@scalar/api-reference` (an optional peer dependency: `bun add @scalar/api-reference`) from the app itself, at `/docs/scalar.js`, and the page's CSP allows scripts from `'self'` only. `scalar: { file }` does the same with a `standalone.js` you keep on disk. The app reads the file once, on the first request, and computes its SRI hash; a missing package fails at startup. `/docs/scalar.js` is public code and does not go through `authorize`.
 - The page sends its own `Content-Security-Policy`: scripts only from that script's origin, requests only to the app's origin and to the spec's `servers` ("Try it"), nothing else loaded. Scalar's web fonts and its AI agent, which sends the spec to Scalar's servers, are off. The title is HTML-escaped.
 - `/openapi.json` and `/docs` are registered in `routes()`, so middleware added to the app after `initialize()` (a `basicAuth()`, say) does not run for them: use `authorize`, which runs for both. Return a Response to answer with it, such as a Basic auth prompt:
 
 ```typescript
 authorize: (c) => isDocsUser(c) || c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Basic realm="docs"' }),
+```
+
+### Routes without addRoute()
+
+Routes written as plain Hono (on a `Router`, on the Kernel's app, on a Hono app mounted with WebPlugin's `router`) are in the spec too, read from what their handlers carry. `describeRoute()` describes them; at runtime it only calls `next()`:
+
+```typescript
+import { Router, anyOf, apiKey, bearer, describeRoute, requireActor, requireScopes, validate } from '@iskra-bun/web-kit';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+const api = new Router();
+// On a group: every route under it gets the tag and the gate's security.
+const users = api.group('/api/users', describeRoute({ tags: ['Users'] }), requireActor(anyOf(bearer(verify), apiKey(keys))));
+
+users.get('/:id', describeRoute({ summary: 'A user', ok: User }), validate({ params: z.object({ id: z.coerce.number() }) }), getUser);
+users.get('', describeRoute({ summary: 'Users', list: User }), listUsers);
+users.post(
+    '',
+    describeRoute({ summary: 'Create a user', responses: { 201: { schema: User } } }),
+    requireScopes('users:write'),
+    validate({ body: z.object({ name: z.string().min(1) }) }),
+    createUser,
+);
+```
+
+What goes into each operation:
+
+| From | In the spec |
+| --- | --- |
+| `describeRoute({ summary, description, tags, operationId, deprecated })` | As is. A route's tags are added to its groups'; the rest of the route's own overrides the group's. |
+| `describeRoute({ ok: schema })` / `{ list: itemSchema }` | The 200 of `ok(c, data)` / `list(c, page)`, wrapped as the [response contract](#response-contract) answers (`{ success, data, message }`, `{ success, data, meta }`). |
+| `describeRoute({ responses: { 201: { schema, description, contentType, headers } } })` | Those responses. Without any, a `200 OK`. |
+| `describeRoute({ request: { params, query, headers, body, bodyTypes } })` | The request, for a route that reads it with `bindBody()`/`bindQuery()` instead of `validate()`. |
+| `validate()`, `validateJson()` | Path, query and body parameters (JSON, and forms when `allowForm`), and a 400. |
+| `requireActor(gate)` | The gate's security (`anyOf` gives alternatives, `allOf` schemes together) and a 401; the schemes go to `components.securitySchemes` (`bearer`, `jwt`, `apiKey`, `session`). |
+| `identify(gate)` | The gate's security, and `{}`: credentials are optional. |
+| `requireScopes(...scopes)` | The scopes in each security requirement, and a 403. |
+| The contract | A `default` response and the 400/401/403 with the error body (`components.schemas.ErrorResponse`); `problemDetailsContract()` as `application/problem+json`. |
+
+- Schemas can be Zod v3 or v4, any Standard Schema library that exports JSON Schema (Valibot, ArkType) or JSON Schema. A Zod v4 schema named with `.meta({ id: 'User' })` is listed once in `components.schemas` and referenced. What JSON Schema cannot represent (a date, a transform's output) is documented as any value.
+- `describeRoute()` on an `app.use()` path applies to the routes registered after it under that path, as the middleware does at runtime. `describeRoute({ hidden: true })` leaves a route out, `security: []` marks one public under a global `security`.
+- `routes: 'described'` (the default) lists the routes with a `describeRoute()`, on them or on their group; `routes: 'all'` every route with a path OpenAPI can state (no wildcards, a method other than `all()`). An `addRoute()` operation wins over a plain one for the same method and path. Hono's optional (`/:page?`) and regex (`/:id{[0-9]+}`) parameters become two paths and a `pattern`.
+- A contract of your own documents its bodies in `schemas`: `{ error, errorType?, success?(data), list?(item) }`, as JSON Schema. Without `schemas`, the error responses have a description and no body.
+- A gate of your own states its schemes in its `openapi` property: `Object.assign(gate, { openapi: [[{ name: 'mtls', scheme: { type: 'mutualTLS' } }]] })`. A gate without it still gets its 401.
+- `documentRoutes(app.routes, { contract })` builds the same paths without the Feature, for a spec of your own.
+
+## Access log
+
+`LoggerFeature` gives each request a logger (`c.get('logger')`) and, with `accessLog: true`, writes one line per request when it ends. Through WebPlugin they go to the App's pino: the request's logger is its child, so every line carries the `requestId` (register `RequestIdFeature`), and the access line is `request completed` with `method`, `path`, `status`, `durationMs`, `requestId` and `actor` (`kind:id`, from a [gate](#gates-who-made-the-request)) as fields. On the Kernel's console logger they are text.
+
+```typescript
+new WebPlugin({ router, features: [new RequestIdFeature(), new LoggerFeature({ accessLog: true })] });
+// {"level":30,"requestId":"…","method":"GET","path":"/api/users/7","status":200,"durationMs":12,"msg":"request completed"}
 ```
 
 ## Tracing
@@ -228,24 +368,110 @@ new OtelTracingFeature({
 
 ## HTTP Errors
 
+Throw an error from a route or a middleware and the Kernel answers it, with or without `ErrorHandlerFeature`:
+
 ```typescript
 import { HttpError, NotFoundError, ValidationError } from '@iskra-bun/web-kit';
 
-// Tirar un error HTTP
-throw new NotFoundError('Usuario no encontrado');
+throw new NotFoundError('User not found');
+// 404 { "error": "User not found", "status": 404, "code": "NOT_FOUND" }
 
-// Con contexto
-throw new ValidationError('Datos invalidos', zodErrors, {
-    context: { field: 'email' },
-});
+throw new ValidationError('Invalid data', { field: 'email' });
+// 400 { "error": "Invalid data", "status": 400, "code": "VALIDATION_ERROR", "details": { "field": "email" } }
 
-// Error HTTP generico
-throw new HttpError(429, 'Demasiados requests', {
-    code: 'BAD_REQUEST',
+throw new HttpError(423, 'The order is being edited', { headers: { 'Retry-After': '30' } });
+// 423, code BAD_REQUEST (from the status) unless you pass `code`
+```
+
+By default every error answers `{ error, status, code, details?, context?, stack?, requestId? }`, the body the [SDKs](/guides/sdks/) read. How an error becomes that body:
+
+| Thrown | Status and code | `error` (the message) |
+|---|---|---|
+| `HttpError` (and its subclasses) | its own | its message; `context` is sent for a 4xx |
+| Hono's `HTTPException` (what CSRF, the rate limiter and auth throw) | its status; the code of that status (`429` → `RATE_LIMITED`) | its message |
+| Any other `IskraError` | the status of its code (`NOT_FOUND` → 404, `CONFLICT` → 409, `TIMEOUT` → 504, 500 for the rest) | the status text (`Conflict`), or its message if the error has `expose = true` |
+| Anything else | 500 `INTERNAL_ERROR` | `Internal Server Error` |
+
+- A route that does not exist answers **404** `{ "error": "Not Found", "status": 404, "code": "NOT_FOUND" }` (it used to be Hono's plain-text `404 Not Found`).
+- A HEAD request gets the status and headers, without a body.
+- `requestId` is there when `RequestIdFeature` set one.
+- A `HTTPException` that carries its own response (`basicAuth`'s 401) is sent as it is.
+- `includeStack` (`KernelConfig.includeStack` or `ErrorHandlerFeature`, on by default only with `NODE_ENV=development`) adds `stack`, and the message and context of 5xx errors.
+- Errors thrown are logged: a 4xx at `debug` (any client can cause as many as it likes), a 5xx at `error`.
+
+`ErrorHandlerFeature` is optional: it sets `includeStack`, a handler per status (`customHandlers: { 404: (err, c) => … }`) and a `logger` for the errors.
+
+### Error codes
+
+The codes are `ErrorCodes` from `@iskra-bun/core`, and an app adds its own by declaration merging:
+
+```typescript
+declare module '@iskra-bun/core' {
+    interface ErrorCodeRegistry {
+        ORDER_LOCKED: true;
+    }
+}
+
+throw new HttpError(423, 'The order is being edited', { code: 'ORDER_LOCKED' });
+```
+
+`statusForCode('NOT_FOUND')` and `codeForStatus(404)` give the mapping the Kernel uses.
+
+## Response contract
+
+The body of every response comes from one **response contract**, set once in `KernelConfig.contract` (or WebPlugin's): the Kernel's error handler and its 404 follow it, and so do `validate()` and `validateJson()`, OpenAPI's validation hook and routes, the refusals of `ApiKeyFeature`, `AuthFeature`, `PermissionsFeature`, `CsrfFeature`, `RateLimitFeature` and the upload routes, and the `ok()`, `list()` and `fail()` helpers. Iskra's (`iskraContract`) is the default; `problemDetailsContract()` answers [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details (`application/problem+json`).
+
+```typescript
+import { WebPlugin, problemDetailsContract } from '@iskra-bun/web-kit';
+
+new WebPlugin({ router, contract: problemDetailsContract() });
+// 404 { "type": "about:blank", "title": "Not Found", "status": 404, "detail": "Not Found", "code": "NOT_FOUND", "instance": "/x" }
+```
+
+A contract of your own keeps the responses of a service you are migrating. Every error reaches it as a `Problem` (`{ status, code, message, details?, context?, stack?, requestId?, headers? }`):
+
+```typescript
+import type { ResponseContract } from '@iskra-bun/web-kit';
+
+const contract: ResponseContract = {
+    // Your own error classes; undefined leaves the rest to Iskra's mapping.
+    toProblem: (error) =>
+        error instanceof AppError ? { status: statusOf(error.kind), code: 'APP_ERROR', message: error.message } : undefined,
+    // The error body (or a Response).
+    error: (problem, c, error) =>
+        error instanceof AppError
+            ? { error: { code: problem.status, message: problem.message, metadata: error.fields ?? [] } }
+            : { message: problem.message },
+    // The body of ok(c, data) and of list(c, page).
+    success: (data, c, { message }) => ({ ...(message && { message }), data }),
+    list: (page, c) => ({
+        draw: c.req.query('draw') ? Number(c.req.query('draw')) : null,
+        recordsTotal: page.total,
+        recordsFiltered: page.filtered,
+        data: page.items,
+    }),
+    // Sees every problem, also the 400s of a validation.
+    log: (problem, c) => { /* … */ },
+};
+```
+
+In the routes:
+
+```typescript
+import { ok, list, fail } from '@iskra-bun/web-kit';
+
+app.get('/users/:id', async (c) => ok(c, await users.find(c.req.param('id'))));
+app.post('/users', async (c) => ok(c, await users.create(await c.req.json()), { status: 201, message: 'Created' }));
+app.get('/users', async (c) => list(c, await oracle.paginate(query, pageParams(c.req.query()))));
+app.delete('/users/:id', async (c) => {
+    const error = await users.remove(c.req.param('id')); // an error as a value, not thrown
+    return error ? fail(c, error) : c.body(null, 204);
 });
 ```
 
-The `ErrorHandlerFeature` catches these errors automatically and returns them as JSON. It logs client errors (4xx) at `debug` level and server errors (5xx) at `error`: any client can cause as many 4xx as it likes, and they used to fill the error log. A 5xx `HttpError` keeps its message, but its `context` (which tends to describe the server: a DSN, a host) is only sent with `includeStack`.
+`list()` takes db-oracle's `paginate()` and `paginateByCursor()` results as they are (`items` or `rows`, `total`, `filtered`, `page`, `pageSize`, `offset`, `limit`, `pages`, `nextCursor`). With Iskra's contract, `ok()` answers `{ success: true, data, message? }` and `list()` `{ success: true, data, meta: { total, … } }`. `fail(c, error)` answers what throwing `error` would, as a return value.
+
+To turn the security headers off entirely (a proxy sets them), `securityHeaders: false`.
 
 ## Rate limiting and client IP
 
@@ -289,7 +515,7 @@ new Kernel({
 });
 ```
 
-Only `false` turns a default header off (`xFrameOptions: false`). An option that is `undefined`, `null` or empty keeps the default: `xFrameOptions: process.env.X_FRAME_OPTIONS` with the variable unset used to remove the header.
+Only `false` turns a default header off (`xFrameOptions: false`). An option that is `undefined`, `null` or empty keeps the default: `xFrameOptions: process.env.X_FRAME_OPTIONS` with the variable unset used to remove the header. `securityHeaders: false` sets none of them (a proxy in front sets its own).
 
 **Security hardening notes:**
 
@@ -322,6 +548,52 @@ Only `false` turns a default header off (`xFrameOptions: false`). An option that
     ```
 - **Email (`EmailFeature`):** the adapter it provides rejects a message (the returned promise rejects) whose `subject` or `headers` carry a CR/LF, or whose `to`/`cc`/`bcc`/`replyTo` entries are not each one bare address or `{ name, address }` object: see [mailer-kit's recipients](/packages/mailer-kit/#recipients). Object recipients are checked too (they passed as `"[object Object]"`).
 - **Auth (`AuthFeature`):** the underlying `secret` must be **>= 32 characters** (validated by `@iskra-bun/auth-kit`); a shorter or empty secret is rejected at initialization, and so is a sample value in production. See the Auth section.
+
+## Gates: who made the request
+
+A **gate** proves who made a request and returns an **actor** (`{ kind, id, scopes? }`); gates combine, and `requireActor()` puts the actor in `c.var.actor`. They need neither `AuthFeature` nor a database of its own:
+
+```typescript
+import { anyOf, apiKey, hashedKeys, jwt, requireActor, requireScopes, session, staticKeys } from '@iskra-bun/web-kit';
+
+const who = anyOf(
+    jwt({ jwksUri: 'https://idp.example.com/.well-known/jwks.json', issuer: 'https://idp.example.com', audience: 'core' }),
+    apiKey(hashedKeys((hash) => oracle.queryOne('SELECT id, scopes FROM api_keys WHERE key_hash = :hash', { hash }))),
+    session(), // AuthFeature's user
+);
+
+app.get('/reports', requireActor(who), requireScopes('reports:read'), async (c) => {
+    const actor = c.var.actor; // typed as the gates' actors
+    return ok(c, await reports.for(actor.id));
+});
+```
+
+| Gate | Proves |
+|---|---|
+| `bearer(verify)` | a bearer token your function checks (returns the actor, or null to refuse it) |
+| `jwt({ secret \| jwksUri, issuer?, audience?, algorithms?, toActor? })` | a JWT, verified with Hono's JWT utilities: signature, `exp`/`nbf`, issuer, audience. Its actor is `{ kind: 'user', id: sub, scopes: scope \| scp, claims }` |
+| `apiKey(store, { header?, bearer?, query?, toActor? })` | an API key in `X-API-Key` (or the bearer token, or a query parameter) found in a store: `staticKeys([...])` from the config, `hashedKeys(lookup)` from a table that holds `hashApiKey(key)` (SHA-256) instead of the key, or your own `{ find(key) }` |
+| `session()` | the user `AuthFeature` put in `c.get('user')` |
+| `anyOf(...gates)` | the first gate that proves one. A gate that finds its credential invalid does not stop the others (a bearer token may be a JWT or an API key); when none proves one, the first refusal answers |
+| `allOf(...gates)` | every gate (a client certificate and a token); the first one's actor |
+
+- `requireActor(gate)` answers **401** when the request carries no credential, with the gates' `WWW-Authenticate` challenge (`Bearer`), and when it carries an invalid one (`Bearer error="invalid_token"`, `Invalid API key`, `API key has expired`), by the [response contract](#response-contract).
+- `identify(gate)` sets `c.var.actor` when the request proves one and lets a request without credentials through (a public route that shows more to a user); invalid credentials are still a 401.
+- `requireScopes(...scopes)` answers 403 unless the actor has them all; `*` and a trailing `:*` (`users:*`) are wildcards.
+- Under a [Router group](#routes-in-groups), `requireActor()` as the group's middleware also runs for the paths `unmatched()` answers, so a guest gets 401 rather than 404.
+- A gate is a function `(c) => actor | null` that throws a 401 `AuthError` for a bad credential: write your own for anything else (a signed header, mTLS).
+
+Declare the app's actor type once for `c.get('actor')` everywhere:
+
+```typescript
+declare module '@iskra-bun/web-kit' {
+    interface ActorRegistry {
+        actor: { kind: 'user' | 'apiKey'; id: string; scopes?: readonly string[]; legajo?: number };
+    }
+}
+```
+
+`ApiKeyFeature` takes a `store` too (`store: hashedKeys(...)`), looked up after its `staticKeys`.
 
 ## Auth
 
@@ -384,14 +656,4 @@ Requests with a method outside `ignoreMethods` (`GET`, `HEAD` and `OPTIONS` by d
 
 ## Standardized Responses
 
-```typescript
-import { successResponse, errorResponse } from '@iskra-bun/web-kit';
-
-// Exito
-return c.json(successResponse({ id: 1, name: 'Juan' }, 'Creado'));
-// { success: true, data: { id: 1, name: 'Juan' }, message: 'Creado' }
-
-// Error
-return c.json(errorResponse('No encontrado', 'NOT_FOUND'), 404);
-// { success: false, error: 'No encontrado', code: 'NOT_FOUND', timestamp: '...' }
-```
+`ok()` and `list()` (see [Response contract](#response-contract)) build success bodies by the app's contract. `successResponse(data, message)` gives Iskra's `{ success, data, message }` object for code that builds its own response; `errorResponse()` is kept for older code, but an error thrown (or `fail()`) answers by the contract and is logged.

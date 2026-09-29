@@ -149,6 +149,8 @@ export async function startContractServer(port = freePort()): Promise<ContractSe
     app.get('/contract/envelope', (c) => c.json(successResponse({ items: [1, 2, 3] }, 'listed')));
     app.get('/contract/raw', (c) => c.json([{ id: 1 }, { id: 2 }]));
     app.get('/contract/text', (c) => c.text('pong'));
+    // An error with a plain-text body, as a proxy or a non-Iskra service answers.
+    app.get('/contract/text-not-found', (c) => c.text('Not Found', 404));
     app.post('/contract/echo', async (c) => c.json(await c.req.json()));
     app.put('/contract/echo', async (c) => c.json(await c.req.json()));
     app.delete('/contract/echo', (c) => c.body(null, 204));

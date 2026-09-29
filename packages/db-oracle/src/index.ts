@@ -1,6 +1,27 @@
 export * from './driver';
 export * from './errors';
-export type { OracleConfig, OraclePoolConfig, OracleFetchAsString, OracleCompatibility } from './config';
+export type {
+    OracleConfig,
+    OraclePoolConfig,
+    OracleFetchAsString,
+    OracleCompatibility,
+    OracleBindStyle,
+} from './config';
+export { compileNamed, type BindDialect, type CompiledSql } from './named';
+export {
+    col,
+    rowSpec,
+    decodeRows,
+    plainDecimal,
+    RowDecodeError,
+    type Column,
+    type RowDecoder,
+    type RowSpecOptions,
+    type RowsOption,
+    type StandardSchemaLike,
+} from './rows';
+export type { ListOptions, ListResult, ListQuery } from './list';
+export { instrumentOracle, type OracleTracingOptions } from './tracing';
 export type {
     OracleType,
     OracleValue,

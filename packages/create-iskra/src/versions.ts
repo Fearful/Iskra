@@ -11,6 +11,7 @@ export const ISKRA_VERSIONS: Readonly<Record<string, string>> = {
     '@iskra-bun/db-oracle': '0.2.0',
     '@iskra-bun/desktop-kit': '0.1.2',
     '@iskra-bun/kv-kit': '0.3.0',
+    '@iskra-bun/ldap-kit': '0.0.0',
     '@iskra-bun/mailer-kit': '0.2.0',
     '@iskra-bun/mobile-kit': '0.1.2',
     '@iskra-bun/process-kit': '0.3.0',

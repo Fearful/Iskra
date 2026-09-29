@@ -1,14 +1,19 @@
 import type { MiddlewareHandler } from 'hono';
-import { ErrorCodes, errorResponse } from '../responses';
+import { ErrorCodes } from '../responses';
+import { problem, responderOf } from '../contract';
 import { consoleLogger, type KernelLogger } from '../logging';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { matchKeys, queryFor, readBody, validationDetails, type ValidationDetails } from '../bind';
+import { HttpError } from '../errors';
+import { bodyTypes, withRouteDoc } from '../route-docs';
 
 /**
  * A Zod schema, v3 or v4 (web-kit's `z` is v3, the one re-exported for
  * OpenAPI is v4): anything with Zod's `safeParse()`.
  */
 export interface ZodSchemaLike<T = unknown> {
-    safeParse(data: unknown): { success: true; data: T } | { success: false; error: { flatten(): unknown } };
+    safeParse(
+        data: unknown,
+    ): { success: true; data: T } | { success: false; error: { flatten(): unknown; issues?: readonly unknown[] } };
 }
 
 /** Zod schemas for the parts of a request to validate. */
@@ -32,79 +37,91 @@ export interface ValidationOptions {
     /** Where errors are logged (default: the console). */
     logger?: KernelLogger;
     status?: number;
+    /**
+     * Match body and query keys to the schema's ignoring case (`NOMBRE` fills
+     * `nombre`), as Go's encoding/json does. Needs Zod object schemas.
+     */
+    caseInsensitiveKeys?: boolean;
+    /** Accept form bodies (urlencoded, multipart) besides JSON. Default true. */
+    allowForm?: boolean;
+    /** The `details` of a failure; default: the response contract's, else Zod's `flatten()`. */
+    details?: ValidationDetails;
 }
 
 /**
  * Middleware that validates a request's route params, query and/or body with
- * Zod. On failure it answers `status` (400) with the flattened errors; on
- * success the handler reads the parsed data, typed, from `c.get("validated")`:
+ * Zod. On failure it answers `status` (400) with the failed fields in
+ * `details`, by the response contract; malformed JSON is a 400 and a body
+ * that is neither JSON nor a form a 415. On success the handler reads the
+ * parsed data, typed, from `c.get("validated")`:
  *
  * ```ts
  * app.post("/users", validate({ body: z.object({ name: z.string() }) }), (c) => {
  *     const { name } = c.get("validated").body; // string
  * });
  * ```
+ *
+ * A query field declared as an array takes every value of a repeated
+ * parameter (`?id=1&id=2`); the others take the first.
  */
 export function validate<S extends ValidationSchema>(
     schema: S,
     options: ValidationOptions = {},
 ): MiddlewareHandler<{ Variables: { validated: Validated<S> } }> {
-    const { logErrors = true, status = 400, logger = consoleLogger } = options;
+    const { logErrors = true, status = 400, logger = consoleLogger, caseInsensitiveKeys = false } = options;
+    const allowForm = options.allowForm ?? true;
 
-    return async (c, next) => {
+    const middleware: MiddlewareHandler<{ Variables: { validated: Validated<S> } }> = async (c, next) => {
+        /** The part parsed by its schema, or the problem response for it. */
+        const check = (part: ZodSchemaLike, data: unknown, message: string) => {
+            const parsed = part.safeParse(caseInsensitiveKeys ? matchKeys(data, part) : data);
+            if (parsed.success) return { data: parsed.data };
+            const details = validationDetails(c, parsed.error, options.details);
+            return {
+                response: responderOf(c).problem(
+                    c,
+                    problem(status, { code: ErrorCodes.VALIDATION_ERROR, message, details }),
+                ),
+            };
+        };
         try {
             const validated: { params?: unknown; query?: unknown; body?: unknown } = {};
 
             if (schema.params) {
-                const parsed = schema.params.safeParse(c.req.param());
-                if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid route params', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
-                    );
-                }
-                validated.params = parsed.data;
+                const result = check(schema.params, c.req.param(), 'Invalid route params');
+                if (result.response) return result.response;
+                validated.params = result.data;
             }
 
             if (schema.query) {
-                const parsed = schema.query.safeParse(c.req.query());
-                if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid query params', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
-                    );
-                }
-                validated.query = parsed.data;
+                const result = check(
+                    schema.query,
+                    queryFor(c, schema.query, caseInsensitiveKeys),
+                    'Invalid query params',
+                );
+                if (result.response) return result.response;
+                validated.query = result.data;
             }
 
             if (schema.body) {
-                let data: unknown = {};
-                const contentType = c.req.header('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    data = await c.req.json().catch(() => ({}));
-                } else if (
-                    contentType.includes('application/x-www-form-urlencoded') ||
-                    contentType.includes('multipart/form-data')
-                ) {
-                    data = await c.req.parseBody();
-                }
-
-                const parsed = schema.body.safeParse(data);
-                if (!parsed.success) {
-                    return c.json(
-                        errorResponse('Invalid body', ErrorCodes.VALIDATION_ERROR, parsed.error.flatten()),
-                        status as ContentfulStatusCode,
-                    );
-                }
-                validated.body = parsed.data;
+                const body = await readBody(c, { allowForm });
+                const result = check(schema.body, body, 'Invalid body');
+                if (result.response) return result.response;
+                validated.body = result.data;
             }
 
             // Each part present was parsed by its schema; the others are undefined.
             c.set('validated', validated as Validated<S>);
             await next();
         } catch (err) {
+            // Malformed JSON (400) or an unsupported content type (415).
+            if (err instanceof HttpError) return responderOf(c).error(err, c);
             if (logErrors) logger.error('Validation error', err);
-            return c.json(errorResponse('Validation middleware failed', ErrorCodes.INTERNAL_ERROR), 500);
+            return responderOf(c).problem(c, problem(500, { message: 'Validation middleware failed' }), err);
         }
     };
+    // The spec of the routes it is on: their params, query and body, and a 400.
+    return withRouteDoc(middleware, {
+        validates: { ...schema, ...(schema.body ? { bodyTypes: bodyTypes(allowForm) } : {}) },
+    });
 }

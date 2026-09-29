@@ -122,8 +122,15 @@ async def test_async_rate_limit_exposes_retry_after(iskra: IskraClient):
 
 def test_plain_text_error_body(iskra: IskraClient):
     with pytest.raises(NotFoundException) as err:
-        iskra.get("/contract/does-not-exist")
+        iskra.get("/contract/text-not-found")
     assert "Not Found" in str(err.value)
+
+
+def test_unknown_route_is_a_typed_not_found(iskra: IskraClient):
+    with pytest.raises(NotFoundException) as err:
+        iskra.get("/contract/does-not-exist")
+    assert str(err.value) == "Not Found"
+    assert err.value.error_code == "NOT_FOUND"
 
 
 async def test_async_requests(iskra: IskraClient):
