@@ -1,5 +1,0 @@
----
-"@iskra-bun/ldap-kit": minor
----
-
-New experimental kit for LDAP and Active Directory. `LdapDirectory` checks logins (`authenticate()` finds the user with a service account, exactly one match, then binds as the user; an empty password is refused without asking the server, since it would be an anonymous bind; a refusal is `{ ok: false, reason }`, with Active Directory's reasons told apart: disabled, locked, expired, password expired or to change), reads users (`findUser`, `findUserByDN`, with GUIDs, SIDs, userAccountControl and FILETIMEs decoded) and their groups, nested ones in one search on AD and level by level elsewhere, searches page by page, reads what changed since a USN or a date, and pings for a health check. Filter values are escaped (RFC 4515), several URLs fail over, and failures are `LdapError`s with codes web-kit answers (503, 504). `@iskra-bun/ldap-kit/web` adds `ldapPassword(ldap)`, a gate for Basic credentials. It uses ldapts behind `LdapTransport`, an interface of its own, and a conformance suite runs each transport against OpenLDAP.

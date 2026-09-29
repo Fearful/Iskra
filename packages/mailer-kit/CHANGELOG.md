@@ -1,5 +1,14 @@
 # @iskra-bun/mailer-kit
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [e86ed55]
+- Updated dependencies [ae7c798]
+- Updated dependencies [ef10372]
+    - @iskra-bun/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

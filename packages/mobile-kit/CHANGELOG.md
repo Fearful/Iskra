@@ -1,5 +1,14 @@
 # @iskra-bun/mobile-kit
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies [e86ed55]
+- Updated dependencies [ae7c798]
+- Updated dependencies [ef10372]
+    - @iskra-bun/core@0.3.0
+
 ## 0.1.2
 
 ### Patch Changes

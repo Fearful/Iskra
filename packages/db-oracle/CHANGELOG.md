@@ -1,5 +1,37 @@
 # @iskra-bun/db-oracle
 
+## 0.3.0
+
+### Minor Changes
+
+- 6ce8c75: Each call to the database (a statement, each fetch of a stream, a commit, a rollback) now has a deadline measured by the driver: its timeout plus `deadlineGrace` (by default the timeout itself, at most 5 s). In Thin mode node-oracledb cancels a call with a break on the same connection, and a session waiting on a row lock does not read it, so `callTimeout` (and an `AbortSignal`) never ended that wait and the connection was held forever. Past the deadline the call fails with a `DeadlineError`, and the driver closes the connection's socket so it leaves the pool at once; a transaction on it is lost (later statements and the commit fail without running) and the database rolls it back. An abort not honored within `deadlineGrace` (1 s by default) gives up the same way, with ORA-01013. `QueryError.timedOut` is true for NJS-123 and a `DeadlineError`.
+
+    - Statements of one transaction run one at a time, each with its own `callTimeout`: concurrent ones (a `paginate()` inside `transaction()`) overwrote each other's.
+    - `ping()` drops a connection that answers after `pingTimeout`.
+    - A statement given up outside a transaction may still run on the database once its lock frees (as it did before, when the call hung): run inside `transaction()` what must not apply late.
+    - **Breaking:** the deadline counts the whole call, so a query that fetches many rows in many round trips needs a `timeout` that covers all of them.
+
+- e86ed55: A `QueryError`'s `code` now says how to answer it over HTTP, which web-kit's response contract does on its own: `TIMEOUT` (504) for NJS-123 and a `DeadlineError`, `SERVICE_UNAVAILABLE` (503) for NJS-040 (no free connection), `CONFLICT` (409) for ORA-00001 (a unique constraint), and `QUERY_ERROR` (500) for the rest; all of them were `QUERY_ERROR`. A `QueryInputError` (a bad cursor or sort field from the request) is marked `expose`, so web-kit answers it 400 with its message instead of a 500.
+- e4c6278: `fakeOracle()` in `@iskra-bun/db-oracle/testing` answers statements by SQL matchers (a string, a RegExp or a function) with rows, a result, a function or an error, records the calls with the SQL and binds as written, decodes rows by their spec, pages `list()` from the rows it answers, and counts a transaction's commits and rollbacks; `expectAllMatched()` names the rules nothing used. `OracleDatabase` (statements, `transaction()`, `ping()`) is the interface the driver and the fake share, for repositories that take either.
+- e5f41e7: `app.config.oracle` takes `host`, `port` (default 1521) and `serviceName` instead of `connectString`, which they build as `host:port/serviceName`.
+- 904ec94: Helpers for raw SQL resources:
+
+    - `bindStyle: 'positional'` (config or per statement) compiles binds by name to binds by position before a statement runs, so a param the SQL does not use, a reserved word (`:date`) or a name in another case no longer fail it, and an array expands to an IN list; OUT binds come back by name. `bindDialect: 'sqlx'` reads placeholders as Go's sqlx does (`::` is a literal colon), for SQL copied from a Go service. `compileNamed(sql, params, dialect)` does it on its own.
+    - `oracle.list({ query | sql, filters, orders, totalFilters, offset/limit | page/pageSize, rows })` returns a page and its counts (`{ rows, total, filtered, offset, limit, pages }`), as DataTables' recordsTotal and recordsFiltered; a bad offset or limit from the request is a `QueryInputError`.
+    - `oracle.one()` returns the first row or throws a `NoRowsError` (`NOT_FOUND`, a 404 in web-kit).
+    - `rowSpec({ id: col.int(), activo: col.boolean(), … })` decodes each row by column type (a `CHAR(1)` flag, a NUMBER as plain decimal text, a bigint past 2^53), with Go sqlx's rules for extra and missing columns as options; `rows` also takes a Standard Schema. `query()`, `queryOne()`, `one()` and `list()` take it.
+    - A PL/SQL `RAISE_APPLICATION_ERROR` (ORA-20000 to ORA-20999) is a `CONFLICT` whose message (without `ORA-20xxx:` and the stack) is shown to the client; `QueryError.applicationError` has it.
+    - `OracleSession`, the interface the driver and a transaction share; a transaction also has `one()` and `list()`.
+
+- ae7c798: `instrumentOracle(oracle)` traces the driver: a CLIENT span per statement, commit and rollback, the child of the active span, with `db.system.name`, `db.operation.name`, `db.query.text` (the SQL as written, never the bind values) and `db.response.returned_rows`, and the error code of a failure. `oracle.onQuery(callback)` adds a hook besides `setOnQuery()`'s single one (and returns what removes it), and the hooks now see commits and rollbacks.
+
+### Patch Changes
+
+- Updated dependencies [e86ed55]
+- Updated dependencies [ae7c798]
+- Updated dependencies [ef10372]
+    - @iskra-bun/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

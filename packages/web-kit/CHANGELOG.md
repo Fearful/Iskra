@@ -1,5 +1,43 @@
 # @iskra-bun/web-kit
 
+## 0.4.0
+
+### Minor Changes
+
+- ae7c798: `LoggerFeature` writes through the Kernel's logger when it has fields (the App's pino, with WebPlugin): a request's `c.get('logger')` is a child with its `requestId`, and `accessLog: true` writes one `request completed` line per request with `method`, `path`, `status`, `durationMs`, `requestId` and `actor` as fields. It used to write `[INFO]` text to the console whatever the app's logger was. `KernelLogger` takes an optional `child()`, which `fromStructuredLogger()` provides.
+- ef10372: `bindBody(c, schema, options)` and `bindQuery(c, schema, options)` parse a request's body and query in a handler and return them typed, or throw a `ValidationError` the response contract answers. `caseInsensitiveKeys` matches the request's keys to the schema's ignoring case, nested objects and arrays included (`{ "NOMBRE": "Ana" }` fills `nombre`, as Go's encoding/json does); `allowForm` accepts urlencoded and multipart bodies; a query field declared as an array takes every value of a repeated parameter. `queryParams(c)` gives every query parameter, repeated ones as arrays. The `details` of a failed validation can be `'flatten'` (the default), `'issues'`, `'fields'` or a function, per call or in the contract's `validationDetails`. `validate()` takes the same options. core's new `UNSUPPORTED_MEDIA_TYPE` code answers 415.
+
+    **Breaking:** `validate()` and `validateJson()` answer malformed JSON with a 400 (`BAD_REQUEST`) and a body that is neither JSON nor a form with a 415, instead of validating it as `{}`.
+
+- 0a4d6b5: Auth gates prove who made a request and combine: `bearer(verify)`, `jwt({ secret | jwksUri, issuer, audience })` (Hono's JWT utilities, no new dependency), `apiKey(store)` with `staticKeys([...])` or `hashedKeys(lookup)` for keys a database stores as `hashApiKey(key)`, `session()` for AuthFeature's user, `anyOf(...)` and `allOf(...)`. `requireActor(gate)` puts the actor in `c.var.actor`, typed as the gates' (or the app's, declared once in `ActorRegistry`), and answers 401 with a `WWW-Authenticate` challenge by the response contract; `identify(gate)` sets it when present; `requireScopes(...)` answers 403 without the scopes. They need neither AuthFeature nor a database of their own, so a service with its own identity provider and API keys in a table no longer writes them by hand. `ApiKeyFeature` takes a `store` too, looked up after its `staticKeys`, and every `HttpError` subclass takes `headers`.
+- 0d7086f: `HealthCheckFeature` takes a `body` per endpoint (`health`, `ready`, `live`) that builds the response from a `HealthReport` (`endpoint`, `ok`, `checks`, `failed`, `timestamp`, `uptime`), so a service can keep the body its probes already expect (`{ message: 'ok' }`); the status code is still 200 or 503, unless the function returns a `Response`. `path`, `readinessPath` and `livenessPath` accept `false` to leave an endpoint out, and the rate limiter only skips the endpoints served.
+- c596f17: `hono` is now a peer dependency (`^4.12.34`) instead of a dependency, and web-kit re-exports it from `@iskra-bun/web-kit/hono`: `Hono`, `HTTPException`, `createMiddleware`, the `Context`/`MiddlewareHandler`/`Env`/`Next` types and the status code types, plus `isHTTPException()` and `statusText()`. An app that imported `hono` on its own could get a second copy, and then a `HTTPException` it threw was not an `instanceof` web-kit's: the Kernel's error handler and `ErrorHandlerFeature` answered it with a 500. Both now recognize a `HTTPException` from any copy by its shape, so it keeps its status. The unused `@hono/zod-validator` dependency is gone. **Breaking:** with a package manager that does not install peers (Yarn 1), add `hono` to the app.
+- 831f70e: OpenAPIFeature documents the app's plain Hono routes, not only those added with `addRoute()`. `describeRoute({ summary, tags, ok, list, responses, request, security, hidden })` describes a route, or every route of a group or `app.use()` path it is on; `validate()` and `validateJson()` add the route's params, query and body and a 400, `requireActor(gate)` the gate's security schemes and a 401 (`anyOf` as alternatives, `allOf` together), `identify()` optional credentials, `requireScopes()` the scopes and a 403. `ok` and `list` are wrapped as the response contract answers, and every described operation gets the contract's error body as `default`: contracts carry their bodies' JSON Schemas in a new `schemas` field (`iskraContract` and `problemDetailsContract()` do). Schemas may be Zod v3 or v4, Standard Schema with JSON Schema, or JSON Schema; Zod v4 schemas named with `.meta({ id })` go to `components.schemas`. `routes: 'described'` (the default) lists described routes, `'all'` every route, `false` none. `documentRoutes(app.routes)` builds the same paths without the Feature.
+
+    `scalar: 'local'` serves the Scalar bundle of the installed `@scalar/api-reference` (a new optional peer dependency) from the app at `/docs/scalar.js`, and `scalar: { file }` a bundle from disk, so `/docs` loads nothing from a CDN and its CSP allows scripts from `'self'` only.
+
+- e86ed55: Every response follows one response contract, set once in `KernelConfig.contract` (or WebPlugin's): the Kernel's error handler and its 404, `validate()`, `validateJson()`, OpenAPI's validation hook and routes, the upload routes, WebDriver, the features that refuse a request (they throw Hono's `HTTPException`) and the new `ok(c, data)`, `list(c, page)` and `fail(c, error)` helpers. There were five error shapes (`{ message }`, `{ error, status }`, `{ error, status, code }`, `{ success: false, error, code, details, timestamp }`, `{ error }`) and Hono's plain-text 404. `iskraContract` is the default, `problemDetailsContract()` answers RFC 9457 problem details, and an app's own contract (`toProblem`, `error`, `success`, `list`, `log`) keeps the responses of a service it migrates.
+
+    - The default error body is `{ error, status, code, details?, context?, stack?, requestId? }`, what the SDKs read, with or without `ErrorHandlerFeature`, which now only sets `includeStack`, `customHandlers` and `logger`. A `HTTPException` gets the code of its status (`429` → `RATE_LIMITED`) and the request id; any other `IskraError` answers the status of its code (`NOT_FOUND` → 404, `TIMEOUT` → 504) and shows its message only when marked `expose`. A HEAD request gets no body.
+    - `throw new NotFoundError()` without `ErrorHandlerFeature` answered 500; it answers 404.
+    - WebDriver answered every thrown error with a 500, a `ValidationError` too; an `HttpError` now keeps its status.
+    - `HttpError` takes `headers` (`Retry-After`, `WWW-Authenticate`), and its code defaults to its status's (`codeForStatus`) instead of `INTERNAL_ERROR`. `statusForCode` and `codeForStatus` are exported.
+    - `KernelConfig.includeStack` (default only with NODE_ENV=development) and `securityHeaders: false`, which sets none of the security headers.
+    - **Breaking:** a route that does not exist answers a JSON 404 (`{ "error": "Not Found", "status": 404, "code": "NOT_FOUND" }`) instead of Hono's plain text, the Kernel's default error body is no longer `{ message }`, and a failed validation answers `{ error, status, code, details }` without `success` and `timestamp`.
+
+- 3f1a9d8: `Router` groups routes with the middleware they share: `router.group(prefix, ...middleware)`, subgroups that inherit it, and `use()` for the routes added after it. Routes are registered by priority (a static segment before a parameter before a wildcard, a named method before `all()`), so `/users/me` wins over `/users/:id` whatever the order they were added, and a route added twice throws. `group.unmatched()` answers what no route under the prefix takes: it runs the group's middleware (or `use`) first, so a guest gets the auth check's 401 rather than a 404 that reveals which paths exist, then 404, or 405 with `Allow` with `then: 'auto'`, by the response contract. `WebPlugin`'s `router` takes a `Router` (compiled after the features' middleware) or a Hono app as before.
+- e4c6278: `createTestKernel({ router, features, ...config })` in `@iskra-bun/web-kit/testing` builds the app as WebPlugin does (features first, then the routes, with the same code) without a port, and returns `{ app, kernel, request, close }`. `mountRoutes()` is the code both use.
+
+### Patch Changes
+
+- Updated dependencies [e86ed55]
+- Updated dependencies [ae7c798]
+- Updated dependencies [ef10372]
+    - @iskra-bun/core@0.3.0
+    - @iskra-bun/auth-kit@0.2.1
+    - @iskra-bun/mailer-kit@0.2.1
+    - @iskra-bun/storage-kit@0.2.1
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # create-iskra
 
+## 0.1.2
+
+### Patch Changes
+
+- 091f5bb: New projects are scaffolded with the package versions of this release (`@iskra-bun/core` 0.3.0, `@iskra-bun/web-kit` 0.4.0, ...) and know `@iskra-bun/ldap-kit`.
+
 ## 0.1.1
 
 ### Patch Changes

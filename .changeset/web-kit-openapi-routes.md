@@ -1,7 +1,0 @@
----
-"@iskra-bun/web-kit": minor
----
-
-OpenAPIFeature documents the app's plain Hono routes, not only those added with `addRoute()`. `describeRoute({ summary, tags, ok, list, responses, request, security, hidden })` describes a route, or every route of a group or `app.use()` path it is on; `validate()` and `validateJson()` add the route's params, query and body and a 400, `requireActor(gate)` the gate's security schemes and a 401 (`anyOf` as alternatives, `allOf` together), `identify()` optional credentials, `requireScopes()` the scopes and a 403. `ok` and `list` are wrapped as the response contract answers, and every described operation gets the contract's error body as `default`: contracts carry their bodies' JSON Schemas in a new `schemas` field (`iskraContract` and `problemDetailsContract()` do). Schemas may be Zod v3 or v4, Standard Schema with JSON Schema, or JSON Schema; Zod v4 schemas named with `.meta({ id })` go to `components.schemas`. `routes: 'described'` (the default) lists described routes, `'all'` every route, `false` none. `documentRoutes(app.routes)` builds the same paths without the Feature.
-
-`scalar: 'local'` serves the Scalar bundle of the installed `@scalar/api-reference` (a new optional peer dependency) from the app at `/docs/scalar.js`, and `scalar: { file }` a bundle from disk, so `/docs` loads nothing from a CDN and its CSP allows scripts from `'self'` only.

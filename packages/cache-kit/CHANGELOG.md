@@ -1,5 +1,15 @@
 # @iskra-bun/cache-kit
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [e86ed55]
+- Updated dependencies [ae7c798]
+- Updated dependencies [ef10372]
+    - @iskra-bun/core@0.3.0
+    - @iskra-bun/kv-kit@0.3.1
+
 ## 0.2.0
 
 ### Minor Changes

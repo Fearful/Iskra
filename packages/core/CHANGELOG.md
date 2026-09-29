@@ -1,5 +1,13 @@
 # @iskra-bun/core
 
+## 0.3.0
+
+### Minor Changes
+
+- e86ed55: `ErrorCode` accepts an app's own codes: declare them by merging into `ErrorCodeRegistry` (`declare module '@iskra-bun/core' { interface ErrorCodeRegistry { ORDER_LOCKED: true } }`) and use them in `IskraError`/`HttpError`. It was a closed union of Iskra's codes. New codes: `METHOD_NOT_ALLOWED`, `PAYLOAD_TOO_LARGE`, `RATE_LIMITED`, `SERVICE_UNAVAILABLE` and `TIMEOUT`.
+- ae7c798: `traced(name, fn)` wraps a function in an OpenTelemetry span named by its layer, domain and method (`repo.usuarios.buscar`): active while it runs, so spans started inside are its children, and marked as an error on a throw or a rejection. `@opentelemetry/api` is now a dependency (without an SDK the spans are no-ops).
+- ef10372: New error code `UNSUPPORTED_MEDIA_TYPE`, which web-kit answers with a 415.
+
 ## 0.2.0
 
 ### Minor Changes

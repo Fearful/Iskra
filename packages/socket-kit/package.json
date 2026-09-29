@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/socket-kit",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "WebSocket nativo de Bun para Iskra, con router y broadcast.",
     "keywords": [
         "iskra",

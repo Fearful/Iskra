@@ -1,6 +1,6 @@
 {
     "name": "@iskra-bun/ldap-kit",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "LDAP and Active Directory for Iskra: authentication, users, nested groups and changes (experimental).",
     "keywords": [
         "iskra",
