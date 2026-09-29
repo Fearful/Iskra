@@ -127,6 +127,16 @@ export interface OracleTransaction<DB> extends OracleSession {
     db: Kysely<DB>;
 }
 
+/**
+ * The driver as a repository needs it: statements, transactions and a ping.
+ * `OracleDriver` and `fakeOracle()` (`@iskra-bun/db-oracle/testing`) are both one.
+ */
+export interface OracleDatabase extends OracleSession {
+    transaction<R>(fn: (tx: OracleSession) => Promise<R>): Promise<R>;
+    /** True when the database answers in time; never throws. */
+    ping(): Promise<boolean>;
+}
+
 /** Errors after which a connection is dropped instead of going back to the pool. */
 const DROP_ON = new Set([
     'NJS-123',
@@ -189,7 +199,7 @@ async function loadOracledb(): Promise<OracledbModule> {
  * migrations. Configured by `app.config.oracle`, or ORA_CONN, ORA_USER and
  * ORA_PASSWORD; without either it does not start.
  */
-export class OracleDriver<DB = Record<string, never>> implements Driver, OracleSession {
+export class OracleDriver<DB = Record<string, never>> implements Driver, OracleDatabase {
     name = 'OracleDriver';
     /** Kysely over the pool, typed by `DB`; set by start(). */
     public db: Kysely<DB> | undefined;
