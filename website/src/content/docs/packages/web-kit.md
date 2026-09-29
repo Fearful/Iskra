@@ -491,6 +491,52 @@ Only `false` turns a default header off (`xFrameOptions: false`). An option that
 - **Email (`EmailFeature`):** the adapter it provides rejects a message (the returned promise rejects) whose `subject` or `headers` carry a CR/LF, or whose `to`/`cc`/`bcc`/`replyTo` entries are not each one bare address or `{ name, address }` object: see [mailer-kit's recipients](/packages/mailer-kit/#recipients). Object recipients are checked too (they passed as `"[object Object]"`).
 - **Auth (`AuthFeature`):** the underlying `secret` must be **>= 32 characters** (validated by `@iskra-bun/auth-kit`); a shorter or empty secret is rejected at initialization, and so is a sample value in production. See the Auth section.
 
+## Gates: who made the request
+
+A **gate** proves who made a request and returns an **actor** (`{ kind, id, scopes? }`); gates combine, and `requireActor()` puts the actor in `c.var.actor`. They need neither `AuthFeature` nor a database of its own:
+
+```typescript
+import { anyOf, apiKey, hashedKeys, jwt, requireActor, requireScopes, session, staticKeys } from '@iskra-bun/web-kit';
+
+const who = anyOf(
+    jwt({ jwksUri: 'https://idp.example.com/.well-known/jwks.json', issuer: 'https://idp.example.com', audience: 'core' }),
+    apiKey(hashedKeys((hash) => oracle.queryOne('SELECT id, scopes FROM api_keys WHERE key_hash = :hash', { hash }))),
+    session(), // AuthFeature's user
+);
+
+app.get('/reports', requireActor(who), requireScopes('reports:read'), async (c) => {
+    const actor = c.var.actor; // typed as the gates' actors
+    return ok(c, await reports.for(actor.id));
+});
+```
+
+| Gate | Proves |
+|---|---|
+| `bearer(verify)` | a bearer token your function checks (returns the actor, or null to refuse it) |
+| `jwt({ secret \| jwksUri, issuer?, audience?, algorithms?, toActor? })` | a JWT, verified with Hono's JWT utilities: signature, `exp`/`nbf`, issuer, audience. Its actor is `{ kind: 'user', id: sub, scopes: scope \| scp, claims }` |
+| `apiKey(store, { header?, bearer?, query?, toActor? })` | an API key in `X-API-Key` (or the bearer token, or a query parameter) found in a store: `staticKeys([...])` from the config, `hashedKeys(lookup)` from a table that holds `hashApiKey(key)` (SHA-256) instead of the key, or your own `{ find(key) }` |
+| `session()` | the user `AuthFeature` put in `c.get('user')` |
+| `anyOf(...gates)` | the first gate that proves one. A gate that finds its credential invalid does not stop the others (a bearer token may be a JWT or an API key); when none proves one, the first refusal answers |
+| `allOf(...gates)` | every gate (a client certificate and a token); the first one's actor |
+
+- `requireActor(gate)` answers **401** when the request carries no credential, with the gates' `WWW-Authenticate` challenge (`Bearer`), and when it carries an invalid one (`Bearer error="invalid_token"`, `Invalid API key`, `API key has expired`), by the [response contract](#response-contract).
+- `identify(gate)` sets `c.var.actor` when the request proves one and lets a request without credentials through (a public route that shows more to a user); invalid credentials are still a 401.
+- `requireScopes(...scopes)` answers 403 unless the actor has them all; `*` and a trailing `:*` (`users:*`) are wildcards.
+- Under a [Router group](#routes-in-groups), `requireActor()` as the group's middleware also runs for the paths `unmatched()` answers, so a guest gets 401 rather than 404.
+- A gate is a function `(c) => actor | null` that throws a 401 `AuthError` for a bad credential: write your own for anything else (a signed header, mTLS).
+
+Declare the app's actor type once for `c.get('actor')` everywhere:
+
+```typescript
+declare module '@iskra-bun/web-kit' {
+    interface ActorRegistry {
+        actor: { kind: 'user' | 'apiKey'; id: string; scopes?: readonly string[]; legajo?: number };
+    }
+}
+```
+
+`ApiKeyFeature` takes a `store` too (`store: hashedKeys(...)`), looked up after its `staticKeys`.
+
 ## Auth
 
 `AuthFeature` wraps Better Auth (powered by [`@iskra-bun/auth-kit`](/packages/auth-kit/)) and depends on `DbFeature`. It supports `email` (email/password) and `oidc` modes.

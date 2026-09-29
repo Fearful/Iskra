@@ -9,6 +9,7 @@ export * from './driver';
 export * from './server';
 export * from './router';
 export * from './group-router';
+export * from './gates';
 export * from './client-ip';
 
 // Features

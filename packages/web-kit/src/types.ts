@@ -6,6 +6,7 @@ import type { ClientIpHeader, TrustProxy } from './client-ip';
 import type { KernelLogger } from './logging';
 import type { Kernel } from './kernel';
 import type { ResponseContract } from './contract';
+import type { KeyStore } from './gates';
 
 export type { Kernel };
 
@@ -108,6 +109,11 @@ export interface ApiKeyMetadata {
 
 export interface ApiKeyConfig {
     staticKeys?: Array<Partial<ApiKeyMetadata> & { key: string }>;
+    /**
+     * Keys looked up on each request after `staticKeys`, such as a database
+     * table: `hashedKeys((hash) => …)` or any `KeyStore`.
+     */
+    store?: KeyStore;
     headerName?: string;
     queryParamName?: string;
     extractStrategies?: ('header' | 'bearer' | 'query' | 'custom')[];

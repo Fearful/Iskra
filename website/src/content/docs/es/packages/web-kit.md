@@ -491,6 +491,52 @@ Solo `false` desactiva un header por defecto (`xFrameOptions: false`). Una opcio
 - **Email (`EmailFeature`):** el adaptador que entrega rechaza un mensaje (la promesa que devuelve se rechaza) cuyo `subject` o `headers` lleven un CR/LF, o cuyas entradas de `to`/`cc`/`bcc`/`replyTo` no sean cada una una sola direccion o un objeto `{ name, address }`: ver [destinatarios en mailer-kit](/es/packages/mailer-kit/#destinatarios). Los destinatarios de tipo objeto tambien se revisan (pasaban como `"[object Object]"`).
 - **Auth (`AuthFeature`):** el `secret` subyacente debe tener **>= 32 caracteres** (validado por `@iskra-bun/auth-kit`); un secreto mas corto o vacio se rechaza al inicializar, igual que un valor de ejemplo en produccion. Ver la seccion de Auth.
 
+## Gates: quién hizo el request
+
+Un **gate** prueba quién hizo un request y devuelve un **actor** (`{ kind, id, scopes? }`); los gates se combinan, y `requireActor()` deja el actor en `c.var.actor`. No necesitan `AuthFeature` ni una base propia:
+
+```typescript
+import { anyOf, apiKey, hashedKeys, jwt, requireActor, requireScopes, session, staticKeys } from '@iskra-bun/web-kit';
+
+const who = anyOf(
+    jwt({ jwksUri: 'https://idp.example.com/.well-known/jwks.json', issuer: 'https://idp.example.com', audience: 'core' }),
+    apiKey(hashedKeys((hash) => oracle.queryOne('SELECT id, scopes FROM api_keys WHERE key_hash = :hash', { hash }))),
+    session(), // el usuario de AuthFeature
+);
+
+app.get('/reports', requireActor(who), requireScopes('reports:read'), async (c) => {
+    const actor = c.var.actor; // tipado como los actores de los gates
+    return ok(c, await reports.for(actor.id));
+});
+```
+
+| Gate | Prueba |
+|---|---|
+| `bearer(verify)` | un bearer token que chequea tu función (devuelve el actor, o null para rechazarlo) |
+| `jwt({ secret \| jwksUri, issuer?, audience?, algorithms?, toActor? })` | un JWT, verificado con las utilidades de JWT de Hono: firma, `exp`/`nbf`, issuer, audience. Su actor es `{ kind: 'user', id: sub, scopes: scope \| scp, claims }` |
+| `apiKey(store, { header?, bearer?, query?, toActor? })` | una API key en `X-API-Key` (o en el bearer token, o en un parámetro de query) encontrada en un store: `staticKeys([...])` desde la config, `hashedKeys(lookup)` desde una tabla que guarda `hashApiKey(key)` (SHA-256) en vez de la clave, o uno propio `{ find(key) }` |
+| `session()` | el usuario que `AuthFeature` dejó en `c.get('user')` |
+| `anyOf(...gates)` | el primer gate que prueba uno. Un gate que encuentra su credencial inválida no frena a los demás (un bearer token puede ser un JWT o una API key); si ninguno prueba uno, responde el primer rechazo |
+| `allOf(...gates)` | todos los gates (un certificado de cliente y un token); el actor del primero |
+
+- `requireActor(gate)` responde **401** cuando el request no trae credencial, con el challenge `WWW-Authenticate` de los gates (`Bearer`), y cuando trae una inválida (`Bearer error="invalid_token"`, `Invalid API key`, `API key has expired`), según el [contrato de respuestas](#contrato-de-respuestas).
+- `identify(gate)` pone `c.var.actor` cuando el request prueba uno y deja pasar un request sin credenciales (una ruta pública que muestra más a un usuario); las credenciales inválidas siguen siendo un 401.
+- `requireScopes(...scopes)` responde 403 salvo que el actor los tenga todos; `*` y un `:*` al final (`users:*`) son comodines.
+- Bajo un [grupo del Router](#rutas-en-grupos), `requireActor()` como middleware del grupo también corre para los paths que responde `unmatched()`, así un invitado recibe 401 y no 404.
+- Un gate es una función `(c) => actor | null` que lanza un `AuthError` 401 para una credencial mala: escribe el tuyo para cualquier otra cosa (un header firmado, mTLS).
+
+Declara una vez el tipo de actor de la app para `c.get('actor')` en todos lados:
+
+```typescript
+declare module '@iskra-bun/web-kit' {
+    interface ActorRegistry {
+        actor: { kind: 'user' | 'apiKey'; id: string; scopes?: readonly string[]; legajo?: number };
+    }
+}
+```
+
+`ApiKeyFeature` también acepta un `store` (`store: hashedKeys(...)`), que consulta después de sus `staticKeys`.
+
 ## Auth
 
 `AuthFeature` envuelve Better Auth (impulsado por [`@iskra-bun/auth-kit`](/packages/auth-kit/)) y depende de `DbFeature`. Soporta los modos `email` (email/password) y `oidc`.
