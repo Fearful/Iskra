@@ -2,6 +2,7 @@ import type { Feature, ErrorHandlerConfig } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { isHTTPException } from '../hono';
 import { IskraError, nodeEnv } from '@iskra-bun/core';
 import { HttpError, ValidationError } from '../errors';
 import { consoleLogger, type KernelLogger } from '../logging';
@@ -34,7 +35,7 @@ export class ErrorHandlerFeature implements Feature {
 
     private handleError(err: Error | HTTPException, c: Context): Response {
         const clientErrorStatus =
-            (err instanceof HttpError || err instanceof HTTPException) && err.status < 500 ? err.status : undefined;
+            (err instanceof HttpError || isHTTPException(err)) && err.status < 500 ? err.status : undefined;
         if (this.config.logger) {
             this.config.logger(err as Error, c);
         } else if (clientErrorStatus) {
@@ -101,8 +102,8 @@ export class ErrorHandlerFeature implements Feature {
             return c.json(response, status);
         }
 
-        // Hono HTTPException nativa
-        if (err instanceof HTTPException) {
+        // Hono HTTPException, also from another copy of hono in the app
+        if (isHTTPException(err)) {
             const status = err.status;
             if (this.config.customHandlers?.[status]) {
                 return this.config.customHandlers[status](err, c);

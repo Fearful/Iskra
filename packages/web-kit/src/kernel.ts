@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import type { Context, Next } from 'hono';
 import type { Feature, KernelConfig, SecurityHeadersConfig } from './types';
 import { consoleLogger, silentLogger, type KernelLogger } from './logging';
 import type { FeatureRegistry } from './feature-registry';
+import { isHTTPException } from './hono';
 
 /**
  * The app's handlers, as `METHOD path`. Middleware (`app.use()`) is
@@ -38,9 +38,10 @@ export class Kernel {
         // Add default error handler for HTTPException
         this.app.onError((err: Error, c: Context): Response | Promise<Response> => {
             // A custom response (e.g. basicAuth's 401 with WWW-Authenticate)
-            // is sent as is.
-            if (err instanceof HTTPException && err.res) return err.getResponse();
-            if (err instanceof HTTPException) {
+            // is sent as is. isHTTPException, not instanceof: a HTTPException
+            // from another copy of hono in the app is still one.
+            if (isHTTPException(err) && err.res) return err.getResponse();
+            if (isHTTPException(err)) {
                 return c.json({ message: err.message }, err.status);
             }
 

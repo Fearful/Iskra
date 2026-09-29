@@ -10,7 +10,7 @@ El web-kit provee un servidor HTTP basado en Hono con un sistema modular de feat
 ```typescript
 import { App } from '@iskra-bun/core';
 import { WebPlugin, CorsFeature, HealthCheckFeature } from '@iskra-bun/web-kit';
-import { Hono } from 'hono';
+import { Hono } from '@iskra-bun/web-kit/hono';
 
 const app = new App({ name: 'MiAPI' });
 
@@ -34,6 +34,19 @@ const web = new WebPlugin({
 app.register(web);
 await app.start();
 ```
+
+## Hono
+
+web-kit está escrito con tipos de Hono (`Kernel.getApp()`, `Feature.routes(app)`, las variables de `c.get(...)`), así que la app y web-kit tienen que compartir una sola copia de `hono`. Con dos copias, un `HTTPException` que lanza la app no es `instanceof` del que chequea web-kit, y las variables del contexto quedan tipadas contra la otra copia.
+
+`hono` es una **peer dependency** de web-kit (`^4.12.34`): Bun, npm 7+ y pnpm la instalan, y una app que ya declara `hono` tiene que mantenerla en ese rango. Para no depender de `hono` directamente, impórtalo desde web-kit:
+
+```typescript
+import { Hono, HTTPException, createMiddleware, isHTTPException, statusText } from '@iskra-bun/web-kit/hono';
+import type { Context, MiddlewareHandler, ContentfulStatusCode } from '@iskra-bun/web-kit/hono';
+```
+
+`isHTTPException(err)` también reconoce un `HTTPException` de otra copia de `hono` (un `Error` con un `status` HTTP y `getResponse()`); lo usan el manejador de errores del Kernel y `ErrorHandlerFeature`, así que esa excepción conserva su status en vez de convertirse en un 500. `statusText(404)` devuelve `"Not Found"`.
 
 ## WebDriver (servidor standalone)
 
