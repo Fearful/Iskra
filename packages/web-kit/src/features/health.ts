@@ -1,4 +1,4 @@
-import type { Feature, HealthCheckConfig } from '../types';
+import type { Feature, HealthBody, HealthCheckConfig, HealthReport } from '../types';
 import type { Kernel } from '../kernel';
 import type { Context, Hono } from 'hono';
 import { consoleLogger, type KernelLogger } from '../logging';
@@ -17,19 +17,26 @@ export class HealthCheckFeature implements Feature {
     private log: KernelLogger = consoleLogger;
 
     private kernel?: Kernel;
-    private config: Required<Omit<HealthCheckConfig, 'checks' | 'readinessChecks'>> & {
+    private config: {
+        path: string | false;
+        readinessPath: string | false;
+        livenessPath: string | false;
+        includeDetails: boolean;
+        checkTimeoutMs: number;
         checks?: HealthCheckConfig['checks'];
+        body: NonNullable<HealthCheckConfig['body']>;
     };
     private readinessChecks: Map<string, () => Promise<boolean>>;
 
     constructor(config: HealthCheckConfig = {}) {
         this.config = {
-            path: config.path || '/health',
-            readinessPath: config.readinessPath || '/health/ready',
-            livenessPath: config.livenessPath || '/health/live',
+            path: config.path === false ? false : config.path || '/health',
+            readinessPath: config.readinessPath === false ? false : config.readinessPath || '/health/ready',
+            livenessPath: config.livenessPath === false ? false : config.livenessPath || '/health/live',
             includeDetails: config.includeDetails !== undefined ? config.includeDetails : false,
             checkTimeoutMs: config.checkTimeoutMs ?? 2000,
             checks: config.checks,
+            body: config.body ?? {},
         };
         const initial = config.readinessChecks ?? {};
         this.readinessChecks = new Map(Object.entries(initial));
@@ -37,7 +44,9 @@ export class HealthCheckFeature implements Feature {
 
     /** The routes this feature serves, which the rate limiter leaves out by default. */
     get paths(): string[] {
-        return [this.config.path, this.config.readinessPath, this.config.livenessPath];
+        return [this.config.path, this.config.readinessPath, this.config.livenessPath].filter(
+            (path): path is string => path !== false,
+        );
     }
 
     addReadinessCheck(name: string, check: () => Promise<boolean>): void {
@@ -51,9 +60,32 @@ export class HealthCheckFeature implements Feature {
     }
 
     routes(app: Hono): void {
-        app.get(this.config.path, async (c: Context) => await this.handleHealthCheck(c));
-        app.get(this.config.readinessPath, async (c: Context) => await this.handleReadinessCheck(c));
-        app.get(this.config.livenessPath, async (c: Context) => await this.handleLivenessCheck(c));
+        const { path, readinessPath, livenessPath } = this.config;
+        if (path !== false) app.get(path, async (c: Context) => await this.handleHealthCheck(c));
+        if (readinessPath !== false) app.get(readinessPath, async (c: Context) => await this.handleReadinessCheck(c));
+        if (livenessPath !== false) app.get(livenessPath, async (c: Context) => await this.handleLivenessCheck(c));
+    }
+
+    /** The app's body for this endpoint, if it set one; otherwise `fallback`. */
+    private respond(c: Context, report: HealthReport, custom: HealthBody | undefined, fallback: unknown): Response {
+        const status = report.ok ? 200 : 503;
+        if (!custom) return c.json(fallback, status);
+        const body = custom(report, c);
+        return body instanceof Response ? body : c.json(body, status);
+    }
+
+    private report(endpoint: HealthReport['endpoint'], checks: HealthReport['checks']): HealthReport {
+        const failed = Object.entries(checks)
+            .filter(([, result]) => result?.status === 'error')
+            .map(([name]) => name);
+        return {
+            endpoint,
+            ok: failed.length === 0,
+            checks,
+            failed,
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+        };
     }
 
     /**
@@ -89,9 +121,12 @@ export class HealthCheckFeature implements Feature {
             Object.values(checks).every((r) => r.status === 'ok') &&
             Object.values(customChecks).every((r) => r?.status !== 'error');
 
+        const report = this.report('health', { ...checks, ...customChecks });
+        report.ok = healthy;
+
         const response: Record<string, unknown> = {
             status: healthy ? 'ok' : 'error',
-            timestamp: new Date().toISOString(),
+            timestamp: report.timestamp,
         };
 
         if (this.config.includeDetails && this.kernel) {
@@ -100,7 +135,7 @@ export class HealthCheckFeature implements Feature {
             if (Object.keys(customChecks).length > 0) response.customChecks = customChecks;
         }
 
-        return c.json(response, healthy ? 200 : 503);
+        return this.respond(c, report, this.config.body.health, response);
     }
 
     /**
@@ -133,10 +168,6 @@ export class HealthCheckFeature implements Feature {
     }
 
     private async handleReadinessCheck(c: Context) {
-        if (this.readinessChecks.size === 0) {
-            return c.json({ status: 'ready' });
-        }
-
         const results: Record<string, boolean> = {};
         const failed: string[] = [];
 
@@ -153,23 +184,35 @@ export class HealthCheckFeature implements Feature {
             }
         }
 
+        const report = this.report(
+            'ready',
+            Object.fromEntries(
+                Object.entries(results).map(([name, passed]) => [name, { status: passed ? 'ok' : 'error' }]),
+            ),
+        );
+
         // The status code is what an orchestrator acts on. Check names can
         // name internal hosts (`postgres-primary-10.0.3.12`), so like /health
         // the body lists them only with includeDetails; the log has them.
-        const details = this.config.includeDetails;
+        const details = this.config.includeDetails && this.readinessChecks.size > 0;
         if (failed.length > 0) {
             this.log.warn(`Readiness checks failed: ${failed.join(', ')}`);
-            return c.json({ status: 'not ready', ...(details && { checks: results, failed }) }, 503);
         }
-
-        return c.json({ status: 'ready', ...(details && { checks: results }) });
+        const body = {
+            status: failed.length > 0 ? 'not ready' : 'ready',
+            ...(details && { checks: results }),
+            ...(details && failed.length > 0 && { failed }),
+        };
+        return this.respond(c, report, this.config.body.ready, body);
     }
 
     private async handleLivenessCheck(c: Context) {
-        return c.json({
+        const report = this.report('live', {});
+        const body = {
             status: 'alive',
-            timestamp: new Date().toISOString(),
-            ...(this.config.includeDetails && { uptime: process.uptime() }),
-        });
+            timestamp: report.timestamp,
+            ...(this.config.includeDetails && { uptime: report.uptime }),
+        };
+        return this.respond(c, report, this.config.body.live, body);
     }
 }

@@ -188,10 +188,49 @@ export interface RateLimitConfig {
     passOnStoreError?: boolean;
 }
 
+/** What a health endpoint found, for a custom {@link HealthCheckConfig.body}. */
+export interface HealthReport {
+    /** The endpoint: `path` (`health`), `readinessPath` (`ready`) or `livenessPath` (`live`). */
+    endpoint: 'health' | 'ready' | 'live';
+    /** Whether every check passed: the endpoint answers 200, otherwise 503. */
+    ok: boolean;
+    /**
+     * Each check by name: the db/cache probes and `checks` for `health`, the
+     * readiness checks for `ready`, none for `live`. A custom check's result
+     * is kept as it returned it.
+     */
+    checks: Record<string, { status: 'ok' | 'error'; [key: string]: unknown }>;
+    /** The names of the checks that failed. */
+    failed: string[];
+    /** ISO 8601 time of the report. */
+    timestamp: string;
+    /** Seconds the process has been running. */
+    uptime: number;
+}
+
+/**
+ * Builds an endpoint's body from its report. The status code is still 200 or
+ * 503 (from `report.ok`) unless it returns a `Response`, which is sent as is.
+ */
+export type HealthBody = (report: HealthReport, c: Context) => unknown;
+
 export interface HealthCheckConfig {
-    path?: string;
-    readinessPath?: string;
-    livenessPath?: string;
+    /** The health endpoint, `/health` by default; `false` leaves it out. */
+    path?: string | false;
+    /** The readiness endpoint, `/health/ready` by default; `false` leaves it out. */
+    readinessPath?: string | false;
+    /** The liveness endpoint, `/health/live` by default; `false` leaves it out. */
+    livenessPath?: string | false;
+    /**
+     * Custom bodies per endpoint, instead of `{ status, … }`: for example
+     * `{ live: () => ({ message: 'ok' }) }`. The report carries the check
+     * names whatever `includeDetails` says; leave out what must not be public.
+     */
+    body?: {
+        health?: HealthBody;
+        ready?: HealthBody;
+        live?: HealthBody;
+    };
     includeDetails?: boolean;
     /** Per-check timeout for /health probes, in ms. Default 2000. */
     checkTimeoutMs?: number;

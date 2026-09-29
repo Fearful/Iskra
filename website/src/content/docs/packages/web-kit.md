@@ -200,6 +200,25 @@ const health = new HealthCheckFeature({ includeDetails: true });
 // Expose only on a protected route — not on the public /health
 ```
 
+### Paths and bodies
+
+Each endpoint can move (`path`, `readinessPath`, `livenessPath`) or be left out with `false`; the rate limiter only skips the ones served. `body` replaces an endpoint's JSON with your own, built from a report of what it found:
+
+```typescript
+const health = new HealthCheckFeature({
+    path: false,
+    readinessPath: '/healthcheck/ready',
+    livenessPath: '/healthcheck/live',
+    readinessChecks: { oracle: () => oracle.ping() },
+    body: {
+        live: () => ({ message: 'ok' }),
+        ready: (report) => ({ message: report.ok ? 'ok' : 'unavailable' }),
+    },
+});
+```
+
+The report (`HealthReport`) has `endpoint` (`health`, `ready` or `live`), `ok`, each check by name in `checks` (a custom check's result as it returned it), the names in `failed`, `timestamp` and `uptime`. The status code is still 200 or 503 from `ok`; return a `Response` to choose everything yourself. The report carries the check names whatever `includeDetails` says, so leave out what must not be public.
+
 ## OpenAPI documentation
 
 `OpenAPIFeature` serves the spec of the routes added with `addRoute()` at `/openapi.json`, and an API reference page ([Scalar](https://github.com/scalar/scalar)) at `/docs`:
