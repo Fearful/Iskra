@@ -13,6 +13,7 @@ import type {
 export type {
     WorkerManagerOptions,
     JobOptions,
+    JobContext,
     JobHandler,
     RepeatSpec,
     JobDescriptor,
@@ -133,7 +134,7 @@ export class WorkerManager implements Driver {
 
         this.worker = new Worker(
             this.options.queueName || 'iskra-jobs',
-            async (job: BullJob) => {
+            async (job: BullJob, _token?: string, signal?: AbortSignal) => {
                 const handler = this.handlers.get(job.name);
                 if (!handler) {
                     // Returning would mark the job completed and silently drop
@@ -144,12 +145,15 @@ export class WorkerManager implements Driver {
                 }
 
                 try {
-                    return await handler({
-                        id: job.id!,
-                        name: job.name,
-                        data: job.data,
-                        attemptsMade: job.attemptsMade,
-                    });
+                    return await handler(
+                        {
+                            id: job.id!,
+                            name: job.name,
+                            data: job.data,
+                            attemptsMade: job.attemptsMade,
+                        },
+                        { signal: signal ?? new AbortController().signal },
+                    );
                 } catch (err) {
                     const jobErr = new JobError(`Job "${job.name}" failed`, {
                         cause: err instanceof Error ? err : new Error(String(err)),

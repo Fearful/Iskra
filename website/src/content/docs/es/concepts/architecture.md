@@ -62,6 +62,7 @@ interface Feature {
     peerDependencies?: string[];
     initialize(kernel: Kernel): Promise<void>;
     routes?(app: Hono): void;
+    beforeShutdown?(): Promise<void> | void; // end the responses held open (SSE)
     shutdown?(): Promise<void>;
 }
 ```

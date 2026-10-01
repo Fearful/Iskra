@@ -70,7 +70,7 @@
         "@iskra-bun/auth-kit": "workspace:^",
         "@iskra-bun/mailer-kit": "workspace:^",
         "@iskra-bun/storage-kit": "workspace:^",
-        "better-auth": "^1.6.33",
+        "better-auth": "^1.7.5",
         "drizzle-orm": "^0.45.2",
         "ioredis": "^5.8.2",
         "mysql2": "^3.24.4",

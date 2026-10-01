@@ -136,7 +136,9 @@ Server defaults, configurable in `new Kernel({ ... })`:
 
 The Kernel and its features report startup, fallbacks and errors they handle through one logger: an object with `debug`, `info`, `warn` and `error(message, details?)`. `WebPlugin` passes the App's logger unless you set `logger`, so these messages share the app's format and level (each feature's startup line is `debug`). A feature you write gets it with `kernel.getLogger()` in `initialize()`. `fromStructuredLogger(pinoLogger)` adapts a pino-style logger.
 
-`shutdown()` stops accepting connections, waits for in-flight requests (up to `shutdownGraceMs`) and shuts features down in reverse dependency order; if one fails it continues with the rest and throws an `AggregateError` at the end.
+`shutdown()` stops accepting connections, lets features end the responses they hold open (`beforeShutdown()`, such as SSE streams), waits for in-flight requests (up to `shutdownGraceMs`) and shuts features down in reverse dependency order; if one fails it continues with the rest and throws an `AggregateError` at the end.
+
+`setFallback(handler)` answers the requests no route takes, after every middleware and before the 404: the handler returns a `Response`, or `undefined` for the 404 (`SpaFeature` uses it). A kernel has one, set before `initialize()` ends.
 
 ## Available Features
 
@@ -160,6 +162,8 @@ The Kernel and its features report startup, fallbacks and errors they handle thr
 | `UploadFeature` | File uploads |
 | `StorageFeature` | File storage (local) — powered by [`@iskra-bun/storage-kit`](/packages/storage-kit/) |
 | `EmailFeature` | Email sending (SMTP, SendGrid) — powered by [`@iskra-bun/mailer-kit`](/packages/mailer-kit/) |
+| `SseFeature` | Server-sent events with a hub that filters each event per user (see [Server-sent events](#server-sent-events)) |
+| `SpaFeature` | Serves a built client app with its routes and `window.__APP_CONFIG__` (see [Serving the client app](#serving-the-client-app-spa)) |
 
 ## Request validation
 
@@ -230,6 +234,8 @@ health.addReadinessCheck('db', async () => {
 ```
 
 When any registered check returns `false`, throws, or takes longer than `checkTimeoutMs` (default 2000), `/health/ready` responds with **503** (`{ status: "not ready" }`) and logs the names of the failed checks as a warning. With no checks registered it always returns `ready` (previous behavior).
+
+Features add their own `/health` checks with `addCheck(name, check)` in `initialize()`, listing `'health'` in `optionalDependencies` so it is initialized first (`SseFeature` reports its clients this way). A name already taken throws.
 
 ### Endpoint details
 
@@ -615,6 +621,7 @@ new AuthFeature({
 - Auth attempts (`POST` requests to `{basePath}/*` other than sign-out: sign-in, sign-up, password reset…) are rate-limited per IP by default (20 / 15 min, IPv6 clients by /64) to throttle credential stuffing; session reads and OAuth callbacks are not counted. In production Better Auth also applies its own, stricter per-path limits. Tune the first with `rateLimit: { max, windowMs, maxKeys }`, or pass `rateLimit: false` to turn both off when a backend calls these routes on behalf of many users from one IP (for example through the SDKs) and limits them itself.
 - The client IP (for these limiters, the sessions' `ipAddress` and `RateLimitFeature`) is the socket address. If the app runs behind a proxy (nginx, a load balancer), set `new Kernel({ trustProxy: 1 })` to the number of proxies so the forwarded address is used (`X-Forwarded-For`, or `X-Real-IP` with `clientIpHeader: 'x-real-ip'`: see [Rate limiting and client IP](#rate-limiting-and-client-ip)); otherwise these headers are ignored, since any client can forge them.
 - Sessions are checked against a signed cookie cache without a database lookup, so a session revoked by sign-out keeps working until that cache expires: `cookieCacheMaxAge` (seconds, default 300) sets how long.
+- `getAccessToken(c, 'gitlab')` returns a valid access token of the signed-in user for that provider, renewed when it is about to expire (see [auth-kit](/packages/auth-kit/#oauth-tokens-encrypted-and-renewed); the tokens are stored encrypted). It throws 401 `UNAUTHORIZED` without a session, 401 `OAUTH_REAUTH_REQUIRED` when the user has to sign in with the provider again (the client sends them to its login), and 502 `OAUTH_PROVIDER_UNAVAILABLE` when the provider's token endpoint fails (the session is kept). The problem's `context` carries `provider` and `reason`.
 - Use `requireAuth(kernel)` as middleware to protect routes that require a session. It reuses the session the feature already read for the request (`c.get("authUser")`) instead of reading it again.
 
 ## Sessions
@@ -653,6 +660,60 @@ Requests with a method outside `ignoreMethods` (`GET`, `HEAD` and `OPTIONS` by d
 - The cookie is `__Host-csrf` while it is `Secure` (the default): only the app's own host can set it. As `_csrf`, a sibling subdomain could set it for the parent domain with a token it knows and submit that token, and `SameSite` does not stop a same-site request. With `cookieOptions.secure: false` it is `_csrf`; a `cookieName` you set is kept.
 - With `SessionFeature`, a request that has a stored session needs a token signed with that session's ID, so a token from another session or from an anonymous visit is rejected; anonymous requests get unbound tokens. From the app's own pages (`Sec-Fetch-Site: same-origin`, or its own or a trusted `Origin`) the unbound token is still accepted, and replaced by a bound one: the page that stored the session (a login without `regenerateSession()`, a cart) was rendered with it. `regenerateSession()` issues a new token, available as `c.get('csrfToken')` from then on (render it, or return it to a SPA). **Breaking:** a SPA must read the token again after signing in or out; a stale one is replaced on the next request, and an unsafe request carrying it gets 403. `CsrfFeature` runs after `SessionFeature` whatever the order you register them in.
 - The `secret` must be at least 32 characters (**breaking**): a short one can be brute-forced offline from a single token, and then any token forged.
+
+## Server-sent events
+
+`SseFeature` serves a live channel over SSE; `SseHub` holds the connected clients of the process and decides who gets each event:
+
+```typescript
+import { HealthCheckFeature, SseFeature, SseHub } from '@iskra-bun/web-kit';
+import type { User } from '@iskra-bun/auth-kit';
+
+const hub = new SseHub<User, BoardEvent>({ heartbeatMs: 15_000 });
+
+new WebPlugin({
+    features: [db, auth, new HealthCheckFeature(), new SseFeature({ path: '/api/events', hub })],
+});
+
+// Anywhere in the app: each event reaches the users the filter accepts
+hub.publish({ event: 'card.moved', data: card }, (user) => canSee(user, card));
+```
+
+On the client, `new EventSource('/api/events')` (the session cookie goes along on the same origin) and `addEventListener('card.moved', …)`.
+
+- **Who connects.** By default the user `AuthFeature` signed in (`c.get('authUser')`); without one the request gets 401. `actor(c)` identifies clients another way (an API key…). Past `maxClientsPerActor` (default 10) a connection gets 429, past `maxClients` (default 10 000) 503.
+- **Headers.** `Content-Type: text/event-stream`, `Cache-Control: no-cache` and `X-Accel-Buffering: no`, so nginx does not buffer the stream.
+- **Heartbeat.** Every `heartbeatMs` (default 15 s) each client gets a comment line, which keeps proxies from closing a quiet connection.
+- **Bun's idle timeout.** Bun closes a connection that writes nothing for `idleTimeout` seconds (10 by default, less than the heartbeat), so it cut quiet SSE streams. Bun checks in 4-second steps and may close a connection up to one step early, so each SSE request gets a timeout of twice the heartbeat, and at least two steps past it, instead (`server.timeout()`). When that is not possible and `KernelConfig.idleTimeout` (minus that step) is not longer than the heartbeat, a warning is logged. Behind a proxy, keep its read timeout (nginx `proxy_read_timeout`, 60 s by default) above the heartbeat too.
+- **Disconnections.** A client that closes the connection or cancels the stream leaves the hub. One that falls more than `maxQueuedBytes` (default 1 MiB) behind is dropped instead of growing the server's memory; `EventSource` reconnects by itself.
+- **Data.** A string is sent as is, anything else as JSON, one `data:` line per line. `event` and `id` cannot contain line breaks. A filter that throws skips that client only, and is logged.
+- **Shutdown.** `Kernel.shutdown()` ends every stream before it waits for the open requests; otherwise that wait lasted the whole `shutdownGraceMs` and then cut them.
+- **Health.** With `HealthCheckFeature`, `/health` gets an `sse` check whose `details.clients` (shown with `includeDetails`) is the number of connected clients; `hub.size` gives it in code.
+- **One process.** The hub is in memory: with several instances of the app, each one reaches only its own clients. Events sent while a client was disconnected are not replayed (`Last-Event-ID` is not read): reload the state when it reconnects.
+
+A feature of your own that holds responses open ends them in `beforeShutdown()`, which the Kernel calls once the server stops accepting connections and before it waits for the open requests.
+
+## Serving the client app (SPA)
+
+`SpaFeature` serves a built client app (Vite's `dist/`) from the same process as the API. In development the Vite dev server and its proxy do this job.
+
+```typescript
+import { SpaFeature } from '@iskra-bun/web-kit';
+
+new SpaFeature({
+    root: './dist',
+    exclude: ['/api', '/hooks'],
+    config: () => ({ apiUrl: process.env.PUBLIC_API_URL, environment: process.env.APP_ENV }),
+    contentSecurityPolicy: (hash) => `default-src 'self'; script-src 'self' ${hash}`,
+});
+```
+
+- **What it answers.** Only GET and HEAD requests that no route takes (`kernel.setFallback()`), so it never hides an API route. A file under `root` is served; any other path gets the entry page, so a reload of `/boards/42` works. A path whose last segment has a dot (`/logo.png`) gets the page only for a browser navigation (`Accept: text/html`).
+- **Excluded.** Under `exclude` (default `['/api']`, plus `AuthFeature`'s `basePath` and the health paths) an unknown path stays a JSON 404. A prefix matches whole segments: `/api` does not exclude `/apiary`.
+- **Cache.** The files under `assetsDir` (default `assets`, Vite's) carry a content hash in their names: `public, max-age=31536000, immutable`. A missing one is a 404, not the page, which a `<script>` would load as HTML after a deploy. The entry page and the other files get `no-cache` and an ETag (304 when it matches).
+- **`window.__APP_CONFIG__`.** With `config`, the page gets `<script>window.__APP_CONFIG__={…};</script>` when the server starts (before `</head>`, or at a `<!--app-config-->` marker), so one build serves every environment. Everything in it is public. The JSON is escaped so a value cannot close the script. A strict CSP needs the script's hash: `contentSecurityPolicy(hash)` sets the page's header with it, and `spa.configScriptHash` gives it. `configGlobal` changes the global's name.
+- **Files.** They are listed once at startup and only those are served: regular files under `root`, never dotfiles or symlinks, whatever the path (`..%2F`, `%2e%2e`) asks for.
+- **Missing build.** Without the entry page the feature refuses to start in production, and serves nothing (with a warning) elsewhere.
 
 ## Standardized Responses
 

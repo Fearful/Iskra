@@ -190,3 +190,39 @@ describe.if(redisUp)('WorkerManager Increment D integration (requires Redis)', (
         }
     });
 });
+
+describe.if(redisUp)('WorkerManager handler signal (requires Redis)', () => {
+    it("hands BullMQ's signal to the handler, aborted when the job is cancelled", async () => {
+        const app = new App({ name: 'WorkerITSignal', logger: { level: 'error' } });
+        const wm = new WorkerManager({
+            connection: REDIS_URL,
+            queueName: `iskra-test-signal-${Date.now()}`,
+            concurrency: 1,
+        });
+        let started!: () => void;
+        const running = new Promise<void>((resolve) => (started = resolve));
+        let aborted!: (reason: unknown) => void;
+        const abortedWith = new Promise<unknown>((resolve) => (aborted = resolve));
+        wm.register('slow', async (_job, { signal }) => {
+            expect(signal).toBeInstanceOf(AbortSignal);
+            signal.addEventListener('abort', () => aborted(signal.reason), { once: true });
+            started();
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+        });
+        await wm.init(app);
+        await wm.start();
+        try {
+            const job = await wm.enqueue('slow', {}, { attempts: 1 });
+            await running;
+            (wm as unknown as { worker: { cancelJob(id: string, reason?: string): boolean } }).worker.cancelJob(
+                job.id,
+                'no longer needed',
+            );
+            expect(await Promise.race([abortedWith, Bun.sleep(2000).then(() => 'never aborted')])).not.toBe(
+                'never aborted',
+            );
+        } finally {
+            await wm.stop();
+        }
+    });
+});

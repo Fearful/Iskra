@@ -15,6 +15,7 @@ export const ISKRA_VERSIONS: Readonly<Record<string, string>> = {
     '@iskra-bun/mailer-kit': '0.2.1',
     '@iskra-bun/mobile-kit': '0.1.3',
     '@iskra-bun/process-kit': '0.3.1',
+    '@iskra-bun/scheduler-kit': '0.0.0',
     '@iskra-bun/socket-kit': '0.3.1',
     '@iskra-bun/storage-kit': '0.2.1',
     '@iskra-bun/testing-kit': '0.2.0',

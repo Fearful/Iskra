@@ -130,6 +130,51 @@ oidcConfig: {
 
 También puedes configurar los proveedores sociales nativos de better-auth mediante `socialProviders`.
 
+## Tokens OAuth: cifrados y renovados
+
+Los tokens de acceso y de refresco de las cuentas sociales y OIDC (GitLab, GitHub, tu proveedor OIDC…) le permiten a quien los tenga actuar como el usuario en ese proveedor. `createBetterAuth` siempre los guarda **cifrados** (`encryptOAuthTokens` de better-auth: AES-256-GCM con una clave derivada de `secret`); no hay opción para desactivarlo.
+
+- Cambiar `secret` deja ilegibles los tokens guardados: sus usuarios vuelven a iniciar sesión con el proveedor.
+- El ID token se guarda tal cual.
+- **Breaking (0.x):** los tokens que una versión anterior guardó en texto plano pueden dejar de leerse (better-auth toma uno hexadecimal por uno cifrado). Haz que esos usuarios vuelvan a iniciar sesión, o vacía `accessToken` y `refreshToken` en la tabla `account`.
+
+`getProviderAccessToken()` entrega un token de acceso vigente de la cuenta del usuario con un proveedor, y lo renueva con el refresh token cuando está por vencer:
+
+```typescript
+import { getProviderAccessToken, OAuthTokenError } from '@iskra-bun/auth-kit';
+
+// En un request: la sesión se lee de los headers (de la base, no de la caché de cookie)
+const { accessToken } = await getProviderAccessToken(auth, { providerId: 'gitlab', headers: request.headers });
+
+// En un job de fondo: para un id de usuario
+const token = await getProviderAccessToken(auth, { providerId: 'gitlab', userId });
+```
+
+| Opción | Por defecto | Descripción |
+| :--- | :--- | :--- |
+| `providerId` | **obligatoria** | `'gitlab'`, `'github'`, el `providerId` de `oidcConfig`… |
+| `headers` | — | Los headers del request; el usuario de su sesión gana sobre `userId` |
+| `userId` | — | El usuario por el que se actúa cuando no hay request |
+| `accountId` | — | Qué cuenta, cuando el usuario vinculó más de una con ese proveedor |
+| `minValidityMs` | `60000` | Renueva cuando al token le queda menos que esto |
+
+- Las renovaciones de una cuenta corren de a una, y cada una vuelve a leer la cuenta antes. Si no, los proveedores que rotan los refresh tokens (GitLab acepta cada uno una sola vez) rechazarían la segunda de dos renovaciones simultáneas y cerrarían la sesión del usuario. Vale dentro de un proceso: varias instancias de la app todavía pueden renovar la misma cuenta a la vez.
+- El par renovado se guarda cifrado.
+- Sin refresh token, un token por vencer se entrega hasta que vence.
+
+Lanza `OAuthTokenError` con un `code`:
+
+| `code` | Significado | `requiresSignIn` |
+| :--- | :--- | :--- |
+| `NOT_SIGNED_IN` | `headers` no traen una sesión válida | sí |
+| `ACCOUNT_NOT_LINKED` | El usuario no tiene cuenta con ese proveedor | sí |
+| `TOKEN_EXPIRED` | Venció y no hay con qué renovarlo | sí |
+| `TOKEN_UNREADABLE` | No se puede descifrar (cambió el secret, o es anterior al cifrado) | sí |
+| `REFRESH_FAILED` | El proveedor rechazó el refresh token (4xx) | sí |
+| `PROVIDER_UNAVAILABLE` | Falló el endpoint de tokens del proveedor (red, 5xx); el par guardado se conserva | no |
+
+En web-kit, [`getAccessToken(c, providerId)`](/es/packages/web-kit/#auth) los responde con 401 o 502.
+
 ## Caché de cookie de sesión
 
 La sesión usa una caché de cookie para evitar una consulta a la base de datos en cada petición. `cookieCacheMaxAge` (en segundos, por defecto `300` = 5 minutos) controla cuánto vive esa caché. Es también la ventana de revocación: una sesión revocada sigue pasando los chequeos cacheados hasta que la entrada expira. Redúcelo para acortar esa ventana, a costa de más consultas a la base de datos:

@@ -13,14 +13,14 @@ import { increment } from './metrics.ts';
  * Cuando el ultimo intento falla, el job se mueve a la DLQ en lugar de perderse.
  */
 function withRetryAndDlq(app: App, dlq: WorkerManager, name: string, handler: JobHandler): JobHandler {
-    return async (job) => {
+    return async (job, context) => {
         if (job.attemptsMade > 0) {
             increment('retried');
             app.logger.warn({ jobId: job.id, jobName: name, attempt: job.attemptsMade + 1 }, 'Retrying job');
         }
 
         try {
-            await handler(job);
+            await handler(job, context);
             increment('completed');
             app.logger.info({ jobId: job.id, jobName: name }, 'Job completed');
         } catch (err) {

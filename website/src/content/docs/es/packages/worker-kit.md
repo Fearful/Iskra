@@ -166,6 +166,19 @@ worker.register('mi.job', async (job) => {
 
 Si el handler tira una excepcion, BullMQ lo reintenta automaticamente segun la config de `attempts` y `backoff`.
 
+El segundo argumento trae la `signal` del job, la de BullMQ, que se aborta cuando el job se cancela (`worker.cancelJob`). Pásala a `fetch()` y a tus consultas para que tambien se detengan:
+
+```typescript
+worker.register('report.build', async (job, { signal }) => {
+    const res = await fetch(job.data.url, { signal });
+    return await res.json();
+});
+```
+
+Un handler llamado directamente (en un test) tambien la recibe: `handler(job, { signal: new AbortController().signal })`.
+
+> **¿Sin Redis?** Para jobs periodicos dentro del propio proceso de la app, [scheduler-kit](/es/packages/scheduler-kit/) tiene los mismos `register()` y `schedule()`, asi que pasar aca mas adelante es cambiar el constructor.
+
 ## Jobs Programados / Repetibles
 
 Usa el metodo de conveniencia `schedule` o agrega el campo `repeat` en `JobOptions` para ejecutar un job de forma recurrente.

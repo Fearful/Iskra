@@ -13,6 +13,8 @@ import type { PermissionsFeature } from './features/permissions';
 import type { RateLimitFeature } from './features/rate-limit';
 import type { RequestIdFeature } from './features/request-id';
 import type { SessionFeature } from './features/session';
+import type { SpaFeature } from './features/spa';
+import type { SseFeature } from './features/sse';
 import type { StorageFeature } from './features/storage';
 import type { OtelTracingFeature } from './features/tracing';
 import type { UploadFeature } from './features/upload';
@@ -49,6 +51,8 @@ export interface FeatureRegistry {
     'rate-limit': RateLimitFeature;
     'request-id': RequestIdFeature;
     session: SessionFeature;
+    spa: SpaFeature;
+    sse: SseFeature;
     storage: StorageFeature;
     upload: UploadFeature;
 }

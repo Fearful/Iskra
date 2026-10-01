@@ -7,7 +7,7 @@ The full API reference is generated from the TypeScript source of every package 
 
 👉 **[Open the generated API reference](/api/)**
 
-The reference covers these eleven packages:
+The reference covers these twelve packages:
 
 - `@iskra-bun/core`
 - `@iskra-bun/web-kit`
@@ -15,6 +15,7 @@ The reference covers these eleven packages:
 - `@iskra-bun/socket-kit`
 - `@iskra-bun/kv-kit`
 - `@iskra-bun/worker-kit`
+- `@iskra-bun/scheduler-kit`
 - `@iskra-bun/process-kit`
 - `@iskra-bun/desktop-kit` _(experimental)_
 - `@iskra-bun/mobile-kit` _(experimental)_

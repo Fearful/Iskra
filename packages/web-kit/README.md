@@ -1,6 +1,6 @@
 # @iskra-bun/web-kit
 
-Servidor HTTP de Iskra basado en [Hono](https://hono.dev), con un Kernel de plugins y mas de 15 features integradas (auth, CORS, CSRF, rate limit, DB, cache, sesiones, storage, email, upload, validacion, OpenAPI, permisos, API keys, tracing, health checks).
+Servidor HTTP de Iskra basado en [Hono](https://hono.dev), con un Kernel de plugins y mas de 15 features integradas (auth, CORS, CSRF, rate limit, DB, cache, sesiones, storage, email, upload, validacion, OpenAPI, permisos, API keys, tracing, health checks, server-sent events y la app cliente (SPA)).
 
 ## Instalacion
 

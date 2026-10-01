@@ -3,17 +3,78 @@ import type { Context, Hono, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { clientIpKey, getClientIp } from '../../client-ip';
 import { HitCounter, retryAfterSeconds } from '../../hit-counter';
-import { type Auth, createBetterAuth, resolveAuthBaseURL } from '@iskra-bun/auth-kit';
+import {
+    type Auth,
+    createBetterAuth,
+    getProviderAccessToken,
+    OAuthTokenError,
+    type ProviderAccessToken,
+    type ProviderAccessTokenOptions,
+    resolveAuthBaseURL,
+} from '@iskra-bun/auth-kit';
 import { z } from '@hono/zod-openapi';
 import type { User } from '@iskra-bun/auth-kit';
 import { consoleLogger, type KernelLogger } from '../../logging';
 import { isDevelopmentEnv } from '@iskra-bun/core';
+import { AuthError, HttpError } from '../../errors';
+
+/** What `getAccessToken` takes besides the provider. */
+export type AccessTokenOptions = Pick<ProviderAccessTokenOptions, 'accountId' | 'minValidityMs'>;
 
 declare module 'hono' {
     interface ContextVariableMap {
         user: User | null;
         authUser: User | null;
+        /** Set by AuthFeature for `getAccessToken()`. */
+        providerAccessToken: (providerId: string, options?: AccessTokenOptions) => Promise<ProviderAccessToken>;
     }
+}
+
+declare module '@iskra-bun/core' {
+    interface ErrorCodeRegistry {
+        /** The provider's token cannot be used or renewed: the user signs in with it again. */
+        OAUTH_REAUTH_REQUIRED: true;
+        /** The provider's token endpoint failed; the session is kept. */
+        OAUTH_PROVIDER_UNAVAILABLE: true;
+    }
+}
+
+/**
+ * A valid access token for the signed-in user's account with `providerId`
+ * (`'gitlab'`, `'github'`, the OIDC provider…), renewed with the refresh
+ * token when it is about to expire (see `getProviderAccessToken` in
+ * auth-kit). Needs AuthFeature.
+ *
+ * Throws 401 (`UNAUTHORIZED`) without a session, 401
+ * (`OAUTH_REAUTH_REQUIRED`) when the user has to sign in with the provider
+ * again (not linked, refresh refused, token unreadable), and 502
+ * (`OAUTH_PROVIDER_UNAVAILABLE`) when the provider's token endpoint fails.
+ */
+export async function getAccessToken(
+    c: Context,
+    providerId: string,
+    options?: AccessTokenOptions,
+): Promise<ProviderAccessToken> {
+    const get = c.get('providerAccessToken');
+    if (!get) throw new Error('getAccessToken() needs AuthFeature');
+    return get(providerId, options);
+}
+
+function tokenHttpError(error: OAuthTokenError): HttpError {
+    if (error.code === 'NOT_SIGNED_IN') return new AuthError('Unauthorized', { cause: error });
+    const context = { provider: error.providerId, reason: error.code };
+    if (!error.requiresSignIn) {
+        return new HttpError(502, `${error.providerId} is unavailable`, {
+            code: 'OAUTH_PROVIDER_UNAVAILABLE',
+            cause: error,
+            context,
+        });
+    }
+    return new HttpError(401, `Sign in with ${error.providerId} again`, {
+        code: 'OAUTH_REAUTH_REQUIRED',
+        cause: error,
+        context,
+    });
 }
 
 // ─── OpenAPI Schemas ─────────────────────────────────────────────────────────
@@ -161,6 +222,13 @@ export class AuthFeature implements Feature {
         }
 
         app.use('*', async (c: Context, next: Next) => {
+            c.set('providerAccessToken', (providerId, options) =>
+                getProviderAccessToken(this.auth!, { ...options, providerId, headers: c.req.raw.headers }).catch(
+                    (error: unknown) => {
+                        throw error instanceof OAuthTokenError ? tokenHttpError(error) : error;
+                    },
+                ),
+            );
             try {
                 const session = await this.auth!.api.getSession({
                     headers: c.req.raw.headers,
@@ -341,6 +409,11 @@ export class AuthFeature implements Feature {
 
     getAuth(): Auth | undefined {
         return this.auth;
+    }
+
+    /** Where better-auth's routes are mounted (`/api/sso` by default). */
+    get basePath(): string {
+        return this.config.basePath;
     }
 }
 

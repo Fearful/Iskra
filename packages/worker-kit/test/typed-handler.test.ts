@@ -39,12 +39,15 @@ describe('register<T> typed handler', () => {
         const storedHandler = (wm as any).handlers.get('email.send') as JobHandler<SendEmailPayload>;
         expect(storedHandler).toBeDefined();
 
-        await storedHandler({
-            id: '1',
-            name: 'email.send',
-            data: { to: 'a@b.com', subject: 'Hello' },
-            attemptsMade: 0,
-        });
+        await storedHandler(
+            {
+                id: '1',
+                name: 'email.send',
+                data: { to: 'a@b.com', subject: 'Hello' },
+                attemptsMade: 0,
+            },
+            { signal: new AbortController().signal },
+        );
 
         expect(capturedData).toEqual({ to: 'a@b.com', subject: 'Hello' });
     });

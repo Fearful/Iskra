@@ -109,3 +109,23 @@ describe('HealthCheckFeature disabled endpoints', () => {
         await kernel.shutdown();
     });
 });
+
+describe('HealthCheckFeature.addCheck', () => {
+    it('adds a check to /health and refuses a name already taken', async () => {
+        const health = new HealthCheckFeature({ includeDetails: true, checks: { db: async () => ({ status: 'ok' }) } });
+        health.addCheck('jobs', async () => ({ status: 'error', details: { failures: 3 } }));
+        expect(() => health.addCheck('db', async () => ({ status: 'ok' }))).toThrow('already registered');
+
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(health);
+        await kernel.initialize();
+        const res = await kernel.getApp().request('/health');
+        expect(res.status).toBe(503);
+        const body = (await res.json()) as { customChecks: Record<string, unknown> };
+        expect(body.customChecks).toEqual({
+            db: { status: 'ok' },
+            jobs: { status: 'error', details: { failures: 3 } },
+        });
+        await kernel.shutdown();
+    });
+});

@@ -18,10 +18,10 @@
     },
     "packages/auth-kit": {
       "name": "@iskra-bun/auth-kit",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
-        "better-auth": "^1.6.33",
+        "better-auth": "^1.7.5",
         "drizzle-orm": "^0.45.2",
       },
       "devDependencies": {
@@ -31,7 +31,7 @@
     },
     "packages/cache-kit": {
       "name": "@iskra-bun/cache-kit",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "@iskra-bun/kv-kit": "workspace:^",
@@ -43,7 +43,7 @@
     },
     "packages/config-kit": {
       "name": "@iskra-bun/config-kit",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "zod": "^3.24.1",
@@ -55,7 +55,7 @@
     },
     "packages/core": {
       "name": "@iskra-bun/core",
-      "version": "0.1.1",
+      "version": "0.3.0",
       "dependencies": {
         "@opentelemetry/api": "^1.9.0",
         "c12": "^3.3.4",
@@ -89,7 +89,7 @@
     },
     "packages/create-iskra": {
       "name": "create-iskra",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "bin": {
         "create-iskra": "./dist/cli.js",
       },
@@ -100,7 +100,7 @@
     },
     "packages/db-kit": {
       "name": "@iskra-bun/db-kit",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "@libsql/client": "^0.18.0",
@@ -115,7 +115,7 @@
     },
     "packages/db-oracle": {
       "name": "@iskra-bun/db-oracle",
-      "version": "0.1.1",
+      "version": "0.3.0",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "@opentelemetry/api": "^1.9.0",
@@ -130,7 +130,7 @@
     },
     "packages/desktop-kit": {
       "name": "@iskra-bun/desktop-kit",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
       },
@@ -140,7 +140,7 @@
     },
     "packages/kv-kit": {
       "name": "@iskra-bun/kv-kit",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "ioredis": "^5.4.1",
@@ -152,7 +152,7 @@
     },
     "packages/ldap-kit": {
       "name": "@iskra-bun/ldap-kit",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "ldapts": "^9.2.0",
@@ -164,7 +164,7 @@
         "hono": "^4.12.34",
       },
       "peerDependencies": {
-        "@iskra-bun/web-kit": "workspace:^",
+        "@iskra-bun/web-kit": ">=0.4.0",
         "hono": "^4.12.34",
       },
       "optionalPeers": [
@@ -174,7 +174,7 @@
     },
     "packages/mailer-kit": {
       "name": "@iskra-bun/mailer-kit",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@aws-sdk/client-sesv2": "^3.600.0",
         "@iskra-bun/core": "workspace:^",
@@ -189,7 +189,7 @@
     },
     "packages/mobile-kit": {
       "name": "@iskra-bun/mobile-kit",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
       },
@@ -199,7 +199,7 @@
     },
     "packages/process-kit": {
       "name": "@iskra-bun/process-kit",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "zod": "^3.24.1",
@@ -208,9 +208,21 @@
         "@types/node": "^22.10.2",
       },
     },
+    "packages/scheduler-kit": {
+      "name": "@iskra-bun/scheduler-kit",
+      "version": "0.0.0",
+      "dependencies": {
+        "@iskra-bun/core": "workspace:^",
+      },
+      "devDependencies": {
+        "@iskra-bun/worker-kit": "workspace:^",
+        "@types/bun": "^1.3.5",
+        "@types/node": "^22.10.2",
+      },
+    },
     "packages/socket-kit": {
       "name": "@iskra-bun/socket-kit",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
       },
@@ -221,7 +233,7 @@
     },
     "packages/storage-kit": {
       "name": "@iskra-bun/storage-kit",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@aws-sdk/client-s3": "^3.635.0",
         "@aws-sdk/s3-request-presigner": "^3.635.0",
@@ -234,7 +246,7 @@
     },
     "packages/testing-kit": {
       "name": "@iskra-bun/testing-kit",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
       },
@@ -245,7 +257,7 @@
     },
     "packages/web-kit": {
       "name": "@iskra-bun/web-kit",
-      "version": "0.2.0",
+      "version": "0.4.0",
       "dependencies": {
         "@hono/otel": "^1.0.0",
         "@hono/zod-openapi": "^1.2.0",
@@ -257,7 +269,7 @@
         "ajv": "^8.20.0",
         "ajv-errors": "^3.0.0",
         "ajv-formats": "^3.0.1",
-        "better-auth": "^1.6.33",
+        "better-auth": "^1.7.5",
         "drizzle-orm": "^0.45.2",
         "ioredis": "^5.8.2",
         "mysql2": "^3.24.4",
@@ -281,7 +293,7 @@
     },
     "packages/worker-kit": {
       "name": "@iskra-bun/worker-kit",
-      "version": "0.2.0",
+      "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
         "bullmq": "^5.0.0",
@@ -875,6 +887,8 @@
     "@iskra-bun/mobile-kit": ["@iskra-bun/mobile-kit@workspace:packages/mobile-kit"],
 
     "@iskra-bun/process-kit": ["@iskra-bun/process-kit@workspace:packages/process-kit"],
+
+    "@iskra-bun/scheduler-kit": ["@iskra-bun/scheduler-kit@workspace:packages/scheduler-kit"],
 
     "@iskra-bun/socket-kit": ["@iskra-bun/socket-kit@workspace:packages/socket-kit"],
 

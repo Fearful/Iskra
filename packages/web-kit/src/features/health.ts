@@ -53,6 +53,18 @@ export class HealthCheckFeature implements Feature {
         this.readinessChecks = new Map([...this.readinessChecks, [name, check]]);
     }
 
+    /**
+     * Adds a check to /health, like one in `checks`; features add theirs in
+     * initialize() (they list 'health' in `optionalDependencies` to run after
+     * it). A name already taken is an error: one check would hide the other.
+     */
+    addCheck(name: string, check: NonNullable<HealthCheckConfig['checks']>[string]): void {
+        if (this.config.checks && Object.hasOwn(this.config.checks, name)) {
+            throw new Error(`HealthCheckFeature: a check named "${name}" is already registered`);
+        }
+        this.config.checks = { ...this.config.checks, [name]: check };
+    }
+
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         this.kernel = kernel;

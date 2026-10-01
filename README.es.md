@@ -30,6 +30,7 @@ Para un analisis mas detallado de las capas, interfaces y patrones de diseno, re
 | `@iskra-bun/kv-kit` | Key-Value store con adaptadores de Redis y memoria | [KV Kit](https://iskra-docs.fly.dev/es/packages/kv-kit/) |
 | `@iskra-bun/cache-kit` | Cache de alto nivel (cache-aside, TTL, namespaces, tags) sobre kv-kit. | [Cache Kit](https://iskra-docs.fly.dev/es/packages/cache-kit/) |
 | `@iskra-bun/worker-kit` | Cola de jobs en segundo plano con BullMQ | [Worker Kit](https://iskra-docs.fly.dev/es/packages/worker-kit/) |
+| `@iskra-bun/scheduler-kit` | Jobs periodicos en el proceso de la app, sin Redis | [Scheduler Kit](https://iskra-docs.fly.dev/es/packages/scheduler-kit/) |
 | `@iskra-bun/mailer-kit` | Email independiente del transporte (SMTP/SendGrid/Mailgun/SES). | [Mailer Kit](https://iskra-docs.fly.dev/es/packages/mailer-kit/) |
 | `@iskra-bun/storage-kit` | Almacenamiento de archivos (local, S3/MinIO) con streaming. | [Storage Kit](https://iskra-docs.fly.dev/es/packages/storage-kit/) |
 | `@iskra-bun/process-kit` | Gestion de procesos externos (Python, binarios) | [Process Kit](https://iskra-docs.fly.dev/es/packages/process-kit/) |
@@ -140,6 +141,7 @@ Mas detalles en la [documentacion de SDKs](https://iskra-docs.fly.dev/es/guides/
 | [Socket Kit](https://iskra-docs.fly.dev/es/packages/socket-kit/) | WebSocket, router, broadcast, protocolo de mensajes |
 | [KV Kit](https://iskra-docs.fly.dev/es/packages/kv-kit/) | Key-Value store, adaptadores Redis y memoria |
 | [Worker Kit](https://iskra-docs.fly.dev/es/packages/worker-kit/) | Cola de jobs, BullMQ, handlers, reintentos |
+| [Scheduler Kit](https://iskra-docs.fly.dev/es/packages/scheduler-kit/) | Jobs periodicos en el proceso, solapamiento, timeouts, health |
 | [Process Kit](https://iskra-docs.fly.dev/es/packages/process-kit/) | Procesos externos, modos daemon/oneshot/stdio |
 | [Configuracion](https://iskra-docs.fly.dev/es/configuration/) | Sistema de config con c12, Zod, variables de entorno |
 | [Migraciones](https://iskra-docs.fly.dev/es/guides/migrations/) | Sistema de migraciones con Drizzle Kit |

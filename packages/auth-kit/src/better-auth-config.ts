@@ -296,6 +296,12 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
             : undefined,
         socialProviders: Object.keys(socialProviders || {}).length > 0 ? socialProviders : undefined,
         plugins,
+        // Always on: the access and refresh tokens of social/OIDC accounts let
+        // whoever reads the table act as the user on the provider. They are
+        // stored AES-256-GCM encrypted with a key derived from `secret`, so
+        // changing the secret makes the stored ones unreadable (their users
+        // sign in again). The ID token is stored as is.
+        account: { encryptOAuthTokens: true },
         session: {
             expiresIn: 60 * 60 * 24 * 7,
             updateAge: 60 * 60 * 24,
