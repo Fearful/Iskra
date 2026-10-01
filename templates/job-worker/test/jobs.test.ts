@@ -25,6 +25,8 @@ function fakeWorker() {
 }
 
 const payload = { to: 'ana@example.com', resetToken: 'reset-SECRET-123' };
+/** What WorkerManager passes a handler besides the job. */
+const context = { signal: new AbortController().signal };
 
 describe('job-worker', () => {
     it('keeps job payloads out of the logs', async () => {
@@ -33,14 +35,17 @@ describe('job-worker', () => {
         const dlq = fakeWorker();
         registerJobs(app, worker, dlq.worker);
 
-        await handlers.get('email.send')!({ id: 'job-1', name: 'email.send', data: payload, attemptsMade: 0 });
+        await handlers.get('email.send')!({ id: 'job-1', name: 'email.send', data: payload, attemptsMade: 0 }, context);
         // The last attempt of a failing job goes to the DLQ (with its data) and is logged.
-        await handlers.get('flaky.task')!({
-            id: 'job-2',
-            name: 'flaky.task',
-            data: payload,
-            attemptsMade: config.retry.attempts - 1,
-        });
+        await handlers.get('flaky.task')!(
+            {
+                id: 'job-2',
+                name: 'flaky.task',
+                data: payload,
+                attemptsMade: config.retry.attempts - 1,
+            },
+            context,
+        );
 
         const logs = JSON.stringify(logged);
         expect(logs).toContain('job-1');
@@ -59,12 +64,15 @@ describe('job-worker', () => {
         expect(dlq.options.defaultJobOptions.removeOnComplete).toBe(config.dlq.keep);
         expect(dlq.options.defaultJobOptions.removeOnFail).toBe(config.dlq.keep);
 
-        await dlq.handlers.get('dead-letter')!({
-            id: 'dl-1',
-            name: 'dead-letter',
-            data: { originalJob: 'email.send', data: payload, attemptsMade: 3, error: 'boom', failedAt: 'now' },
-            attemptsMade: 0,
-        });
+        await dlq.handlers.get('dead-letter')!(
+            {
+                id: 'dl-1',
+                name: 'dead-letter',
+                data: { originalJob: 'email.send', data: payload, attemptsMade: 3, error: 'boom', failedAt: 'now' },
+                attemptsMade: 0,
+            },
+            context,
+        );
         expect(JSON.stringify(logged)).not.toContain('reset-SECRET-123');
     });
 
