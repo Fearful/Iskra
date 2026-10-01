@@ -38,6 +38,7 @@ body:
         - '@iskra-bun/kv-kit'
         - '@iskra-bun/socket-kit'
         - '@iskra-bun/worker-kit'
+        - '@iskra-bun/scheduler-kit'
         - '@iskra-bun/process-kit'
         - '@iskra-bun/desktop-kit'
         - '@iskra-bun/mobile-kit'

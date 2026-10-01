@@ -81,7 +81,10 @@ describe('worker-kit types (structural)', () => {
         const handler: JobHandler = async (job) => {
             received = { id: job.id, name: job.name };
         };
-        const result = handler({ id: '1', name: 'test', data: {}, attemptsMade: 0 });
+        const result = handler(
+            { id: '1', name: 'test', data: {}, attemptsMade: 0 },
+            { signal: new AbortController().signal },
+        );
         expect(result).toBeInstanceOf(Promise);
         await result;
         // `received` is mutated inside the async handler; TS cannot see that

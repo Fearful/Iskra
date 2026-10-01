@@ -35,6 +35,7 @@ For a deeper look at the layers, interfaces, and design patterns, see the [archi
 | `@iskra-bun/kv-kit` | Key-Value store with Redis and in-memory adapters | [KV Kit](https://iskra-docs.fly.dev/packages/kv-kit/) |
 | `@iskra-bun/cache-kit` | Higher-level cache (cache-aside, TTL, namespaces, tags) on top of kv-kit | [Cache Kit](https://iskra-docs.fly.dev/packages/cache-kit/) |
 | `@iskra-bun/worker-kit` | Background job queue with BullMQ | [Worker Kit](https://iskra-docs.fly.dev/packages/worker-kit/) |
+| `@iskra-bun/scheduler-kit` | Periodic jobs in the app's process, without Redis | [Scheduler Kit](https://iskra-docs.fly.dev/packages/scheduler-kit/) |
 | `@iskra-bun/mailer-kit` | Transport-agnostic email (SMTP/SendGrid/Mailgun/SES) | [Mailer Kit](https://iskra-docs.fly.dev/packages/mailer-kit/) |
 | `@iskra-bun/storage-kit` | File storage (local, S3/MinIO) with streaming | [Storage Kit](https://iskra-docs.fly.dev/packages/storage-kit/) |
 | `@iskra-bun/process-kit` | External process management (Python, binaries) | [Process Kit](https://iskra-docs.fly.dev/packages/process-kit/) |
@@ -122,6 +123,7 @@ Full documentation lives at **[iskra-docs.fly.dev](https://iskra-docs.fly.dev)**
 | [Socket Kit](https://iskra-docs.fly.dev/packages/socket-kit/) | WebSocket, router, broadcast, message protocol |
 | [KV Kit](https://iskra-docs.fly.dev/packages/kv-kit/) | Key-Value store, Redis and in-memory adapters |
 | [Worker Kit](https://iskra-docs.fly.dev/packages/worker-kit/) | Job queue, BullMQ, handlers, retries |
+| [Scheduler Kit](https://iskra-docs.fly.dev/packages/scheduler-kit/) | Periodic jobs in process, overlap, timeouts, health |
 | [Process Kit](https://iskra-docs.fly.dev/packages/process-kit/) | External processes, daemon/oneshot/stdio modes |
 | [Configuration](https://iskra-docs.fly.dev/configuration/) | Config system with c12, Zod, environment variables |
 | [Migrations](https://iskra-docs.fly.dev/guides/migrations/) | Migration system with Drizzle Kit |

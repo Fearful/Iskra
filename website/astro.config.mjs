@@ -59,6 +59,7 @@ export default defineConfig({
                         { slug: 'packages/kv-kit' },
                         { slug: 'packages/cache-kit' },
                         { slug: 'packages/worker-kit' },
+                        { slug: 'packages/scheduler-kit' },
                         { slug: 'packages/process-kit' },
                         { slug: 'packages/mailer-kit' },
                         { slug: 'packages/storage-kit' },

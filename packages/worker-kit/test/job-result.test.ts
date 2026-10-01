@@ -97,7 +97,10 @@ describe('JobHandler<T, R> return type', () => {
 
         const handler: JobHandler<Payload, number> = async (job) => job.data.n * 2;
 
-        const out = await handler({ id: '1', name: 'double', data: { n: 21 }, attemptsMade: 0 });
+        const out = await handler(
+            { id: '1', name: 'double', data: { n: 21 }, attemptsMade: 0 },
+            { signal: new AbortController().signal },
+        );
         expect(out).toBe(42);
     });
 

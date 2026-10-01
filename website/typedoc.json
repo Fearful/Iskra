@@ -8,6 +8,7 @@
     "../packages/socket-kit/src/index.ts",
     "../packages/kv-kit/src/index.ts",
     "../packages/worker-kit/src/index.ts",
+    "../packages/scheduler-kit/src/index.ts",
     "../packages/process-kit/src/index.ts",
     "../packages/desktop-kit/src/index.ts",
     "../packages/mobile-kit/src/index.ts",

@@ -68,12 +68,25 @@ export interface JobOptions {
  * resultado del job (recuperable vía `job.waitUntilFinished`). Devolver `void`
  * sigue siendo válido (R por defecto es `void`).
  */
-export type JobHandler<T = unknown, R = void> = (job: {
-    id: string;
-    name: string;
-    data: T;
-    attemptsMade: number;
-}) => Promise<R>;
+export type JobHandler<T = unknown, R = void> = (
+    job: {
+        id: string;
+        name: string;
+        data: T;
+        attemptsMade: number;
+    },
+    context: JobContext,
+) => Promise<R>;
+
+/** Lo que recibe un handler además del job. */
+export interface JobContext {
+    /**
+     * La señal de BullMQ para este job: se aborta cuando se cancela
+     * (`worker.cancelJob`); pasarla a fetch() y a las consultas hace que
+     * también se detengan. Tiene la misma forma que en scheduler-kit.
+     */
+    signal: AbortSignal;
+}
 
 /**
  * Payload del evento `worker:dead-letter`, emitido cuando un job agota todos
