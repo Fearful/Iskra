@@ -14,8 +14,14 @@ const ACTORS: Record<string, Actor> = {
     bob: { id: 'bob', team: 'blue' },
 };
 
+/** Sessions revoked since their client connected. */
+const revoked = new Set<string>();
+
 /** Identifies the client by the `x-user` header (an app would use AuthFeature). */
-const actor = (c: { req: { header(name: string): string | undefined } }) => ACTORS[c.req.header('x-user') ?? ''];
+const actor = (c: { req: { header(name: string): string | undefined } }) => {
+    const id = c.req.header('x-user') ?? '';
+    return revoked.has(id) ? undefined : ACTORS[id];
+};
 
 function recordingLogger() {
     const warnings: string[] = [];
@@ -35,14 +41,18 @@ afterEach(async () => {
     for (const hub of hubs) hub.close();
     kernels = [];
     hubs = [];
+    revoked.clear();
 });
 
-async function setup(options: { heartbeatMs?: number; maxQueuedBytes?: number; idleTimeout?: number } = {}) {
+async function setup(
+    options: { heartbeatMs?: number; maxQueuedBytes?: number; idleTimeout?: number; maxConnectionMs?: number } = {},
+) {
     const { logger, warnings } = recordingLogger();
     const kernel = new Kernel({ logger, idleTimeout: options.idleTimeout, port: 0, shutdownGraceMs: 3000 });
     const hub = new SseHub<Actor, unknown>({
         heartbeatMs: options.heartbeatMs ?? 60_000,
         maxQueuedBytes: options.maxQueuedBytes,
+        maxConnectionMs: options.maxConnectionMs,
     });
     kernel.registerFeature(new HealthCheckFeature({ includeDetails: true }));
     kernel.registerFeature(new SseFeature({ hub, actor, maxClientsPerActor: 2 }));
@@ -151,6 +161,42 @@ describe('SseFeature', () => {
         expect(await alice.next()).toBe('data: x');
         hub.publish({ data: 'y' });
         expect(await bob.next()).toBe('data: y');
+    });
+
+    it('lets an event through only when the filter returns true', async () => {
+        const { app, hub } = await setup();
+        const alice = await open(app, 'alice');
+        const notTrue = [1, 'yes', {}, Promise.resolve(true), undefined] as unknown as boolean[];
+        for (const verdict of notTrue) expect(hub.publish({ data: 'leak' }, () => verdict)).toBe(0);
+        expect(hub.publish({ data: 'ok' }, () => true)).toBe(1);
+        expect(await alice.next()).toBe('data: ok');
+    });
+
+    it('ends the connections of an actor with disconnect()', async () => {
+        const { app, hub } = await setup();
+        const alice = await open(app, 'alice');
+        const bob = await open(app, 'bob');
+        expect(hub.disconnect((a) => a.id === 'alice')).toBe(1);
+        expect(await alice.next()).toBe('<closed>');
+        expect(hub.size).toBe(1);
+        hub.publish({ data: 'still here' });
+        expect(await bob.next()).toBe('data: still here');
+    });
+
+    it('ends each connection within maxConnectionMs, so a revoked session is refused on reconnect', async () => {
+        const { app, hub } = await setup({ maxConnectionMs: 200 });
+        const alice = await open(app, 'alice');
+        const started = Date.now();
+        revoked.add('alice');
+        hub.publish({ data: 'before the end' });
+        expect(await alice.next()).toBe('data: before the end');
+        expect(await alice.next(1000)).toBe('<closed>');
+        const lasted = Date.now() - started;
+        expect(lasted).toBeGreaterThanOrEqual(170);
+        expect(lasted).toBeLessThan(600);
+        expect(hub.size).toBe(0);
+        // EventSource reconnects; the request is checked again.
+        expect((await app.request('/api/events', { headers: { 'x-user': 'alice' } })).status).toBe(401);
     });
 
     it('sends the heartbeat', async () => {

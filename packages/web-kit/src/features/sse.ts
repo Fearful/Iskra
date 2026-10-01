@@ -28,9 +28,21 @@ export interface SseHubOptions {
     maxQueuedBytes?: number;
     /** `retry:` sent on connect: how long the browser waits to reconnect, in ms. */
     retryMs?: number;
+    /**
+     * How long a connection lasts, in ms (default 300 000, 5 minutes): the
+     * actor is checked only when a client connects, so a revoked session
+     * keeps receiving events until its connection ends. `EventSource`
+     * reconnects by itself, and the new request is checked again (a revoked
+     * one gets 401). Each connection ends at a random point of its last
+     * tenth, so clients that connected together do not all come back at once.
+     * Same default as AuthFeature's session cookie cache, which already lets
+     * a revoked session through that long. `hub.disconnect()` ends an actor's
+     * connections right away (on sign-out, say).
+     */
+    maxConnectionMs?: number;
 }
 
-/** Decides, per connected actor, whether an event reaches it. */
+/** Decides, per connected actor, whether an event reaches it: only `true` lets it through. */
 export type SseFilter<A> = (actor: A) => boolean;
 
 interface Client<A> {
@@ -38,6 +50,7 @@ interface Client<A> {
     key: string;
     controller: ReadableStreamDefaultController<Uint8Array>;
     closed: boolean;
+    expiry?: ReturnType<typeof setTimeout>;
 }
 
 const encoder = new TextEncoder();
@@ -73,18 +86,24 @@ export class SseHub<A = unknown, T = unknown> {
     readonly heartbeatMs: number;
     /** Where filter errors and dropped clients are reported; SseFeature sets the kernel's. */
     logger: KernelLogger = consoleLogger;
+    readonly maxConnectionMs: number;
     private readonly maxQueuedBytes: number;
     private readonly retryMs?: number;
     private readonly clients = new Set<Client<A>>();
     private heartbeat?: ReturnType<typeof setInterval>;
     private closed = false;
+    private warnedAsyncFilter = false;
 
     constructor(options: SseHubOptions = {}) {
         this.heartbeatMs = options.heartbeatMs ?? 15_000;
         this.maxQueuedBytes = options.maxQueuedBytes ?? 1024 * 1024;
+        this.maxConnectionMs = options.maxConnectionMs ?? 5 * 60_000;
         this.retryMs = options.retryMs;
         if (!(this.heartbeatMs > 0)) throw new Error('SseHub: heartbeatMs must be positive');
         if (!(this.maxQueuedBytes > 0)) throw new Error('SseHub: maxQueuedBytes must be positive');
+        if (!(this.maxConnectionMs > 0) || !Number.isFinite(this.maxConnectionMs)) {
+            throw new Error('SseHub: maxConnectionMs must be a positive number of ms');
+        }
     }
 
     /** Connected clients. */
@@ -106,26 +125,49 @@ export class SseHub<A = unknown, T = unknown> {
 
     /**
      * Sends `message` to every client whose actor `filter` accepts (all of
-     * them without one) and returns how many it was queued for. A filter that
-     * throws skips that client only.
+     * them without one) and returns how many it was queued for. Only `true`
+     * accepts: a truthy value such as a Promise (an async filter) or a
+     * permission object does not. A filter that throws skips that client only.
      */
     publish(message: SseMessage<T>, filter?: SseFilter<A>): number {
         const chunk = encoder.encode(formatSseMessage(message));
         let sent = 0;
-        for (const client of [...this.clients]) {
-            if (filter) {
-                let visible: boolean;
-                try {
-                    visible = filter(client.actor);
-                } catch (err) {
-                    this.logger.error('SSE filter failed; the event was not sent to that client', err);
-                    continue;
-                }
-                if (!visible) continue;
-            }
+        for (const client of this.matching(filter, 'publish')) {
             if (this.write(client, chunk)) sent++;
         }
         return sent;
+    }
+
+    /**
+     * Ends the connections whose actor `filter` accepts (`true` only), e.g.
+     * a user's on sign-out: `hub.disconnect((user) => user.id === userId)`.
+     * Their browsers reconnect, and are checked again. Returns how many ended.
+     */
+    disconnect(filter: SseFilter<A>): number {
+        const ending = this.matching(filter, 'disconnect');
+        for (const client of ending) this.end(client);
+        return ending.length;
+    }
+
+    /** The clients `filter` accepts; all of them without one. */
+    private matching(filter: SseFilter<A> | undefined, use: string): Client<A>[] {
+        const clients = [...this.clients];
+        if (!filter) return clients;
+        return clients.filter((client) => {
+            let verdict: unknown;
+            try {
+                verdict = filter(client.actor);
+            } catch (err) {
+                this.logger.error(`SSE ${use} filter failed; that client was left out`, err);
+                return false;
+            }
+            if (verdict === true) return true;
+            if (!this.warnedAsyncFilter && typeof (verdict as { then?: unknown } | null)?.then === 'function') {
+                this.warnedAsyncFilter = true;
+                this.logger.error(`SSE ${use} filter returned a Promise; filters must return true synchronously`);
+            }
+            return false;
+        });
     }
 
     /**
@@ -141,6 +183,8 @@ export class SseHub<A = unknown, T = unknown> {
                 start: (controller) => {
                     client = { actor, key: options.key ?? '', controller, closed: false };
                     this.clients.add(client);
+                    const lifetime = this.maxConnectionMs * (0.9 + Math.random() * 0.1);
+                    client.expiry = setTimeout(() => this.end(client), lifetime);
                     // A first byte right away: some proxies hold the headers until one.
                     const retry = this.retryMs !== undefined ? `retry: ${Math.floor(this.retryMs)}\n` : '';
                     controller.enqueue(encoder.encode(`${retry}: connected\n\n`));
@@ -197,6 +241,7 @@ export class SseHub<A = unknown, T = unknown> {
 
     private forget(client: Client<A>): void {
         client.closed = true;
+        clearTimeout(client.expiry);
         this.clients.delete(client);
         if (this.clients.size === 0 && this.heartbeat) {
             clearInterval(this.heartbeat);
@@ -249,7 +294,10 @@ function defaultActorKey(actor: unknown): string {
  * Server-sent events: an authenticated GET endpoint whose clients join
  * `hub`. Each connection gets `text/event-stream` with `Cache-Control:
  * no-cache` and `X-Accel-Buffering: no` (so nginx does not buffer it), the
- * hub's heartbeat, and leaves the hub when the client goes away. On
+ * hub's heartbeat, and leaves the hub when the client goes away. The actor
+ * is checked when the client connects, and again when it reconnects: the
+ * hub ends every connection within its `maxConnectionMs`, and
+ * `hub.disconnect()` ends an actor's at once (on sign-out). On
  * shutdown every connection is ended before the server waits for open
  * requests. With HealthCheckFeature, /health gets an `sse` check with the
  * number of clients.
