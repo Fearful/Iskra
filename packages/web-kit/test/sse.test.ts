@@ -204,9 +204,13 @@ describe('SseFeature', () => {
         await open(app, 'bob');
         expect(warnings.filter((w) => w.includes('idleTimeout'))).toHaveLength(1);
 
-        const quiet = await setup({ heartbeatMs: 5_000, idleTimeout: 10 });
+        // 10 s is checked in 4-second steps: it may close a connection after 8 s.
+        const quiet = await setup({ heartbeatMs: 7_000, idleTimeout: 10 });
         await open(quiet.app, 'alice');
         expect(quiet.warnings.filter((w) => w.includes('idleTimeout'))).toHaveLength(0);
+        const close = await setup({ heartbeatMs: 9_000, idleTimeout: 10 });
+        await open(close.app, 'alice');
+        expect(close.warnings.filter((w) => w.includes('idleTimeout'))).toHaveLength(1);
     });
 });
 
@@ -219,12 +223,14 @@ describe('SseFeature on a running server', () => {
 
         const stream = events(await fetch(`http://localhost:${port}/api/events`, { headers: { 'x-user': 'alice' } }));
         expect(await stream.next()).toBe(': connected');
-        // Without the per-request timeout Bun cut it after 1s of silence.
-        expect(await stream.next(2500)).toBe(': ping');
+        // Bun checks idle connections every 4 s: past one full step, an
+        // idleTimeout of 1 s has cut the stream unless it was lifted.
+        const until = Date.now() + 4500;
+        while (Date.now() < until) expect(await stream.next(2500)).toBe(': ping');
         hub.publish({ data: 'still here' });
         expect(await stream.next()).toBe('data: still here');
         expect(warnings.filter((w) => w.includes('idleTimeout'))).toHaveLength(0);
-    });
+    }, 10_000);
 
     it('ends every connection on shutdown without waiting for the grace period', async () => {
         const { kernel, hub } = await setup();

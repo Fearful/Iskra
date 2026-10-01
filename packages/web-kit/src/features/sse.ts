@@ -228,6 +228,17 @@ export interface SseConfig<A = unknown> {
 const BUN_DEFAULT_IDLE_TIMEOUT_S = 10;
 /** The largest per-request timeout Bun takes, in seconds. */
 const BUN_MAX_TIMEOUT_S = 255;
+/**
+ * Bun checks idle connections every 4 seconds, so a timeout of N seconds
+ * closes a connection between ceil(N/4)·4 - 4 and ceil(N/4)·4 seconds after
+ * its last write: a 3-second one at the next check, writes or not.
+ */
+const BUN_TIMEOUT_STEP_S = 4;
+
+/** The shortest time, in seconds, Bun may leave a connection idle under a timeout of `seconds`. */
+function shortestIdleS(seconds: number): number {
+    return (Math.ceil(seconds / BUN_TIMEOUT_STEP_S) - 1) * BUN_TIMEOUT_STEP_S;
+}
 
 function defaultActorKey(actor: unknown): string {
     const id = (actor as { id?: unknown } | null)?.id;
@@ -244,9 +255,10 @@ function defaultActorKey(actor: unknown): string {
  * number of clients.
  *
  * Bun closes a connection that sends nothing for `idleTimeout` seconds (10
- * by default), less than the default heartbeat: each SSE request gets twice
- * the heartbeat instead (`server.timeout()`), and a warning is logged when
- * that is not possible and `idleTimeout` is shorter than the heartbeat.
+ * by default, checked in 4-second steps), less than the default heartbeat:
+ * each SSE request gets a timeout well past the heartbeat instead
+ * (`server.timeout()`), and a warning is logged when that is not possible
+ * and `idleTimeout` is not longer than the heartbeat.
  */
 export class SseFeature<A = unknown> implements Feature {
     readonly name: string;
@@ -319,21 +331,26 @@ export class SseFeature<A = unknown> implements Feature {
         });
     }
 
-    /** Gives this request twice the heartbeat before Bun closes it as idle. */
+    /**
+     * Gives this request an idle timeout well past the heartbeat: twice it,
+     * and at least two of Bun's 4-second steps more, since Bun may close a
+     * connection up to one step before its timeout.
+     */
     private keepAlive(c: Context): void {
         const server = c.env as { timeout?: (request: Request, seconds: number) => void } | undefined;
+        const heartbeatS = Math.ceil(this.hub.heartbeatMs / 1000);
         if (typeof server?.timeout === 'function') {
-            const seconds = Math.ceil((2 * this.hub.heartbeatMs) / 1000);
+            const seconds = Math.max(2 * heartbeatS, heartbeatS + 2 * BUN_TIMEOUT_STEP_S);
             server.timeout(c.req.raw, seconds > BUN_MAX_TIMEOUT_S ? 0 : seconds);
             return;
         }
         if (this.warnedIdleTimeout || this.idleTimeoutS === 0) return;
-        if (this.idleTimeoutS * 1000 <= this.hub.heartbeatMs) {
+        if (shortestIdleS(this.idleTimeoutS) * 1000 <= this.hub.heartbeatMs) {
             this.warnedIdleTimeout = true;
             this.log.warn(
-                `SSE '${this.name}': idleTimeout (${this.idleTimeoutS}s) is not longer than the heartbeat ` +
-                    `(${this.hub.heartbeatMs}ms) and this server cannot lift it per request: quiet connections ` +
-                    'will be cut. Raise KernelConfig.idleTimeout or lower heartbeatMs.',
+                `SSE '${this.name}': idleTimeout (${this.idleTimeoutS}s, which Bun applies in 4-second steps) is ` +
+                    `not longer than the heartbeat (${this.hub.heartbeatMs}ms) and this server cannot lift it per ` +
+                    'request: quiet connections will be cut. Raise KernelConfig.idleTimeout or lower heartbeatMs.',
             );
         }
     }
