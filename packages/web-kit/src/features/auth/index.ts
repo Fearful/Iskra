@@ -410,6 +410,11 @@ export class AuthFeature implements Feature {
     getAuth(): Auth | undefined {
         return this.auth;
     }
+
+    /** Where better-auth's routes are mounted (`/api/sso` by default). */
+    get basePath(): string {
+        return this.config.basePath;
+    }
 }
 
 export function requireAuth(kernel: Kernel) {

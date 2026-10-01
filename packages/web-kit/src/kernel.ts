@@ -43,7 +43,24 @@ export class Kernel {
         // Every error and every unmatched route answer by the response
         // contract (config.contract, Iskra's by default).
         this.app.onError((err: Error, c: Context) => this.responder.error(err, c));
-        this.app.notFound((c: Context) => this.responder.problem(c, problem(404)));
+        this.app.notFound(async (c: Context) => {
+            const answer = this.fallback ? await this.fallback(c) : undefined;
+            return answer ?? this.responder.problem(c, problem(404));
+        });
+    }
+
+    private fallback?: (c: Context) => Response | undefined | Promise<Response | undefined>;
+
+    /**
+     * Answers the requests no route takes, before the 404: `handler` returns
+     * a Response, or undefined for the 404. It runs after every middleware,
+     * so it never hides a route (SpaFeature serves the client app this way).
+     * One per kernel, set before initialize() ends.
+     */
+    setFallback(handler: (c: Context) => Response | undefined | Promise<Response | undefined>): void {
+        if (this.initialized) throw new Error('Cannot set the fallback after initialization');
+        if (this.fallback) throw new Error('A fallback is already set; a kernel has one');
+        this.fallback = handler;
     }
 
     async initialize(): Promise<void> {
