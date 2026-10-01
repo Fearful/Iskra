@@ -130,6 +130,29 @@ describe('SseFeature', () => {
         expect(hub.size).toBe(0);
     });
 
+    it('refuses an actor without an id unless actorKey identifies it', async () => {
+        const kernel = new Kernel({ logger: false });
+        const hub = new SseHub<{ scopes: string[] }>();
+        hubs.push(hub as unknown as SseHub<Actor, unknown>);
+        kernel.registerFeature(new SseFeature({ hub, actor: () => ({ scopes: ['read'] }) }));
+        await kernel.initialize();
+        const res = await kernel.getApp().request('/api/events');
+        expect(res.status).toBe(500);
+        expect(hub.size).toBe(0);
+
+        const keyed = new Kernel({ logger: false });
+        const keyedHub = new SseHub<{ scopes: string[]; key: string }>();
+        hubs.push(keyedHub as unknown as SseHub<Actor, unknown>);
+        keyed.registerFeature(
+            new SseFeature({ hub: keyedHub, actor: () => ({ scopes: ['read'], key: 'k1' }), actorKey: (a) => a.key }),
+        );
+        await keyed.initialize();
+        const ok = await keyed.getApp().request('/api/events');
+        expect(ok.status).toBe(200);
+        expect(keyedHub.countOf('k1')).toBe(1);
+        await ok.body!.cancel();
+    });
+
     it('requires AuthFeature or an actor function', async () => {
         const kernel = new Kernel({ logger: false });
         kernel.registerFeature(new SseFeature({ hub: new SseHub() }));

@@ -261,7 +261,12 @@ export interface SseConfig<A = unknown> {
      * AuthFeature signed in (`c.get('authUser')`).
      */
     actor?: (c: Context) => A | null | undefined | Promise<A | null | undefined>;
-    /** What identifies an actor for `maxClientsPerActor`. Default: its `id`. */
+    /**
+     * What identifies an actor for `maxClientsPerActor`. Default: its `id`
+     * (or the actor itself when it is a string or a number); an actor
+     * without one needs this, or its connection fails (500) rather than
+     * share one limit with every other actor.
+     */
     actorKey?: (actor: A) => string;
     /** Connections this process keeps open; past it, 503. Default 10 000. */
     maxClients?: number;
@@ -286,8 +291,11 @@ function shortestIdleS(seconds: number): number {
 }
 
 function defaultActorKey(actor: unknown): string {
+    if (typeof actor === 'string' || typeof actor === 'number') return String(actor);
     const id = (actor as { id?: unknown } | null)?.id;
-    return id === undefined || id === null ? String(actor) : String(id);
+    if (typeof id === 'string' || typeof id === 'number') return String(id);
+    // String(actor) was "[object Object]" for every actor: one shared limit.
+    throw new Error('SseFeature: the actor has no id; pass actorKey(actor) to identify it');
 }
 
 /**
