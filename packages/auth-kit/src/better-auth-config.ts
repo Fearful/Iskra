@@ -36,6 +36,15 @@ function placeholderMarker(secret: string): string | undefined {
     return PLACEHOLDER_SECRET_MARKERS.find((marker) => normalized.includes(normalizeSecret(marker)));
 }
 
+/**
+ * better-auth routes that answer a signed-in browser with the provider's
+ * access token in clear (`/account-info` with what the provider says about
+ * the user, fetched with it), and renew it outside `getProviderAccessToken`'s
+ * one-at-a-time renewals, which a provider that rotates refresh tokens turns
+ * into a sign-out. The server reaches tokens through `getProviderAccessToken`.
+ */
+export const TOKEN_ROUTES = ['/get-access-token', '/refresh-token', '/account-info'] as const;
+
 /** Hosts a production baseURL may reach over plain http (e.g. docker compose on one machine). */
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -298,10 +307,13 @@ export function createBetterAuth(options: BetterAuthConfigOptions): BetterAuthIn
         plugins,
         // Always on: the access and refresh tokens of social/OIDC accounts let
         // whoever reads the table act as the user on the provider. They are
-        // stored AES-256-GCM encrypted with a key derived from `secret`, so
-        // changing the secret makes the stored ones unreadable (their users
-        // sign in again). The ID token is stored as is.
+        // stored encrypted with XChaCha20-Poly1305 (better-auth's own docs
+        // say AES-256-GCM), keyed by the SHA-256 of `secret`, so changing the
+        // secret makes the stored ones unreadable (their users sign in
+        // again). The ID token is stored as is.
         account: { encryptOAuthTokens: true },
+        // Not over HTTP: see TOKEN_ROUTES.
+        disabledPaths: [...TOKEN_ROUTES],
         session: {
             expiresIn: 60 * 60 * 24 * 7,
             updateAge: 60 * 60 * 24,

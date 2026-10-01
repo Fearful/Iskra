@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { HealthCheckFeature } from '../src/features/health';
 import { formatSseMessage, SseFeature, SseHub } from '../src/features/sse';
+import { AuthFeature } from '../src/features/auth/index';
+import { DbFeature } from '../src/features/db';
 import type { KernelLogger } from '../src/logging';
 
 interface Actor {
@@ -14,8 +16,14 @@ const ACTORS: Record<string, Actor> = {
     bob: { id: 'bob', team: 'blue' },
 };
 
+/** Sessions revoked since their client connected. */
+const revoked = new Set<string>();
+
 /** Identifies the client by the `x-user` header (an app would use AuthFeature). */
-const actor = (c: { req: { header(name: string): string | undefined } }) => ACTORS[c.req.header('x-user') ?? ''];
+const actor = (c: { req: { header(name: string): string | undefined } }) => {
+    const id = c.req.header('x-user') ?? '';
+    return revoked.has(id) ? undefined : ACTORS[id];
+};
 
 function recordingLogger() {
     const warnings: string[] = [];
@@ -35,14 +43,18 @@ afterEach(async () => {
     for (const hub of hubs) hub.close();
     kernels = [];
     hubs = [];
+    revoked.clear();
 });
 
-async function setup(options: { heartbeatMs?: number; maxQueuedBytes?: number; idleTimeout?: number } = {}) {
+async function setup(
+    options: { heartbeatMs?: number; maxQueuedBytes?: number; idleTimeout?: number; maxConnectionMs?: number } = {},
+) {
     const { logger, warnings } = recordingLogger();
     const kernel = new Kernel({ logger, idleTimeout: options.idleTimeout, port: 0, shutdownGraceMs: 3000 });
     const hub = new SseHub<Actor, unknown>({
         heartbeatMs: options.heartbeatMs ?? 60_000,
         maxQueuedBytes: options.maxQueuedBytes,
+        maxConnectionMs: options.maxConnectionMs,
     });
     kernel.registerFeature(new HealthCheckFeature({ includeDetails: true }));
     kernel.registerFeature(new SseFeature({ hub, actor, maxClientsPerActor: 2 }));
@@ -120,6 +132,29 @@ describe('SseFeature', () => {
         expect(hub.size).toBe(0);
     });
 
+    it('refuses an actor without an id unless actorKey identifies it', async () => {
+        const kernel = new Kernel({ logger: false });
+        const hub = new SseHub<{ scopes: string[] }>();
+        hubs.push(hub as unknown as SseHub<Actor, unknown>);
+        kernel.registerFeature(new SseFeature({ hub, actor: () => ({ scopes: ['read'] }) }));
+        await kernel.initialize();
+        const res = await kernel.getApp().request('/api/events');
+        expect(res.status).toBe(500);
+        expect(hub.size).toBe(0);
+
+        const keyed = new Kernel({ logger: false });
+        const keyedHub = new SseHub<{ scopes: string[]; key: string }>();
+        hubs.push(keyedHub as unknown as SseHub<Actor, unknown>);
+        keyed.registerFeature(
+            new SseFeature({ hub: keyedHub, actor: () => ({ scopes: ['read'], key: 'k1' }), actorKey: (a) => a.key }),
+        );
+        await keyed.initialize();
+        const ok = await keyed.getApp().request('/api/events');
+        expect(ok.status).toBe(200);
+        expect(keyedHub.countOf('k1')).toBe(1);
+        await ok.body!.cancel();
+    });
+
     it('requires AuthFeature or an actor function', async () => {
         const kernel = new Kernel({ logger: false });
         kernel.registerFeature(new SseFeature({ hub: new SseHub() }));
@@ -151,6 +186,42 @@ describe('SseFeature', () => {
         expect(await alice.next()).toBe('data: x');
         hub.publish({ data: 'y' });
         expect(await bob.next()).toBe('data: y');
+    });
+
+    it('lets an event through only when the filter returns true', async () => {
+        const { app, hub } = await setup();
+        const alice = await open(app, 'alice');
+        const notTrue = [1, 'yes', {}, Promise.resolve(true), undefined] as unknown as boolean[];
+        for (const verdict of notTrue) expect(hub.publish({ data: 'leak' }, () => verdict)).toBe(0);
+        expect(hub.publish({ data: 'ok' }, () => true)).toBe(1);
+        expect(await alice.next()).toBe('data: ok');
+    });
+
+    it('ends the connections of an actor with disconnect()', async () => {
+        const { app, hub } = await setup();
+        const alice = await open(app, 'alice');
+        const bob = await open(app, 'bob');
+        expect(hub.disconnect((a) => a.id === 'alice')).toBe(1);
+        expect(await alice.next()).toBe('<closed>');
+        expect(hub.size).toBe(1);
+        hub.publish({ data: 'still here' });
+        expect(await bob.next()).toBe('data: still here');
+    });
+
+    it('ends each connection within maxConnectionMs, so a revoked session is refused on reconnect', async () => {
+        const { app, hub } = await setup({ maxConnectionMs: 200 });
+        const alice = await open(app, 'alice');
+        const started = Date.now();
+        revoked.add('alice');
+        hub.publish({ data: 'before the end' });
+        expect(await alice.next()).toBe('data: before the end');
+        expect(await alice.next(1000)).toBe('<closed>');
+        const lasted = Date.now() - started;
+        expect(lasted).toBeGreaterThanOrEqual(170);
+        expect(lasted).toBeLessThan(600);
+        expect(hub.size).toBe(0);
+        // EventSource reconnects; the request is checked again.
+        expect((await app.request('/api/events', { headers: { 'x-user': 'alice' } })).status).toBe(401);
     });
 
     it('sends the heartbeat', async () => {
@@ -254,5 +325,55 @@ describe('SseFeature on a running server', () => {
         hub.close();
         const res = await app.request('/api/events', { headers: { 'x-user': 'alice' } });
         expect(res.status).toBe(503);
+    });
+});
+
+describe('SseFeature with AuthFeature', () => {
+    const DDL = `
+CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL, image TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id));
+CREATE TABLE account (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES user(id), accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt INTEGER NOT NULL, createdAt INTEGER, updatedAt INTEGER);
+`;
+    const ORIGIN = 'http://localhost:3000';
+
+    it('reads the session from the database, so a revoked one is refused on reconnect', async () => {
+        const kernel = new Kernel({ logger: false });
+        const db = new DbFeature({ adapter: 'sqlite', connection: { database: ':memory:' } });
+        const hub = new SseHub();
+        hubs.push(hub as unknown as SseHub<Actor, unknown>);
+        kernel.registerFeature(db);
+        kernel.registerFeature(
+            new AuthFeature({
+                secret: 'a-contract-secret-with-enough-entropy-1f9c2e7b',
+                baseURL: ORIGIN,
+                rateLimit: false,
+            }),
+        );
+        kernel.registerFeature(new SseFeature({ hub }));
+        await kernel.initialize();
+        const sqlite = (db.db as unknown as { $client: { exec(sql: string): void } }).$client;
+        sqlite.exec(DDL);
+        const app = kernel.getApp();
+        app.get('/me', (c) => c.json({ user: c.get('authUser') ? 'signed in' : null }));
+
+        const signUp = await app.request('/api/sso/sign-up/email', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', origin: ORIGIN },
+            body: JSON.stringify({ email: 'ana@example.com', password: 'password1234', name: 'Ana' }),
+        });
+        const cookie = signUp.headers
+            .getSetCookie()
+            .map((c) => c.split(';')[0])
+            .join('; ');
+        const first = await app.request('/api/events', { headers: { cookie } });
+        expect(first.status).toBe(200);
+        await first.body!.cancel();
+
+        sqlite.exec('DELETE FROM session'); // revoked (sign-out elsewhere, an admin)
+        // The cookie cache still lets it through on ordinary requests…
+        expect(await (await app.request('/me', { headers: { cookie } })).json()).toEqual({ user: 'signed in' });
+        // …but not on an SSE connection.
+        expect((await app.request('/api/events', { headers: { cookie } })).status).toBe(401);
     });
 });

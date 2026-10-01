@@ -149,6 +149,21 @@ describe('SpaFeature', () => {
         });
     });
 
+    it('keeps $ patterns in config values as they are, in the page and in the hash', async () => {
+        const config = { a: "$& $` $' $$ $1 $<x>" };
+        for (const root of [dist, join(base, 'marked-dollars')]) {
+            if (root !== dist) {
+                mkdirSync(root, { recursive: true });
+                writeFileSync(join(root, 'index.html'), '<html><head><!--app-config--></head></html>');
+            }
+            const { app, spa } = await setup({ root, config });
+            const script = `window.__APP_CONFIG__=${scriptSafeJson(config)};`;
+            const body = await (await app.request('/')).text();
+            expect(body).toContain(`<script>${script}</script>`);
+            expect(spa.configScriptHash).toBe(`'sha256-${createHash('sha256').update(script).digest('base64')}'`);
+        }
+    });
+
     it("hands the config script's hash to the page's Content-Security-Policy", async () => {
         const { app, spa } = await setup({
             config: { env: 'prod' },

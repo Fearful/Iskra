@@ -19,7 +19,7 @@ import { isDevelopmentEnv } from '@iskra-bun/core';
 import { AuthError, HttpError } from '../../errors';
 
 /** What `getAccessToken` takes besides the provider. */
-export type AccessTokenOptions = Pick<ProviderAccessTokenOptions, 'accountId' | 'minValidityMs'>;
+export type AccessTokenOptions = Pick<ProviderAccessTokenOptions, 'accountId' | 'minValidityMs' | 'timeoutMs'>;
 
 declare module 'hono' {
     interface ContextVariableMap {

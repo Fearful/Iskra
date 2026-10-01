@@ -148,6 +148,26 @@ describe('IntervalScheduler', () => {
         expect(result.message).toContain('stuck');
     });
 
+    it('counts a run that outlives its timeout as failed, even when it ends well later', async () => {
+        const { s } = scheduler();
+        s.register('late', async () => {
+            await Bun.sleep(80);
+            return { synced: 1 };
+        });
+        await s.schedule('late', null, { every: 60_000 }, { runOnStart: true, timeoutMs: 20 });
+        const health = s.healthCheck('late', { maxConsecutiveFailures: 1 });
+        s.start();
+        await until(() => s.status('late').lastRun !== undefined);
+
+        const status = s.status('late');
+        expect(status.lastRun!.ok).toBe(false);
+        expect(status.lastRun!.result).toBeUndefined();
+        expect(status.failures).toBe(1);
+        expect(status.lastError!.name).toBe('TimeoutError');
+        expect(status.lastSuccessAt).toBeUndefined();
+        expect((await health()).status).toBe('error');
+    });
+
     it('stops a job after `limit` runs', async () => {
         const { s } = scheduler();
         let runs = 0;
@@ -293,5 +313,32 @@ describe('IntervalScheduler as an App driver', () => {
         const after = runs;
         await Bun.sleep(40);
         expect(runs).toBe(after);
+    });
+});
+
+describe('IntervalScheduler.readinessCheck()', () => {
+    it('is ready once started and while the job is healthy', async () => {
+        const { s } = scheduler();
+        let fail = false;
+        s.register('sync', async () => {
+            if (fail) throw new Error('down');
+        });
+        await s.schedule('sync', null, { every: 15 }, { runOnStart: true });
+        const ready = s.readinessCheck('sync', { maxConsecutiveFailures: 2 });
+        expect(await ready()).toBe(false); // not started
+
+        s.start();
+        await until(() => s.status('sync').lastRun?.ok === true);
+        expect(await ready()).toBe(true);
+
+        fail = true;
+        await until(() => s.status('sync').consecutiveFailures >= 2);
+        expect(await ready()).toBe(false);
+
+        fail = false;
+        await until(() => s.status('sync').consecutiveFailures === 0);
+        expect(await ready()).toBe(true);
+        await s.stop();
+        expect(await ready()).toBe(false);
     });
 });

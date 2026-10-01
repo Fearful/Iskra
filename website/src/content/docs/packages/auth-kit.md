@@ -132,10 +132,11 @@ You can also configure better-auth's native social providers via `socialProvider
 
 ## OAuth tokens: encrypted and renewed
 
-The access and refresh tokens of social and OIDC accounts (GitLab, GitHub, your OIDC provider…) let whoever holds them act as the user on that provider. `createBetterAuth` always stores them **encrypted** (better-auth's `encryptOAuthTokens`: AES-256-GCM with a key derived from `secret`); there is no option to turn it off.
+The access and refresh tokens of social and OIDC accounts (GitLab, GitHub, your OIDC provider…) let whoever holds them act as the user on that provider. `createBetterAuth` always stores them **encrypted** (better-auth's `encryptOAuthTokens`: XChaCha20-Poly1305 keyed by the SHA-256 of `secret`; better-auth's own docs say AES-256-GCM, its code does not); there is no option to turn it off.
 
 - Changing `secret` makes the stored tokens unreadable: their users sign in with the provider again.
 - The ID token is stored as is.
+- better-auth's `/get-access-token`, `/refresh-token` and `/account-info` routes are closed (`TOKEN_ROUTES`, 404): they answered any signed-in browser with the provider's token in clear, and renewed it outside the one-at-a-time renewals below. **Breaking (0.x):** a client that called them (`authClient.getAccessToken()`) asks your server instead, which uses `getProviderAccessToken()`.
 - **Breaking (0.x):** tokens stored in plain text by an earlier version may no longer be read (better-auth takes a hexadecimal one for an encrypted one). Have those users sign in again, or clear `accessToken` and `refreshToken` in the `account` table.
 
 `getProviderAccessToken()` hands out a valid access token for the user's account with a provider, renewing it with the refresh token when it is about to expire:
@@ -157,9 +158,11 @@ const token = await getProviderAccessToken(auth, { providerId: 'gitlab', userId 
 | `userId` | — | The user to act for when there is no request |
 | `accountId` | — | Which account, when the user linked more than one with that provider |
 | `minValidityMs` | `60000` | Renew when the token has less than this left |
+| `timeoutMs` | `10000` | How long to wait for the provider's token endpoint |
 
 - Renewals of one account run one at a time, and each one re-reads the account first. Providers that rotate refresh tokens (GitLab accepts each one once) would otherwise refuse the second of two concurrent renewals and sign the user out. This holds within one process: several instances of the app can still renew the same account at once.
-- The renewed pair is stored encrypted.
+- The renewed pair is stored encrypted. When the provider gives no expiry, none is stored, and the token is not renewed again.
+- Past `timeoutMs` the call fails with `PROVIDER_UNAVAILABLE`, but an answer that comes later is still stored, and the account's next renewal waits for it: the provider may already have retired the old refresh token.
 - Without a refresh token, a token about to expire is handed out until it expires.
 
 It throws `OAuthTokenError` with a `code`:
@@ -170,8 +173,10 @@ It throws `OAuthTokenError` with a `code`:
 | `ACCOUNT_NOT_LINKED` | The user has no account with that provider | yes |
 | `TOKEN_EXPIRED` | It expired and there is nothing to renew it with | yes |
 | `TOKEN_UNREADABLE` | It cannot be decrypted (the secret changed, or it predates encryption) | yes |
-| `REFRESH_FAILED` | The provider refused the refresh token (4xx) | yes |
-| `PROVIDER_UNAVAILABLE` | The provider's token endpoint failed (network, 5xx); the stored pair is kept | no |
+| `REFRESH_FAILED` | The provider answered `invalid_grant`: the refresh token is revoked, used or expired | yes |
+| `PROVIDER_UNAVAILABLE` | No answer within `timeoutMs`, a network error, a 5xx, a 429 or another OAuth error (`invalid_client` is the app's credentials); the session and the stored pair are kept | no |
+
+Only `invalid_grant` signs the user out: a rate limit, a misconfigured client or an outage would otherwise sign out every user without anything they could fix by signing in.
 
 In web-kit, [`getAccessToken(c, providerId)`](/packages/web-kit/#auth) answers these with 401 or 502.
 

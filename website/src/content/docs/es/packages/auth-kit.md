@@ -132,10 +132,11 @@ También puedes configurar los proveedores sociales nativos de better-auth media
 
 ## Tokens OAuth: cifrados y renovados
 
-Los tokens de acceso y de refresco de las cuentas sociales y OIDC (GitLab, GitHub, tu proveedor OIDC…) le permiten a quien los tenga actuar como el usuario en ese proveedor. `createBetterAuth` siempre los guarda **cifrados** (`encryptOAuthTokens` de better-auth: AES-256-GCM con una clave derivada de `secret`); no hay opción para desactivarlo.
+Los tokens de acceso y de refresco de las cuentas sociales y OIDC (GitLab, GitHub, tu proveedor OIDC…) le permiten a quien los tenga actuar como el usuario en ese proveedor. `createBetterAuth` siempre los guarda **cifrados** (`encryptOAuthTokens` de better-auth: XChaCha20-Poly1305 con el SHA-256 de `secret` como clave; la documentación de better-auth dice AES-256-GCM, su código no); no hay opción para desactivarlo.
 
 - Cambiar `secret` deja ilegibles los tokens guardados: sus usuarios vuelven a iniciar sesión con el proveedor.
 - El ID token se guarda tal cual.
+- Las rutas `/get-access-token`, `/refresh-token` y `/account-info` de better-auth están cerradas (`TOKEN_ROUTES`, 404): le respondían a cualquier browser con sesión el token del proveedor en claro, y lo renovaban por fuera de las renovaciones de a una de más abajo. **Breaking (0.x):** un cliente que las llamaba (`authClient.getAccessToken()`) se lo pide a tu servidor, que usa `getProviderAccessToken()`.
 - **Breaking (0.x):** los tokens que una versión anterior guardó en texto plano pueden dejar de leerse (better-auth toma uno hexadecimal por uno cifrado). Haz que esos usuarios vuelvan a iniciar sesión, o vacía `accessToken` y `refreshToken` en la tabla `account`.
 
 `getProviderAccessToken()` entrega un token de acceso vigente de la cuenta del usuario con un proveedor, y lo renueva con el refresh token cuando está por vencer:
@@ -157,9 +158,11 @@ const token = await getProviderAccessToken(auth, { providerId: 'gitlab', userId 
 | `userId` | — | El usuario por el que se actúa cuando no hay request |
 | `accountId` | — | Qué cuenta, cuando el usuario vinculó más de una con ese proveedor |
 | `minValidityMs` | `60000` | Renueva cuando al token le queda menos que esto |
+| `timeoutMs` | `10000` | Cuánto esperar al endpoint de tokens del proveedor |
 
 - Las renovaciones de una cuenta corren de a una, y cada una vuelve a leer la cuenta antes. Si no, los proveedores que rotan los refresh tokens (GitLab acepta cada uno una sola vez) rechazarían la segunda de dos renovaciones simultáneas y cerrarían la sesión del usuario. Vale dentro de un proceso: varias instancias de la app todavía pueden renovar la misma cuenta a la vez.
-- El par renovado se guarda cifrado.
+- El par renovado se guarda cifrado. Si el proveedor no informa un vencimiento, no se guarda ninguno, y el token no se vuelve a renovar.
+- Pasado `timeoutMs` la llamada falla con `PROVIDER_UNAVAILABLE`, pero una respuesta que llega después igual se guarda, y la siguiente renovación de la cuenta la espera: el proveedor puede haber retirado ya el refresh token anterior.
 - Sin refresh token, un token por vencer se entrega hasta que vence.
 
 Lanza `OAuthTokenError` con un `code`:
@@ -170,8 +173,10 @@ Lanza `OAuthTokenError` con un `code`:
 | `ACCOUNT_NOT_LINKED` | El usuario no tiene cuenta con ese proveedor | sí |
 | `TOKEN_EXPIRED` | Venció y no hay con qué renovarlo | sí |
 | `TOKEN_UNREADABLE` | No se puede descifrar (cambió el secret, o es anterior al cifrado) | sí |
-| `REFRESH_FAILED` | El proveedor rechazó el refresh token (4xx) | sí |
-| `PROVIDER_UNAVAILABLE` | Falló el endpoint de tokens del proveedor (red, 5xx); el par guardado se conserva | no |
+| `REFRESH_FAILED` | El proveedor respondió `invalid_grant`: el refresh token está revocado, usado o vencido | sí |
+| `PROVIDER_UNAVAILABLE` | Sin respuesta en `timeoutMs`, un error de red, un 5xx, un 429 u otro error OAuth (`invalid_client` son las credenciales de la app); la sesión y el par guardado se conservan | no |
+
+Solo `invalid_grant` cierra la sesión del usuario: si no, un rate limit, un cliente mal configurado o una caída cerrarían la sesión de todos los usuarios sin nada que pudieran arreglar volviendo a entrar.
 
 En web-kit, [`getAccessToken(c, providerId)`](/es/packages/web-kit/#auth) los responde con 401 o 502.
 

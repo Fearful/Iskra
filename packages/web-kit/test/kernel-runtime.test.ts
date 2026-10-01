@@ -119,6 +119,30 @@ describe('Kernel runtime', () => {
         expect(order).toEqual(['api', 'auth', 'db']);
     });
 
+    it('leaves a beforeShutdown hook behind past shutdownGraceMs', async () => {
+        const warnings: string[] = [];
+        const order: string[] = [];
+        const kernel = new Kernel({
+            shutdownGraceMs: 100,
+            logger: { debug() {}, info() {}, error() {}, warn: (m: string) => warnings.push(m) },
+        });
+        kernel.registerFeature({
+            name: 'stuck',
+            async initialize() {},
+            beforeShutdown: () => new Promise<void>(() => {}),
+            async shutdown() {
+                order.push('shutdown:stuck');
+            },
+        });
+        await kernel.initialize();
+
+        const started = Date.now();
+        await kernel.shutdown();
+        expect(Date.now() - started).toBeLessThan(1000);
+        expect(order).toEqual(['shutdown:stuck']);
+        expect(warnings.some((w) => w.includes('did not end its open responses within 100ms'))).toBe(true);
+    });
+
     it('runs every beforeShutdown hook before any shutdown, reporting failures with the rest', async () => {
         const order: string[] = [];
         const feature = (name: string, dependencies: string[] = [], failBefore = false) => ({

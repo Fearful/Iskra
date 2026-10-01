@@ -269,6 +269,18 @@ export class IntervalScheduler implements Driver, JobScheduler {
         };
     }
 
+    /**
+     * A readiness check for HealthCheckFeature (`readinessChecks: { sync:
+     * jobs.readinessCheck('sync') }`): ready once the scheduler started and
+     * while `healthCheck()` with the same options passes. Use it when the app
+     * cannot serve without the job: a failing readiness check takes the
+     * instance out of its load balancer.
+     */
+    readinessCheck(name: string, options: JobHealthOptions = {}): () => Promise<boolean> {
+        const check = this.healthCheck(name, options);
+        return async () => this.started && !this.stopped && (await check()).status === 'ok';
+    }
+
     private arm(job: Job): void {
         job.armedAt = new Date();
         job.nextRunAt = Date.now() + job.every;
@@ -308,6 +320,9 @@ export class IntervalScheduler implements Driver, JobScheduler {
                     { id: `${job.name}:${job.runs}`, name: job.name, data: job.data, attemptsMade: 0 },
                     { signal: controller.signal },
                 );
+                // Past its timeout the run failed, whatever it returned later:
+                // a job that always ends late would otherwise look healthy.
+                if (run.timedOut) throw controller.signal.reason;
                 this.finish(job, run, true, result);
                 job.lastSuccessAt = job.lastRun!.finishedAt;
                 job.consecutiveFailures = 0;

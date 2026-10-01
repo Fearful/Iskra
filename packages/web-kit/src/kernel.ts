@@ -350,14 +350,30 @@ export class Kernel {
      * Stops accepting connections, lets features end the responses they hold
      * open (`beforeShutdown`, e.g. SSE streams), waits for in-flight requests
      * to finish, then shuts features down in reverse dependency order (the
-     * auth feature before the db it uses). Every feature is shut down even if
-     * one fails; the failures are rethrown together at the end.
+     * auth feature before the db it uses). The `beforeShutdown` hooks and the
+     * wait share `shutdownGraceMs`: past it, a hook is left behind and the
+     * open connections are closed. Every feature is shut down even if one
+     * fails; the failures are rethrown together at the end.
      */
     async shutdown(): Promise<void> {
         this.logger.info('Shutting down');
 
         const errors: unknown[] = [];
         const features = this.sortFeaturesByDependencies().reverse();
+        const graceMs = this.config.shutdownGraceMs ?? 5000;
+        const deadline = Date.now() + graceMs;
+        /** Whether `promise` settles before the grace period ends. */
+        const inTime = async (promise: Promise<unknown>): Promise<boolean> => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const late = new Promise<boolean>((resolve) => {
+                timer = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now()));
+            });
+            try {
+                return await Promise.race([promise.then(() => true), late]);
+            } finally {
+                clearTimeout(timer);
+            }
+        };
         const server = this.server;
         this.server = null;
         // Stops listening right away; settles once the open requests end.
@@ -370,8 +386,16 @@ export class Kernel {
 
         for (const feature of features) {
             if (!feature.beforeShutdown) continue;
+            const ending = Promise.resolve().then(() => feature.beforeShutdown!());
             try {
-                await feature.beforeShutdown();
+                if (!(await inTime(ending))) {
+                    this.logger.warn(
+                        `Feature "${feature.name}" did not end its open responses within ${graceMs}ms; going on`,
+                    );
+                    ending.catch((err) =>
+                        this.logger.error(`Feature "${feature.name}" failed to end its open responses`, err),
+                    );
+                }
             } catch (err) {
                 this.logger.error(`Feature "${feature.name}" failed to end its open responses`, err);
                 errors.push(err);
@@ -383,15 +407,7 @@ export class Kernel {
             // connection that never settles (Bun 1.1 does so after answering a
             // 413, and a stream nobody ends never does), so force-close
             // whatever is left after the grace period.
-            const graceMs = this.config.shutdownGraceMs ?? 5000;
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const drained = await Promise.race([
-                stopped,
-                new Promise<boolean>((resolve) => {
-                    timer = setTimeout(() => resolve(false), graceMs);
-                }),
-            ]);
-            clearTimeout(timer);
+            const drained = (await inTime(stopped)) && (await stopped);
             if (!drained) {
                 this.logger.warn(`Open connections did not drain within ${graceMs}ms; closing them`);
                 // Not awaited: the listener closes immediately, but in that same

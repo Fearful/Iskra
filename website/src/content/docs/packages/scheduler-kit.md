@@ -39,7 +39,7 @@ await app.start();
 
 - **One at a time.** When a run is still in progress at the next tick, that tick is skipped (`status().skipped` counts them). Runs of the same job never overlap.
 - **Errors do not stop the schedule.** A run that throws is logged (`Job run failed`), kept as `lastError`, and the next run comes on time. Failed runs are not retried.
-- **Timeout per run.** After `timeoutMs` (default: `every`) the run's `signal` is aborted with a `TimeoutError`. Pass the signal to `fetch()` and to your queries so the work actually stops; a handler that ignores it keeps running, shows as `stuck`, and its next runs are skipped until it returns.
+- **Timeout per run.** After `timeoutMs` (default: `every`) the run's `signal` is aborted with a `TimeoutError`. Pass the signal to `fetch()` and to your queries so the work actually stops; a handler that ignores it keeps running, shows as `stuck`, and its next runs are skipped until it returns. A run past its timeout counts as failed (`TimeoutError`) even if it returns well later, so a job that always ends late shows in the health check.
 - **Shutdown.** `stop()` (called by `app.stop()`) stops every schedule, aborts the signal of the runs in progress with an `AbortError`, and waits for them up to `shutdownTimeoutMs` (default 5000 ms). Keep that under the App's `shutdownTimeoutMs` (10 s by default), which covers every driver.
 - **Driver order.** The App stops drivers in reverse registration order: register the scheduler after the web server and the database its jobs use, so the jobs end before those close.
 - **One process.** The schedule lives in the process. With several instances of the app, every instance runs the job; use worker-kit's repeatable jobs when it must run once across instances.
@@ -88,6 +88,10 @@ A check for web-kit's `HealthCheckFeature` (`checks: { sync: jobs.healthCheck('b
 
 Its `details` carry the counters, the last run (`startedAt`, `durationMs`, `ok`) and the last error's `name` and `code`. The error's message stays in the log: it can hold URLs or tokens. The last run's result is included only with `includeResult: true`, since it may hold data.
 
+### `readinessCheck(name, options?)`
+
+A check for `/health/ready` (`readinessChecks: { sync: jobs.readinessCheck('board-sync') }`, or `health.addReadinessCheck()`): ready once the scheduler started and while `healthCheck()` with the same options passes. Use it only when the app cannot serve without the job: a failing readiness check takes the instance out of its load balancer.
+
 ## Moving to worker-kit
 
 Both classes implement `JobScheduler`, and both pass `{ signal }` to handlers:
@@ -104,4 +108,4 @@ jobs.register('board-sync', syncBoard);
 await jobs.schedule('board-sync', {}, { every: 180_000 });
 ```
 
-What does not carry over: `runOnStart`, `timeoutMs`, `status()` and `healthCheck()` are scheduler-kit's; worker-kit's jobs have retries, `result()` and a dead-letter event instead.
+What does not carry over: `runOnStart`, `timeoutMs`, `status()`, `healthCheck()` and `readinessCheck()` are scheduler-kit's; worker-kit's jobs have retries, `result()` and a dead-letter event instead.

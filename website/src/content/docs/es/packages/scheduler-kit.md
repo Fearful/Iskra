@@ -39,7 +39,7 @@ await app.start();
 
 - **De a una.** Si una corrida sigue en curso cuando llega la siguiente, esa se saltea (`status().skipped` las cuenta). Las corridas de un mismo job nunca se superponen.
 - **Un error no corta el loop.** Una corrida que lanza se loguea (`Job run failed`), queda como `lastError` y la siguiente llega a tiempo. Las corridas fallidas no se reintentan.
-- **Timeout por corrida.** Pasado `timeoutMs` (por defecto, `every`), se aborta la `signal` de la corrida con un `TimeoutError`. Pasa la señal a `fetch()` y a las consultas para que el trabajo realmente se detenga; un handler que la ignora sigue corriendo, aparece como `stuck` y las corridas siguientes se saltean hasta que termine.
+- **Timeout por corrida.** Pasado `timeoutMs` (por defecto, `every`), se aborta la `signal` de la corrida con un `TimeoutError`. Pasa la señal a `fetch()` y a las consultas para que el trabajo realmente se detenga; un handler que la ignora sigue corriendo, aparece como `stuck` y las corridas siguientes se saltean hasta que termine. Una corrida que pasa su timeout cuenta como fallida (`TimeoutError`) aunque después termine bien, así un job que siempre termina tarde se ve en el health check.
 - **Apagado.** `stop()` (lo llama `app.stop()`) detiene todos los schedules, aborta la señal de las corridas en curso con un `AbortError` y las espera hasta `shutdownTimeoutMs` (5000 ms por defecto). Mantenlo por debajo del `shutdownTimeoutMs` de la App (10 s por defecto), que abarca a todos los drivers.
 - **Orden de los drivers.** La App detiene los drivers en orden inverso al de registro: registra el scheduler después del servidor web y de la base que usan sus jobs, así los jobs terminan antes de que esos se cierren.
 - **Un proceso.** El schedule vive en el proceso. Con varias instancias de la app, cada instancia corre el job; para que corra una sola vez entre instancias, usa los jobs repetibles de worker-kit.
@@ -88,6 +88,10 @@ Un check para el `HealthCheckFeature` de web-kit (`checks: { sync: jobs.healthCh
 
 Sus `details` traen los contadores, la última corrida (`startedAt`, `durationMs`, `ok`) y el `name` y el `code` del último error. El mensaje del error queda en el log, porque puede traer URLs o tokens. El resultado de la última corrida se incluye solo con `includeResult: true`, porque puede tener datos.
 
+### `readinessCheck(name, options?)`
+
+Un check para `/health/ready` (`readinessChecks: { sync: jobs.readinessCheck('board-sync') }`, o `health.addReadinessCheck()`): listo una vez que arrancó el scheduler y mientras pase `healthCheck()` con las mismas opciones. Úsalo solo cuando la app no puede atender sin el job: un readiness check que falla saca a la instancia de su balanceador.
+
 ## Pasar a worker-kit
 
 Las dos clases implementan `JobScheduler` y las dos pasan `{ signal }` a los handlers:
@@ -104,4 +108,4 @@ jobs.register('board-sync', syncBoard);
 await jobs.schedule('board-sync', {}, { every: 180_000 });
 ```
 
-Lo que no se traslada: `runOnStart`, `timeoutMs`, `status()` y `healthCheck()` son de scheduler-kit; los jobs de worker-kit tienen en cambio reintentos, `result()` y un evento de dead-letter.
+Lo que no se traslada: `runOnStart`, `timeoutMs`, `status()`, `healthCheck()` y `readinessCheck()` son de scheduler-kit; los jobs de worker-kit tienen en cambio reintentos, `result()` y un evento de dead-letter.

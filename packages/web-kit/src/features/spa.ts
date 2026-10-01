@@ -36,7 +36,8 @@ export interface SpaConfig {
     configGlobal?: string;
     /**
      * The page's Content-Security-Policy, given the config script's hash
-     * (`'sha256-…'`) to allow it: `(hash) => \`default-src 'self'; script-src 'self' ${hash}\``.
+     * (`'sha256-…'`, empty without `config`) to allow it:
+     * `(hash) => \`default-src 'self'; script-src 'self' ${hash}\``.
      */
     contentSecurityPolicy?: (configScriptHash: string) => string;
 }
@@ -190,15 +191,18 @@ export class SpaFeature implements Feature {
             const script = `window.${global}=${scriptSafeJson(value)};`;
             this.scriptHash = `'sha256-${createHash('sha256').update(script).digest('base64')}'`;
             const tag = `<script>${script}</script>`;
-            if (html.includes('<!--app-config-->')) html = html.replace('<!--app-config-->', tag);
-            else if (/<\/head>/i.test(html)) html = html.replace(/<\/head>/i, `${tag}</head>`);
+            // Replacer functions: in a replacement string, `$&`, `$'` or `$$` in
+            // a config value would be expanded, breaking the script and its hash.
+            if (html.includes('<!--app-config-->')) html = html.replace('<!--app-config-->', () => tag);
+            else if (/<\/head>/i.test(html)) html = html.replace(/<\/head>/i, (head) => `${tag}${head}`);
             else
                 throw new Error(
                     'SpaFeature: the entry page has no </head> (or <!--app-config-->) to put the config in',
                 );
         }
         const etag = `"${createHash('sha256').update(html).digest('base64url').slice(0, 27)}"`;
-        const csp = this.config.contentSecurityPolicy?.(this.scriptHash ?? "'none'");
+        // Empty without a config script: nothing to allow.
+        const csp = this.config.contentSecurityPolicy?.(this.scriptHash ?? '');
         return { html, etag, ...(csp && { csp }) };
     }
 

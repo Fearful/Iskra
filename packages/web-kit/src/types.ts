@@ -23,7 +23,11 @@ export interface KernelConfig {
     maxRequestBodySize?: number;
     /** Seconds a connection may stay idle before Bun closes it (Bun default: 10). */
     idleTimeout?: number;
-    /** How long shutdown() waits for in-flight requests before closing connections, in ms. Default 5000. */
+    /**
+     * How long shutdown() waits, in ms, for the features' `beforeShutdown`
+     * hooks and then the in-flight requests before closing connections.
+     * Default 5000.
+     */
     shutdownGraceMs?: number;
     environment?: 'development' | 'production' | 'test';
     /** Headers set on every response, merged over the defaults; `false` sets none. */
@@ -164,7 +168,9 @@ export interface Feature {
      * Runs when `Kernel.shutdown()` starts, once the server accepts no new
      * connections and before it waits for the open requests: a feature that
      * holds responses open (SSE streams) ends them here, or that wait lasts
-     * the whole `shutdownGraceMs` and then cuts every connection.
+     * the whole `shutdownGraceMs` and then cuts every connection. The hooks
+     * share that grace period with the wait: one still running past it is
+     * left behind.
      */
     beforeShutdown?(): Promise<void> | void;
     shutdown?(): Promise<void>;

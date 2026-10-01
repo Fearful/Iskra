@@ -3,6 +3,7 @@ export {
     mapOidcProfile,
     oidcProviderConfig,
     resolveAuthBaseURL,
+    TOKEN_ROUTES,
     type Auth,
     type AuthKitDrizzleDb,
     type BetterAuthConfigOptions,

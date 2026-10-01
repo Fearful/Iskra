@@ -28,9 +28,20 @@ export interface SseHubOptions {
     maxQueuedBytes?: number;
     /** `retry:` sent on connect: how long the browser waits to reconnect, in ms. */
     retryMs?: number;
+    /**
+     * How long a connection lasts, in ms (default 300 000, 5 minutes): the
+     * actor is checked only when a client connects, so a revoked session
+     * keeps receiving events until its connection ends. `EventSource`
+     * reconnects by itself, and the new request is checked again (a revoked
+     * one gets 401). Each connection ends at a random point of its last
+     * tenth, so clients that connected together do not all come back at once.
+     * `hub.disconnect()` ends an actor's connections right away (on
+     * sign-out, say).
+     */
+    maxConnectionMs?: number;
 }
 
-/** Decides, per connected actor, whether an event reaches it. */
+/** Decides, per connected actor, whether an event reaches it: only `true` lets it through. */
 export type SseFilter<A> = (actor: A) => boolean;
 
 interface Client<A> {
@@ -38,6 +49,7 @@ interface Client<A> {
     key: string;
     controller: ReadableStreamDefaultController<Uint8Array>;
     closed: boolean;
+    expiry?: ReturnType<typeof setTimeout>;
 }
 
 const encoder = new TextEncoder();
@@ -73,18 +85,24 @@ export class SseHub<A = unknown, T = unknown> {
     readonly heartbeatMs: number;
     /** Where filter errors and dropped clients are reported; SseFeature sets the kernel's. */
     logger: KernelLogger = consoleLogger;
+    readonly maxConnectionMs: number;
     private readonly maxQueuedBytes: number;
     private readonly retryMs?: number;
     private readonly clients = new Set<Client<A>>();
     private heartbeat?: ReturnType<typeof setInterval>;
     private closed = false;
+    private warnedAsyncFilter = false;
 
     constructor(options: SseHubOptions = {}) {
         this.heartbeatMs = options.heartbeatMs ?? 15_000;
         this.maxQueuedBytes = options.maxQueuedBytes ?? 1024 * 1024;
+        this.maxConnectionMs = options.maxConnectionMs ?? 5 * 60_000;
         this.retryMs = options.retryMs;
         if (!(this.heartbeatMs > 0)) throw new Error('SseHub: heartbeatMs must be positive');
         if (!(this.maxQueuedBytes > 0)) throw new Error('SseHub: maxQueuedBytes must be positive');
+        if (!(this.maxConnectionMs > 0) || !Number.isFinite(this.maxConnectionMs)) {
+            throw new Error('SseHub: maxConnectionMs must be a positive number of ms');
+        }
     }
 
     /** Connected clients. */
@@ -106,26 +124,49 @@ export class SseHub<A = unknown, T = unknown> {
 
     /**
      * Sends `message` to every client whose actor `filter` accepts (all of
-     * them without one) and returns how many it was queued for. A filter that
-     * throws skips that client only.
+     * them without one) and returns how many it was queued for. Only `true`
+     * accepts: a truthy value such as a Promise (an async filter) or a
+     * permission object does not. A filter that throws skips that client only.
      */
     publish(message: SseMessage<T>, filter?: SseFilter<A>): number {
         const chunk = encoder.encode(formatSseMessage(message));
         let sent = 0;
-        for (const client of [...this.clients]) {
-            if (filter) {
-                let visible: boolean;
-                try {
-                    visible = filter(client.actor);
-                } catch (err) {
-                    this.logger.error('SSE filter failed; the event was not sent to that client', err);
-                    continue;
-                }
-                if (!visible) continue;
-            }
+        for (const client of this.matching(filter, 'publish')) {
             if (this.write(client, chunk)) sent++;
         }
         return sent;
+    }
+
+    /**
+     * Ends the connections whose actor `filter` accepts (`true` only), e.g.
+     * a user's on sign-out: `hub.disconnect((user) => user.id === userId)`.
+     * Their browsers reconnect, and are checked again. Returns how many ended.
+     */
+    disconnect(filter: SseFilter<A>): number {
+        const ending = this.matching(filter, 'disconnect');
+        for (const client of ending) this.end(client);
+        return ending.length;
+    }
+
+    /** The clients `filter` accepts; all of them without one. */
+    private matching(filter: SseFilter<A> | undefined, use: string): Client<A>[] {
+        const clients = [...this.clients];
+        if (!filter) return clients;
+        return clients.filter((client) => {
+            let verdict: unknown;
+            try {
+                verdict = filter(client.actor);
+            } catch (err) {
+                this.logger.error(`SSE ${use} filter failed; that client was left out`, err);
+                return false;
+            }
+            if (verdict === true) return true;
+            if (!this.warnedAsyncFilter && typeof (verdict as { then?: unknown } | null)?.then === 'function') {
+                this.warnedAsyncFilter = true;
+                this.logger.error(`SSE ${use} filter returned a Promise; filters must return true synchronously`);
+            }
+            return false;
+        });
     }
 
     /**
@@ -141,6 +182,8 @@ export class SseHub<A = unknown, T = unknown> {
                 start: (controller) => {
                     client = { actor, key: options.key ?? '', controller, closed: false };
                     this.clients.add(client);
+                    const lifetime = this.maxConnectionMs * (0.9 + Math.random() * 0.1);
+                    client.expiry = setTimeout(() => this.end(client), lifetime);
                     // A first byte right away: some proxies hold the headers until one.
                     const retry = this.retryMs !== undefined ? `retry: ${Math.floor(this.retryMs)}\n` : '';
                     controller.enqueue(encoder.encode(`${retry}: connected\n\n`));
@@ -197,6 +240,7 @@ export class SseHub<A = unknown, T = unknown> {
 
     private forget(client: Client<A>): void {
         client.closed = true;
+        clearTimeout(client.expiry);
         this.clients.delete(client);
         if (this.clients.size === 0 && this.heartbeat) {
             clearInterval(this.heartbeat);
@@ -213,10 +257,17 @@ export interface SseConfig<A = unknown> {
     name?: string;
     /**
      * Who is connecting; `null`/`undefined` answers 401. Default: the user
-     * AuthFeature signed in (`c.get('authUser')`).
+     * of the request's session, read from the database rather than
+     * AuthFeature's cookie cache, so a revoked session is refused as soon as
+     * its client reconnects.
      */
     actor?: (c: Context) => A | null | undefined | Promise<A | null | undefined>;
-    /** What identifies an actor for `maxClientsPerActor`. Default: its `id`. */
+    /**
+     * What identifies an actor for `maxClientsPerActor`. Default: its `id`
+     * (or the actor itself when it is a string or a number); an actor
+     * without one needs this, or its connection fails (500) rather than
+     * share one limit with every other actor.
+     */
     actorKey?: (actor: A) => string;
     /** Connections this process keeps open; past it, 503. Default 10 000. */
     maxClients?: number;
@@ -241,15 +292,21 @@ function shortestIdleS(seconds: number): number {
 }
 
 function defaultActorKey(actor: unknown): string {
+    if (typeof actor === 'string' || typeof actor === 'number') return String(actor);
     const id = (actor as { id?: unknown } | null)?.id;
-    return id === undefined || id === null ? String(actor) : String(id);
+    if (typeof id === 'string' || typeof id === 'number') return String(id);
+    // String(actor) was "[object Object]" for every actor: one shared limit.
+    throw new Error('SseFeature: the actor has no id; pass actorKey(actor) to identify it');
 }
 
 /**
  * Server-sent events: an authenticated GET endpoint whose clients join
  * `hub`. Each connection gets `text/event-stream` with `Cache-Control:
  * no-cache` and `X-Accel-Buffering: no` (so nginx does not buffer it), the
- * hub's heartbeat, and leaves the hub when the client goes away. On
+ * hub's heartbeat, and leaves the hub when the client goes away. The actor
+ * is checked when the client connects, and again when it reconnects: the
+ * hub ends every connection within its `maxConnectionMs`, and
+ * `hub.disconnect()` ends an actor's at once (on sign-out). On
  * shutdown every connection is ended before the server waits for open
  * requests. With HealthCheckFeature, /health gets an `sse` check with the
  * number of clients.
@@ -266,7 +323,7 @@ export class SseFeature<A = unknown> implements Feature {
     private log: KernelLogger = consoleLogger;
     private readonly hub: SseHub<A, unknown>;
     private readonly path: string;
-    private readonly actor?: SseConfig<A>['actor'];
+    private actor?: SseConfig<A>['actor'];
     private readonly actorKey: (actor: A) => string;
     private readonly maxClients: number;
     private readonly maxClientsPerActor: number;
@@ -291,7 +348,17 @@ export class SseFeature<A = unknown> implements Feature {
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         if (this.hub.logger === consoleLogger) this.hub.logger = this.log;
-        if (!this.actor && !kernel.getFeature('auth')) {
+        const auth = kernel.getFeature('auth');
+        if (!this.actor && auth) {
+            this.actor = async (c) => {
+                const session = await auth.getAuth()?.api.getSession({
+                    headers: c.req.raw.headers,
+                    query: { disableCookieCache: true },
+                });
+                return (session?.user ?? null) as A | null;
+            };
+        }
+        if (!this.actor) {
             throw new Error(`SseFeature '${this.name}': register AuthFeature or pass actor(c) to identify clients`);
         }
         this.idleTimeoutS = kernel.getConfig().idleTimeout ?? BUN_DEFAULT_IDLE_TIMEOUT_S;
@@ -311,7 +378,7 @@ export class SseFeature<A = unknown> implements Feature {
 
     private async open(c: Context): Promise<Response> {
         if (this.hub.isClosed) throw new HttpError(503, 'Shutting down');
-        const actor = this.actor ? await this.actor(c) : (c.get('authUser') as A | null | undefined);
+        const actor = await this.actor!(c);
         if (actor === null || actor === undefined) throw new AuthError();
         const key = this.actorKey(actor);
         if (this.hub.size >= this.maxClients) {
