@@ -119,6 +119,30 @@ describe('Kernel runtime', () => {
         expect(order).toEqual(['api', 'auth', 'db']);
     });
 
+    it('runs every beforeShutdown hook before any shutdown, reporting failures with the rest', async () => {
+        const order: string[] = [];
+        const feature = (name: string, dependencies: string[] = [], failBefore = false) => ({
+            name,
+            dependencies,
+            async initialize() {},
+            beforeShutdown() {
+                order.push(`before:${name}`);
+                if (failBefore) throw new Error(`${name} failed`);
+            },
+            async shutdown() {
+                order.push(`shutdown:${name}`);
+            },
+        });
+        const kernel = new Kernel({ logger: false });
+        kernel.registerFeature(feature('db'));
+        kernel.registerFeature(feature('live', ['db'], true));
+        await kernel.initialize();
+
+        const err = await kernel.shutdown().catch((e) => e);
+        expect(err).toBeInstanceOf(AggregateError);
+        expect(order).toEqual(['before:live', 'before:db', 'shutdown:live', 'shutdown:db']);
+    });
+
     it('keeps default security headers when only one is overridden', async () => {
         // Regression: passing securityHeaders replaced all defaults.
         const kernel = new Kernel({ securityHeaders: { referrerPolicy: 'no-referrer' } });

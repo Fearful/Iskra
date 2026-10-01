@@ -33,6 +33,7 @@ export * from './features/openapi';
 export * from './features/upload';
 export * from './features/tracing';
 export * from './features/email';
+export * from './features/sse';
 export * from './responses';
 export * from './errors';
 export * from './contract';

@@ -160,6 +160,13 @@ export interface Feature {
     peerDependencies?: string[]; // Required npm packages
     initialize(kernel: Kernel): Promise<void>;
     routes?: (app: Hono) => void;
+    /**
+     * Runs when `Kernel.shutdown()` starts, once the server accepts no new
+     * connections and before it waits for the open requests: a feature that
+     * holds responses open (SSE streams) ends them here, or that wait lasts
+     * the whole `shutdownGraceMs` and then cuts every connection.
+     */
+    beforeShutdown?(): Promise<void> | void;
     shutdown?(): Promise<void>;
 }
 

@@ -330,24 +330,46 @@ export class Kernel {
     }
 
     /**
-     * Stops accepting connections, waits for in-flight requests to finish, then
-     * shuts features down in reverse dependency order (the auth feature before
-     * the db it uses). Every feature is shut down even if one fails; the
-     * failures are rethrown together at the end.
+     * Stops accepting connections, lets features end the responses they hold
+     * open (`beforeShutdown`, e.g. SSE streams), waits for in-flight requests
+     * to finish, then shuts features down in reverse dependency order (the
+     * auth feature before the db it uses). Every feature is shut down even if
+     * one fails; the failures are rethrown together at the end.
      */
     async shutdown(): Promise<void> {
         this.logger.info('Shutting down');
 
-        if (this.server) {
-            const server = this.server;
-            this.server = null;
+        const errors: unknown[] = [];
+        const features = this.sortFeaturesByDependencies().reverse();
+        const server = this.server;
+        this.server = null;
+        // Stops listening right away; settles once the open requests end.
+        const stopped = server
+            ? Promise.resolve(server.stop()).then(
+                  () => true,
+                  () => false,
+              )
+            : undefined;
+
+        for (const feature of features) {
+            if (!feature.beforeShutdown) continue;
+            try {
+                await feature.beforeShutdown();
+            } catch (err) {
+                this.logger.error(`Feature "${feature.name}" failed to end its open responses`, err);
+                errors.push(err);
+            }
+        }
+
+        if (server && stopped) {
             // Graceful stop waits for in-flight requests, but it can hang on a
             // connection that never settles (Bun 1.1 does so after answering a
-            // 413), so force-close whatever is left after the grace period.
+            // 413, and a stream nobody ends never does), so force-close
+            // whatever is left after the grace period.
             const graceMs = this.config.shutdownGraceMs ?? 5000;
             let timer: ReturnType<typeof setTimeout> | undefined;
             const drained = await Promise.race([
-                Promise.resolve(server.stop()).then(() => true),
+                stopped,
                 new Promise<boolean>((resolve) => {
                     timer = setTimeout(() => resolve(false), graceMs);
                 }),
@@ -361,8 +383,7 @@ export class Kernel {
             }
         }
 
-        const errors: unknown[] = [];
-        for (const feature of this.sortFeaturesByDependencies().reverse()) {
+        for (const feature of features) {
             if (!feature.shutdown) continue;
             try {
                 await feature.shutdown();
