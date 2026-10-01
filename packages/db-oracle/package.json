@@ -65,7 +65,7 @@
         "oracledb": "^6.10.0"
     },
     "devDependencies": {
-        "@types/node": "^22.10.2",
+        "@types/node": "^26.6.3",
         "@types/oracledb": "^6.10.2",
         "bun-types": "latest"
     }
