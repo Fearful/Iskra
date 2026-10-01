@@ -35,9 +35,8 @@ export interface SseHubOptions {
      * reconnects by itself, and the new request is checked again (a revoked
      * one gets 401). Each connection ends at a random point of its last
      * tenth, so clients that connected together do not all come back at once.
-     * Same default as AuthFeature's session cookie cache, which already lets
-     * a revoked session through that long. `hub.disconnect()` ends an actor's
-     * connections right away (on sign-out, say).
+     * `hub.disconnect()` ends an actor's connections right away (on
+     * sign-out, say).
      */
     maxConnectionMs?: number;
 }
@@ -258,7 +257,9 @@ export interface SseConfig<A = unknown> {
     name?: string;
     /**
      * Who is connecting; `null`/`undefined` answers 401. Default: the user
-     * AuthFeature signed in (`c.get('authUser')`).
+     * of the request's session, read from the database rather than
+     * AuthFeature's cookie cache, so a revoked session is refused as soon as
+     * its client reconnects.
      */
     actor?: (c: Context) => A | null | undefined | Promise<A | null | undefined>;
     /**
@@ -322,7 +323,7 @@ export class SseFeature<A = unknown> implements Feature {
     private log: KernelLogger = consoleLogger;
     private readonly hub: SseHub<A, unknown>;
     private readonly path: string;
-    private readonly actor?: SseConfig<A>['actor'];
+    private actor?: SseConfig<A>['actor'];
     private readonly actorKey: (actor: A) => string;
     private readonly maxClients: number;
     private readonly maxClientsPerActor: number;
@@ -347,7 +348,17 @@ export class SseFeature<A = unknown> implements Feature {
     async initialize(kernel: Kernel): Promise<void> {
         this.log = kernel.getLogger();
         if (this.hub.logger === consoleLogger) this.hub.logger = this.log;
-        if (!this.actor && !kernel.getFeature('auth')) {
+        const auth = kernel.getFeature('auth');
+        if (!this.actor && auth) {
+            this.actor = async (c) => {
+                const session = await auth.getAuth()?.api.getSession({
+                    headers: c.req.raw.headers,
+                    query: { disableCookieCache: true },
+                });
+                return (session?.user ?? null) as A | null;
+            };
+        }
+        if (!this.actor) {
             throw new Error(`SseFeature '${this.name}': register AuthFeature or pass actor(c) to identify clients`);
         }
         this.idleTimeoutS = kernel.getConfig().idleTimeout ?? BUN_DEFAULT_IDLE_TIMEOUT_S;
@@ -367,7 +378,7 @@ export class SseFeature<A = unknown> implements Feature {
 
     private async open(c: Context): Promise<Response> {
         if (this.hub.isClosed) throw new HttpError(503, 'Shutting down');
-        const actor = this.actor ? await this.actor(c) : (c.get('authUser') as A | null | undefined);
+        const actor = await this.actor!(c);
         if (actor === null || actor === undefined) throw new AuthError();
         const key = this.actorKey(actor);
         if (this.hub.size >= this.maxClients) {

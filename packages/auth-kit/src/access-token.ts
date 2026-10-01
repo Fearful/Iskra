@@ -298,7 +298,8 @@ async function renew(
     if (!provider?.refreshAccessToken) return undefined;
 
     const refreshToken = await decrypt(context, account.refreshToken, providerId);
-    const exchange = provider.refreshAccessToken(refreshToken);
+    // Through a promise: a provider that throws right away is classified too.
+    const exchange = Promise.resolve().then(() => provider.refreshAccessToken!(refreshToken));
     const stored = exchange.then((tokens) => (tokens.accessToken ? store(context, account, tokens) : undefined));
     hold(stored);
 

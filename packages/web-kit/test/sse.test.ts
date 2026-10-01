@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Kernel } from '../src/kernel';
 import { HealthCheckFeature } from '../src/features/health';
 import { formatSseMessage, SseFeature, SseHub } from '../src/features/sse';
+import { AuthFeature } from '../src/features/auth/index';
+import { DbFeature } from '../src/features/db';
 import type { KernelLogger } from '../src/logging';
 
 interface Actor {
@@ -323,5 +325,55 @@ describe('SseFeature on a running server', () => {
         hub.close();
         const res = await app.request('/api/events', { headers: { 'x-user': 'alice' } });
         expect(res.status).toBe(503);
+    });
+});
+
+describe('SseFeature with AuthFeature', () => {
+    const DDL = `
+CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL, image TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id));
+CREATE TABLE account (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES user(id), accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt INTEGER NOT NULL, createdAt INTEGER, updatedAt INTEGER);
+`;
+    const ORIGIN = 'http://localhost:3000';
+
+    it('reads the session from the database, so a revoked one is refused on reconnect', async () => {
+        const kernel = new Kernel({ logger: false });
+        const db = new DbFeature({ adapter: 'sqlite', connection: { database: ':memory:' } });
+        const hub = new SseHub();
+        hubs.push(hub as unknown as SseHub<Actor, unknown>);
+        kernel.registerFeature(db);
+        kernel.registerFeature(
+            new AuthFeature({
+                secret: 'a-contract-secret-with-enough-entropy-1f9c2e7b',
+                baseURL: ORIGIN,
+                rateLimit: false,
+            }),
+        );
+        kernel.registerFeature(new SseFeature({ hub }));
+        await kernel.initialize();
+        const sqlite = (db.db as unknown as { $client: { exec(sql: string): void } }).$client;
+        sqlite.exec(DDL);
+        const app = kernel.getApp();
+        app.get('/me', (c) => c.json({ user: c.get('authUser') ? 'signed in' : null }));
+
+        const signUp = await app.request('/api/sso/sign-up/email', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', origin: ORIGIN },
+            body: JSON.stringify({ email: 'ana@example.com', password: 'password1234', name: 'Ana' }),
+        });
+        const cookie = signUp.headers
+            .getSetCookie()
+            .map((c) => c.split(';')[0])
+            .join('; ');
+        const first = await app.request('/api/events', { headers: { cookie } });
+        expect(first.status).toBe(200);
+        await first.body!.cancel();
+
+        sqlite.exec('DELETE FROM session'); // revoked (sign-out elsewhere, an admin)
+        // The cookie cache still lets it through on ordinary requests…
+        expect(await (await app.request('/me', { headers: { cookie } })).json()).toEqual({ user: 'signed in' });
+        // …but not on an SSE connection.
+        expect((await app.request('/api/events', { headers: { cookie } })).status).toBe(401);
     });
 });

@@ -136,7 +136,7 @@ Defaults del servidor, configurables en `new Kernel({ ... })`:
 
 El Kernel y sus features reportan el arranque, los fallbacks y los errores que manejan a traves de un logger: un objeto con `debug`, `info`, `warn` y `error(message, details?)`. `WebPlugin` le pasa el logger del App salvo que definas `logger`, asi estos mensajes comparten el formato y el nivel de la app (la linea de arranque de cada feature es `debug`). Una feature propia lo obtiene con `kernel.getLogger()` en `initialize()`. `fromStructuredLogger(pinoLogger)` adapta un logger estilo pino.
 
-`shutdown()` deja de aceptar conexiones, deja que las features terminen las respuestas que mantienen abiertas (`beforeShutdown()`, como los streams SSE), espera los requests en curso (hasta `shutdownGraceMs`) y apaga las features en orden inverso de dependencias; si alguna falla, sigue con las demas y al final tira un `AggregateError`.
+`shutdown()` deja de aceptar conexiones, deja que las features terminen las respuestas que mantienen abiertas (`beforeShutdown()`, como los streams SSE), espera los requests en curso y apaga las features en orden inverso de dependencias. Los hooks y la espera comparten `shutdownGraceMs`: pasado ese tiempo, un hook que sigue corriendo queda atras y se cierran las conexiones abiertas; si alguna falla, sigue con las demas y al final tira un `AggregateError`.
 
 `setFallback(handler)` responde los requests que ninguna ruta toma, despues de todos los middlewares y antes del 404: el handler devuelve una `Response`, o `undefined` para el 404 (`SpaFeature` lo usa). Un kernel tiene uno, definido antes de que termine `initialize()`.
 
@@ -681,17 +681,18 @@ hub.publish({ event: 'card.moved', data: card }, (user) => canSee(user, card));
 
 En el cliente, `new EventSource('/api/events')` (la cookie de sesion viaja en el mismo origen) y `addEventListener('card.moved', …)`.
 
-- **Quien se conecta.** Por defecto, el usuario con sesion de `AuthFeature` (`c.get('authUser')`); sin uno, el request recibe 401. `actor(c)` identifica a los clientes de otra forma (una API key…). Pasado `maxClientsPerActor` (10 por defecto) una conexion recibe 429, y pasado `maxClients` (10 000 por defecto), 503.
+- **Quien se conecta.** Por defecto, el usuario de la sesion del request, leida de la base y no de la cache de cookie de `AuthFeature`; sin uno, el request recibe 401. `actor(c)` identifica a los clientes de otra forma (una API key…). Pasado `maxClientsPerActor` (10 por defecto) una conexion recibe 429, y pasado `maxClients` (10 000 por defecto), 503. Un actor se cuenta por su `id`; uno sin `id` necesita `actorKey(actor)`, o su conexion falla (500).
+- **Se vuelve a verificar.** El actor se verifica cuando el cliente se conecta, asi que una sesion revocada despues seguiria recibiendo eventos. Cada conexion termina dentro del `maxConnectionMs` del hub (5 minutos por defecto), en un momento al azar de su ultimo decimo; `EventSource` reconecta y la sesion se vuelve a leer de la base (401 para una revocada). `hub.disconnect((user) => user.id === id)` termina las conexiones de un actor enseguida, por ejemplo al cerrar sesion.
 - **Headers.** `Content-Type: text/event-stream`, `Cache-Control: no-cache` y `X-Accel-Buffering: no`, para que nginx no acumule el stream.
 - **Heartbeat.** Cada `heartbeatMs` (15 s por defecto) cada cliente recibe una linea de comentario, que evita que los proxies cierren una conexion sin trafico.
 - **El idle timeout de Bun.** Bun cierra una conexion que no escribe nada durante `idleTimeout` segundos (10 por defecto, menos que el heartbeat), asi que cortaba los streams SSE sin trafico. Bun lo revisa en pasos de 4 segundos y puede cerrar una conexion hasta un paso antes, asi que cada request SSE recibe en cambio un timeout del doble del heartbeat, y al menos dos pasos por encima de el (`server.timeout()`). Cuando eso no es posible y `KernelConfig.idleTimeout` (menos ese paso) no supera el heartbeat, se loguea un aviso. Detras de un proxy, manten tambien su timeout de lectura (`proxy_read_timeout` de nginx, 60 s por defecto) por encima del heartbeat.
 - **Desconexiones.** Un cliente que cierra la conexion o cancela el stream sale del hub. Uno que se atrasa mas de `maxQueuedBytes` (1 MiB por defecto) se desconecta en vez de hacer crecer la memoria del servidor; `EventSource` reconecta solo.
-- **Datos.** Un string se envia tal cual y cualquier otra cosa como JSON, una linea `data:` por linea. `event` e `id` no pueden tener saltos de linea. Un filtro que lanza un error saltea solo a ese cliente, y se loguea.
+- **Datos.** Un string se envia tal cual y cualquier otra cosa como JSON, una linea `data:` por linea. `event` e `id` no pueden tener saltos de linea. Solo un filtro que devuelve `true` deja pasar el evento: un valor truthy (una Promise de un filtro async, un objeto de permisos) no. Un filtro que lanza un error saltea solo a ese cliente, y se loguea.
 - **Apagado.** `Kernel.shutdown()` termina todos los streams antes de esperar los requests abiertos; si no, esa espera duraba todo `shutdownGraceMs` y despues los cortaba.
 - **Health.** Con `HealthCheckFeature`, `/health` recibe un check `sse` cuyo `details.clients` (visible con `includeDetails`) es la cantidad de clientes conectados; `hub.size` la da en codigo.
 - **Un proceso.** El hub vive en memoria: con varias instancias de la app, cada una llega solo a sus propios clientes. Los eventos enviados mientras un cliente estaba desconectado no se reenvian (no se lee `Last-Event-ID`): recarga el estado cuando reconecta.
 
-Una feature propia que mantiene respuestas abiertas las termina en `beforeShutdown()`, que el Kernel llama cuando el servidor deja de aceptar conexiones y antes de esperar los requests abiertos.
+Una feature propia que mantiene respuestas abiertas las termina en `beforeShutdown()`, que el Kernel llama cuando el servidor deja de aceptar conexiones y antes de esperar los requests abiertos, dentro de `shutdownGraceMs`.
 
 ## Servir la app cliente (SPA)
 

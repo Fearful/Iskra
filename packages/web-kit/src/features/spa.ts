@@ -36,7 +36,8 @@ export interface SpaConfig {
     configGlobal?: string;
     /**
      * The page's Content-Security-Policy, given the config script's hash
-     * (`'sha256-…'`) to allow it: `(hash) => \`default-src 'self'; script-src 'self' ${hash}\``.
+     * (`'sha256-…'`, empty without `config`) to allow it:
+     * `(hash) => \`default-src 'self'; script-src 'self' ${hash}\``.
      */
     contentSecurityPolicy?: (configScriptHash: string) => string;
 }
@@ -200,7 +201,8 @@ export class SpaFeature implements Feature {
                 );
         }
         const etag = `"${createHash('sha256').update(html).digest('base64url').slice(0, 27)}"`;
-        const csp = this.config.contentSecurityPolicy?.(this.scriptHash ?? "'none'");
+        // Empty without a config script: nothing to allow.
+        const csp = this.config.contentSecurityPolicy?.(this.scriptHash ?? '');
         return { html, etag, ...(csp && { csp }) };
     }
 
