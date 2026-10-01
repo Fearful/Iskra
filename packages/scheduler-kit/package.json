@@ -54,7 +54,7 @@
     },
     "devDependencies": {
         "@iskra-bun/worker-kit": "workspace:^",
-        "@types/bun": "^1.3.5",
+        "@types/bun": "^1.4.2",
         "@types/node": "^22.10.2"
     }
 }
