@@ -24,6 +24,8 @@ const auth = createBetterAuth({
 // auth.handler / auth.api.getSession quedan disponibles para cualquier transporte
 ```
 
+Los tokens OAuth de las cuentas sociales y OIDC se guardan siempre cifrados, y `getProviderAccessToken(auth, { providerId, headers | userId })` entrega uno vigente, renovado con el refresh token cuando esta por vencer.
+
 El esquema Drizzle (`pgSchema`, `mysqlSchema`, `sqliteSchema`) y los tipos (`User`, `AuthSession`, ...) tambien se exportan para reutilizarlos en migraciones y handlers.
 
 ## Documentacion

@@ -130,6 +130,51 @@ oidcConfig: {
 
 You can also configure better-auth's native social providers via `socialProviders`.
 
+## OAuth tokens: encrypted and renewed
+
+The access and refresh tokens of social and OIDC accounts (GitLab, GitHub, your OIDC provider…) let whoever holds them act as the user on that provider. `createBetterAuth` always stores them **encrypted** (better-auth's `encryptOAuthTokens`: AES-256-GCM with a key derived from `secret`); there is no option to turn it off.
+
+- Changing `secret` makes the stored tokens unreadable: their users sign in with the provider again.
+- The ID token is stored as is.
+- **Breaking (0.x):** tokens stored in plain text by an earlier version may no longer be read (better-auth takes a hexadecimal one for an encrypted one). Have those users sign in again, or clear `accessToken` and `refreshToken` in the `account` table.
+
+`getProviderAccessToken()` hands out a valid access token for the user's account with a provider, renewing it with the refresh token when it is about to expire:
+
+```typescript
+import { getProviderAccessToken, OAuthTokenError } from '@iskra-bun/auth-kit';
+
+// In a request: the session is read from the headers (from the database, not the cookie cache)
+const { accessToken } = await getProviderAccessToken(auth, { providerId: 'gitlab', headers: request.headers });
+
+// In a background job: for a user id
+const token = await getProviderAccessToken(auth, { providerId: 'gitlab', userId });
+```
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `providerId` | **required** | `'gitlab'`, `'github'`, the `providerId` of `oidcConfig`… |
+| `headers` | — | The request's headers; their session's user wins over `userId` |
+| `userId` | — | The user to act for when there is no request |
+| `accountId` | — | Which account, when the user linked more than one with that provider |
+| `minValidityMs` | `60000` | Renew when the token has less than this left |
+
+- Renewals of one account run one at a time, and each one re-reads the account first. Providers that rotate refresh tokens (GitLab accepts each one once) would otherwise refuse the second of two concurrent renewals and sign the user out. This holds within one process: several instances of the app can still renew the same account at once.
+- The renewed pair is stored encrypted.
+- Without a refresh token, a token about to expire is handed out until it expires.
+
+It throws `OAuthTokenError` with a `code`:
+
+| `code` | Meaning | `requiresSignIn` |
+| :--- | :--- | :--- |
+| `NOT_SIGNED_IN` | `headers` carry no valid session | yes |
+| `ACCOUNT_NOT_LINKED` | The user has no account with that provider | yes |
+| `TOKEN_EXPIRED` | It expired and there is nothing to renew it with | yes |
+| `TOKEN_UNREADABLE` | It cannot be decrypted (the secret changed, or it predates encryption) | yes |
+| `REFRESH_FAILED` | The provider refused the refresh token (4xx) | yes |
+| `PROVIDER_UNAVAILABLE` | The provider's token endpoint failed (network, 5xx); the stored pair is kept | no |
+
+In web-kit, [`getAccessToken(c, providerId)`](/packages/web-kit/#auth) answers these with 401 or 502.
+
 ## Session cookie cache
 
 Sessions use a cookie cache to avoid a database lookup on every request. `cookieCacheMaxAge` (in seconds, default `300` = 5 minutes) controls how long that cache lives. It is also the revocation window: a revoked session keeps passing the cached checks until the entry expires. Lower it to tighten that window, at the cost of more frequent database lookups:
