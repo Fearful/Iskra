@@ -2,7 +2,7 @@
 # Build from the repository root: docker build -f templates/forms-app/services/form-manager/Dockerfile .
 # Runs from source on the Bun image: the service uses Vite at runtime.
 
-FROM oven/bun:1.3.14
+FROM oven/bun:1.4.2
 
 WORKDIR /app
 

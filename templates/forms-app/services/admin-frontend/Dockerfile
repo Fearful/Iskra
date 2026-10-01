@@ -5,7 +5,7 @@
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # Built with the monorepo's Bun (.bun-version): the app depends on @forms-app/shared through
 # `workspace:*`, which npm cannot install.
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.2 AS builder
 
 WORKDIR /build
 
@@ -19,7 +19,7 @@ RUN bun run build
 
 # ─── Stage 2: Serve with nginx ───────────────────────────────────────────────
 # nginx's stable branch, not whatever :alpine points to at build time.
-FROM nginx:1.30-alpine
+FROM nginx:1.31-alpine
 
 # The app is built with base /admin/ (assets at /admin/assets/...).
 COPY --from=builder /build/templates/forms-app/services/admin-frontend/dist /usr/share/nginx/html/admin
