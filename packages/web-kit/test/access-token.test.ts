@@ -23,7 +23,9 @@ const gitlab = Bun.serve({
         if (url.pathname === '/oauth/token') {
             const grant = new URLSearchParams(await req.text()).get('grant_type');
             if (grant === 'refresh_token' && refreshStatus !== 200) {
-                return Response.json({ error: 'invalid_grant' }, { status: refreshStatus });
+                return refreshStatus === 400
+                    ? Response.json({ error: 'invalid_grant' }, { status: 400 })
+                    : new Response('unavailable', { status: refreshStatus });
             }
             const n = ++issued;
             return Response.json({ access_token: `access-${n}`, refresh_token: `refresh-${n}`, expires_in: 7200 });
@@ -99,6 +101,19 @@ describe('getAccessToken(c, provider)', () => {
         const renewedToken = ((await renewed.json()) as { token: string }).token;
         expect(renewedToken).toStartWith('access-');
         expect(renewedToken).not.toBe(firstToken);
+    });
+
+    it("keeps better-auth's token routes closed to the browser", async () => {
+        const { app, cookie } = await setup();
+        for (const path of ['get-access-token', 'refresh-token', 'account-info']) {
+            const res = await app.request(`/api/sso/${path}`, {
+                method: 'POST',
+                headers: { cookie, origin: ORIGIN, 'content-type': 'application/json' },
+                body: JSON.stringify({ providerId: 'gitlab' }),
+            });
+            expect([path, res.status]).toEqual([path, 404]);
+            expect(await res.text()).not.toContain('access-');
+        }
     });
 
     it('answers 401 without a session', async () => {

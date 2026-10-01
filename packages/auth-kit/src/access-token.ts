@@ -11,9 +11,14 @@ export type OAuthTokenErrorCode =
     | 'TOKEN_EXPIRED'
     /** The stored token cannot be decrypted: the auth secret changed, or it was stored before encryption. */
     | 'TOKEN_UNREADABLE'
-    /** The provider refused the refresh token (revoked, already used, expired). */
+    /** The provider answered `invalid_grant`: the refresh token is revoked, already used or expired. */
     | 'REFRESH_FAILED'
-    /** The provider's token endpoint failed (network, 5xx): retry later, the session is kept. */
+    /**
+     * The renewal did not go through for a reason signing in again would not
+     * fix: no answer within `timeoutMs`, a network error, a 5xx, a 429, or
+     * another OAuth error (`invalid_client` is the app's credentials). Retry
+     * later; the session and the stored pair are kept.
+     */
     | 'PROVIDER_UNAVAILABLE';
 
 /**
@@ -56,6 +61,13 @@ export interface ProviderAccessTokenOptions {
      * is in flight.
      */
     minValidityMs?: number;
+    /**
+     * How long to wait for the provider's token endpoint, in ms (default
+     * 10 000), before answering `PROVIDER_UNAVAILABLE`. An answer that comes
+     * later is still stored, and the account's next renewal waits for it: the
+     * provider may already have retired the old refresh token.
+     */
+    timeoutMs?: number;
 }
 
 export interface ProviderAccessToken {
@@ -68,6 +80,7 @@ export interface ProviderAccessToken {
 }
 
 const DEFAULT_MIN_VALIDITY_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 interface AccountRow {
     id: string;
@@ -99,13 +112,29 @@ type AuthContext = Awaited<Auth['$context']>;
  */
 const renewals = new WeakMap<object, Map<string, Promise<unknown>>>();
 
-/** Runs `task` after the previous task for `key` settles, one at a time. */
-function serialized<T>(owner: object, key: string, task: () => Promise<T>): Promise<T> {
+/**
+ * Runs `task` after the previous task for `key` settles, one at a time. The
+ * next one also waits for what the task passes to `hold()` (a renewal its
+ * caller stopped waiting for).
+ */
+function serialized<T>(
+    owner: object,
+    key: string,
+    task: (hold: (pending: Promise<unknown>) => void) => Promise<T>,
+): Promise<T> {
     let queue = renewals.get(owner);
     if (!queue) renewals.set(owner, (queue = new Map()));
     const previous = queue.get(key) ?? Promise.resolve();
-    const run = previous.then(task, task);
-    const tail = run.catch(() => {});
+    const held: Promise<unknown>[] = [];
+    const hold = (pending: Promise<unknown>) => void held.push(pending);
+    const run = previous.then(
+        () => task(hold),
+        () => task(hold),
+    );
+    const tail = run.then(
+        () => Promise.allSettled(held),
+        () => Promise.allSettled(held),
+    );
     queue.set(key, tail);
     void tail.then(() => {
         if (queue.get(key) === tail) queue.delete(key);
@@ -141,6 +170,7 @@ export async function getProviderAccessToken(
 ): Promise<ProviderAccessToken> {
     const { providerId } = options;
     const minValidityMs = options.minValidityMs ?? DEFAULT_MIN_VALIDITY_MS;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const userId = await resolveUserId(auth, options);
     const context = await auth.$context;
 
@@ -165,11 +195,11 @@ export async function getProviderAccessToken(
     const account = await findAccount();
     if (isFresh(account)) return decrypted(context, account, providerId);
 
-    return serialized(auth, account.id, async () => {
+    return serialized(auth, account.id, async (hold) => {
         // A renewal that ran while this one waited already stored a new pair.
         const current = await findAccount();
         if (isFresh(current)) return decrypted(context, current, providerId);
-        const renewed = await renew(context, current, providerId);
+        const renewed = await renew(context, current, providerId, timeoutMs, hold);
         if (renewed) return renewed;
         // Nothing to renew with: the token is still good for a little while, or it is gone.
         if (toDate(current.accessTokenExpiresAt)!.getTime() > Date.now()) {
@@ -219,45 +249,85 @@ async function findProvider(context: AuthContext, providerId: string): Promise<R
     return undefined;
 }
 
+/** Rejects with PROVIDER_UNAVAILABLE when `promise` is not settled within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, providerId: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () =>
+                reject(
+                    new OAuthTokenError('PROVIDER_UNAVAILABLE', providerId, {
+                        cause: new Error(`${providerId} token endpoint did not answer within ${ms}ms`),
+                    }),
+                ),
+            ms,
+        );
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Why a renewal failed. Only `invalid_grant` (RFC 6749) says the refresh
+ * token itself is no good; a 429, `invalid_client` (the app's credentials),
+ * a 5xx or a network error would sign every user out without anything they
+ * could fix by signing in.
+ */
+function renewalError(err: unknown, providerId: string): OAuthTokenError {
+    const oauthError = (err as { error?: unknown } | null)?.error;
+    return new OAuthTokenError(oauthError === 'invalid_grant' ? 'REFRESH_FAILED' : 'PROVIDER_UNAVAILABLE', providerId, {
+        cause: err,
+    });
+}
+
 /**
  * Renews the account's pair with the provider and stores it encrypted, as
  * better-auth's own refresh does; `undefined` when there is nothing to renew
- * with. A provider that answers 4xx refused the refresh token: the user has
- * to sign in again. Anything else (network, 5xx) leaves the stored pair as
- * it was, to be tried again.
+ * with. Past `timeoutMs` the caller gets PROVIDER_UNAVAILABLE, but the answer
+ * is still stored when it comes, and `hold` keeps the account's next renewal
+ * waiting for it: the provider may have retired the old refresh token.
  */
 async function renew(
     context: AuthContext,
     account: AccountRow,
     providerId: string,
+    timeoutMs: number,
+    hold: (pending: Promise<unknown>) => void,
 ): Promise<ProviderAccessToken | undefined> {
     if (!account.refreshToken) return undefined;
     const provider = await findProvider(context, providerId);
     if (!provider?.refreshAccessToken) return undefined;
 
     const refreshToken = await decrypt(context, account.refreshToken, providerId);
-    let tokens: Awaited<ReturnType<NonNullable<RefreshingProvider['refreshAccessToken']>>>;
-    try {
-        tokens = await provider.refreshAccessToken(refreshToken);
-    } catch (err) {
-        const status = (err as { status?: unknown } | null)?.status;
-        const refused = typeof status === 'number' && status >= 400 && status < 500;
-        throw new OAuthTokenError(refused ? 'REFRESH_FAILED' : 'PROVIDER_UNAVAILABLE', providerId, { cause: err });
-    }
-    if (!tokens.accessToken) throw new OAuthTokenError('REFRESH_FAILED', providerId);
+    const exchange = provider.refreshAccessToken(refreshToken);
+    const stored = exchange.then((tokens) => (tokens.accessToken ? store(context, account, tokens) : undefined));
+    hold(stored);
 
-    await context.internalAdapter.updateAccount(account.id, {
-        accessToken: await setTokenUtil(tokens.accessToken, context),
-        accessTokenExpiresAt: tokens.accessTokenExpiresAt,
-        // Providers that do not rotate answer without one: the stored one stays good.
-        refreshToken: tokens.refreshToken ? await setTokenUtil(tokens.refreshToken, context) : account.refreshToken,
-        refreshTokenExpiresAt: tokens.refreshTokenExpiresAt ?? toDate(account.refreshTokenExpiresAt),
-        ...(tokens.idToken ? { idToken: tokens.idToken } : {}),
-    });
+    let tokens: Awaited<typeof exchange>;
+    try {
+        tokens = await withTimeout(exchange, timeoutMs, providerId);
+    } catch (err) {
+        throw err instanceof OAuthTokenError ? err : renewalError(err, providerId);
+    }
+    if (!tokens.accessToken) throw new OAuthTokenError('PROVIDER_UNAVAILABLE', providerId);
+    await stored;
     return {
         accessToken: tokens.accessToken,
         accessTokenExpiresAt: tokens.accessTokenExpiresAt,
         scopes: parseScopes(account.scope),
         accountId: account.id,
     };
+}
+
+type RenewedTokens = Awaited<ReturnType<NonNullable<RefreshingProvider['refreshAccessToken']>>>;
+
+async function store(context: AuthContext, account: AccountRow, tokens: RenewedTokens): Promise<void> {
+    await context.internalAdapter.updateAccount(account.id, {
+        accessToken: await setTokenUtil(tokens.accessToken, context),
+        // null, not undefined (which leaves the old, expired date): no expiry given is no expiry known.
+        accessTokenExpiresAt: tokens.accessTokenExpiresAt ?? null,
+        // Providers that do not rotate answer without one: the stored one stays good.
+        refreshToken: tokens.refreshToken ? await setTokenUtil(tokens.refreshToken, context) : account.refreshToken,
+        refreshTokenExpiresAt: tokens.refreshTokenExpiresAt ?? toDate(account.refreshTokenExpiresAt),
+        ...(tokens.idToken ? { idToken: tokens.idToken } : {}),
+    });
 }
