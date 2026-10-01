@@ -190,8 +190,10 @@ export class SpaFeature implements Feature {
             const script = `window.${global}=${scriptSafeJson(value)};`;
             this.scriptHash = `'sha256-${createHash('sha256').update(script).digest('base64')}'`;
             const tag = `<script>${script}</script>`;
-            if (html.includes('<!--app-config-->')) html = html.replace('<!--app-config-->', tag);
-            else if (/<\/head>/i.test(html)) html = html.replace(/<\/head>/i, `${tag}</head>`);
+            // Replacer functions: in a replacement string, `$&`, `$'` or `$$` in
+            // a config value would be expanded, breaking the script and its hash.
+            if (html.includes('<!--app-config-->')) html = html.replace('<!--app-config-->', () => tag);
+            else if (/<\/head>/i.test(html)) html = html.replace(/<\/head>/i, (head) => `${tag}${head}`);
             else
                 throw new Error(
                     'SpaFeature: the entry page has no </head> (or <!--app-config-->) to put the config in',
