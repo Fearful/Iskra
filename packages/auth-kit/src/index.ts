@@ -41,3 +41,11 @@ export type {
     PasswordResetConfirm,
     EmailVerificationRequest,
 } from './types';
+
+export {
+    getProviderAccessToken,
+    OAuthTokenError,
+    type OAuthTokenErrorCode,
+    type ProviderAccessToken,
+    type ProviderAccessTokenOptions,
+} from './access-token';
