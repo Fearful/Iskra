@@ -46,7 +46,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "@types/bun": "^1.3.5",
@@ -62,7 +62,7 @@
         "mitt": "^3.0.1",
         "pino": "^9.6.0",
         "pino-pretty": "^13.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "@opentelemetry/resources": "^2.11.0",
@@ -202,7 +202,7 @@
       "version": "0.3.1",
       "dependencies": {
         "@iskra-bun/core": "workspace:^",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "@types/node": "^22.10.2",
@@ -274,7 +274,7 @@
         "ioredis": "^5.8.2",
         "mysql2": "^3.24.4",
         "postgres": "^3.4.7",
-        "zod": "^3.25.28",
+        "zod": "^4.6.5",
         "zod-to-json-schema": "^3.25.2",
       },
       "devDependencies": {
@@ -321,7 +321,7 @@
         "@iskra-bun/web-kit": "workspace:*",
         "drizzle-orm": "^0.45.2",
         "hono": "^4.12.34",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/db-starter": {
@@ -333,7 +333,7 @@
         "@iskra-bun/db-oracle": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "drizzle-orm": "^0.45.2",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/desktop-app": {
@@ -344,7 +344,7 @@
         "@iskra-bun/desktop-kit": "workspace:*",
         "@tauri-apps/api": "^2.0.0",
         "@tauri-apps/plugin-dialog": "^2.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "@tauri-apps/cli": "^2.0.0",
@@ -363,7 +363,7 @@
         "drizzle-orm": "^0.45.2",
         "hono": "^4.12.34",
         "uuid": "^13.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/forms-app": {
@@ -375,7 +375,7 @@
       "version": "0.1.0",
       "dependencies": {
         "drizzle-orm": "^0.45.2",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "drizzle-kit": "^0.31.11",
@@ -385,7 +385,7 @@
       "name": "@forms-app/vite-plugin-jsonschema",
       "version": "0.1.0",
       "dependencies": {
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "peerDependencies": {
         "vite": ">=6.0.0",
@@ -405,7 +405,7 @@
         "hono": "^4.12.34",
         "postgres": "^3.4.5",
         "uuid": "^13.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
       "devDependencies": {
         "@types/uuid": "^11.0.0",
@@ -476,7 +476,7 @@
         "hono": "^4.12.34",
         "postgres": "^3.4.5",
         "vite": "^6.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/forms-app/services/forms-api": {
@@ -492,7 +492,7 @@
         "ajv-errors": "^3.0.0",
         "ajv-formats": "^3.0.1",
         "hono": "^4.12.34",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/full-stack-app": {
@@ -517,7 +517,7 @@
         "@iskra-bun/web-kit": "workspace:*",
         "@iskra-bun/worker-kit": "workspace:*",
         "hono": "^4.12.34",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/plugin-starter": {
@@ -539,7 +539,7 @@
         "@iskra-bun/process-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
         "hono": "^4.12.34",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/realtime-feed": {
@@ -554,7 +554,7 @@
         "@types/uuid": "^11.0.0",
         "hono": "^4.12.34",
         "uuid": "^13.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/simple-server": {
@@ -572,7 +572,7 @@
         "@iskra-bun/core": "workspace:*",
         "@iskra-bun/process-kit": "workspace:*",
         "@iskra-bun/web-kit": "workspace:*",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
     "templates/universal-app": {
@@ -583,7 +583,7 @@
         "@iskra-bun/desktop-kit": "workspace:*",
         "@iskra-bun/mobile-kit": "workspace:*",
         "@tauri-apps/api": "^2.0.0",
-        "zod": "^3.24.1",
+        "zod": "^4.6.5",
       },
     },
   },
@@ -1796,17 +1796,13 @@
 
     "yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
 
-    "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
+    "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
-
-    "@asteasolutions/zod-to-openapi/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@babel/core/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
-
-    "@better-auth/core/zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "@changesets/apply-release-plan/prettier": ["prettier@2.8.8", "", { "bin": { "prettier": "bin-prettier.js" } }, "sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q=="],
 
@@ -1821,8 +1817,6 @@
     "@eslint/eslintrc/strip-json-comments": ["strip-json-comments@3.1.1", "", {}, "sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig=="],
 
     "@hono/zod-openapi/@hono/zod-validator": ["@hono/zod-validator@0.8.0", "", { "peerDependencies": { "hono": ">=4.10.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w=="],
-
-    "@hono/zod-openapi/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@inquirer/external-editor/iconv-lite": ["iconv-lite@0.7.2", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw=="],
 
@@ -1845,8 +1839,6 @@
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
 
     "better-auth/kysely": ["kysely@0.29.2", "", {}, "sha512-s6WVJyEZrbm6jhBpiKHsGHyePMrVQKJ85wZCFCr9W4QHv6WTjWIrdvTmO9hDEA3bNK0xkrE2DqrHsXMLWuZpQg=="],
-
-    "better-auth/zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "better-call/@better-auth/utils": ["@better-auth/utils@0.5.0", "", { "dependencies": { "@noble/hashes": "^2.0.1" } }, "sha512-BL8W4EfIZFwlu0r54m3v1ztjDhu6dDe/amLTm0xybmbZaNgYUqhD3SjpAsnq0q8YD6/ki4iwIgxJNLP/N3TxiA=="],
 
