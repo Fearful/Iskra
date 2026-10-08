@@ -13,7 +13,7 @@
         "@iskra-bun/kv-kit": "workspace:*",
         "@iskra-bun/worker-kit": "workspace:*",
         "@forms-app/shared": "workspace:*",
-        "hono": "^4.12.34",
+        "hono": "^4.13.13",
         "ajv": "^8.20.0",
         "ajv-errors": "^3.0.0",
         "ajv-formats": "^3.0.1",

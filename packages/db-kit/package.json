@@ -54,9 +54,9 @@
     },
     "dependencies": {
         "@iskra-bun/core": "workspace:^",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "^0.45.3",
         "postgres": "^3.4.4",
-        "mysql2": "^3.24.4",
+        "mysql2": "^3.24.5",
         "@libsql/client": "^0.18.0"
     },
     "devDependencies": {
