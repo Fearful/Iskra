@@ -12,9 +12,9 @@
     "api": "typedoc"
   },
   "devDependencies": {
-    "@astrojs/starlight": "^0.42.4",
+    "@astrojs/starlight": "^0.42.5",
     "astro": "^7.3.5",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.12.0"
   }
