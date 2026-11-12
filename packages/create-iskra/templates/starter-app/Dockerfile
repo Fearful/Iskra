@@ -3,7 +3,7 @@
 # Needs the lockfile: run `bun install` once before the first build.
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.4 AS builder
 
 WORKDIR /build
 
@@ -26,7 +26,7 @@ RUN bun build src/main.ts --compile --outfile=/build/app
 # installs, so this stage also builds offline or behind a TLS-inspecting proxy.
 # A fixed release (Red Hat still rebuilds the 9.8 tag with security fixes):
 # with :latest any rebuild could move to another release. Bump it on purpose.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9
 
 WORKDIR /app
 # Root-owned and read-only (0555): copied with --chown=1001:0, the user the
