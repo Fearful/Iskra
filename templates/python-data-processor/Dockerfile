@@ -3,7 +3,7 @@
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # The Bun the monorepo is pinned to (.bun-version).
-FROM oven/bun:1.3.14 AS builder
+FROM oven/bun:1.4.4 AS builder
 
 WORKDIR /build
 
@@ -23,7 +23,7 @@ RUN bun build templates/python-data-processor/src/main.ts --compile --outfile=/b
 # ─── Stage 2: Runtime (UBI9 Minimal + Python) ────────────────────────────────
 # A fixed release (Red Hat still rebuilds the 9.8 tag with security fixes):
 # with :latest any rebuild could move to another release. Bump it on purpose.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9
 
 # Python runs the process-kit sidecar (the only package this image installs).
 RUN microdnf install -y python3 && microdnf clean all
